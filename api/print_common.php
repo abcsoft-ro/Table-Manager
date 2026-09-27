@@ -16,6 +16,47 @@ if (!defined('PRINT_SERVICE_BASE')) {
 }
 
 /**
+ * Descrierea canonica a setarii tblSet.NrBon (contorul bonurilor de sectie).
+ * Folosita atat la crearea randului, cat si pentru documentarea in Setari.
+ */
+function nrBonDescription() {
+    return "Contorul bonurilor de sectie (bucatarie/bar): numarul de pe urmatorul bon trimis la sectie. Creste automat la fiecare Marcare si se reseteaza la raportul Z (reporneste de la 1). Editabila doar pentru reinitializare.";
+}
+
+/**
+ * Creeaza setarea tblSet.NrBon (contor pornit de la 0) daca lipseste si
+ * completeaza Descrierea. Randul apare astfel in ecranul Setari.
+ */
+function ensureNrBonSetting($conn) {
+    @sqlsrv_query(
+        $conn,
+        "IF NOT EXISTS (SELECT 1 FROM tblSet WHERE Setting = 'NrBon')
+             INSERT INTO tblSet (Setting, Value, Descriere, Grup) VALUES ('NrBon', '0', ?, 'General')
+         ELSE
+             UPDATE tblSet SET Descriere = ? WHERE Setting = 'NrBon' AND (Descriere IS NULL OR Descriere <> ?)",
+        [nrBonDescription(), nrBonDescription(), nrBonDescription()]
+    );
+}
+
+/**
+ * Incrementeaza atomic contorul bonurilor de sectie si intoarce noua valoare.
+ * Se apeleaza in interiorul tranzactiei de tiparire, ca un esec sa nu consume
+ * numarul (la ROLLBACK revine si contorul).
+ */
+function nextNrBon($conn) {
+    ensureNrBonSetting($conn);
+
+    $stmt = sqlsrv_query($conn, "SELECT Value FROM tblSet WITH (UPDLOCK, HOLDLOCK) WHERE Setting = 'NrBon'");
+    $row = $stmt ? sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC) : null;
+    $next = ((int)($row['Value'] ?? 0)) + 1;
+
+    $upd = sqlsrv_query($conn, "UPDATE tblSet SET Value = ? WHERE Setting = 'NrBon'", [(string)$next]);
+    if ($upd === false) { return null; }
+
+    return $next;
+}
+
+/**
  * Creeaza tabela tblPrintQueue daca nu exista (deploy fara pasi manuali).
  */
 function ensurePrintQueueTable($conn) {

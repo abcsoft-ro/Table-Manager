@@ -96,7 +96,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         }
     }
 
-    sendJsonResponse(["status" => "success", "products" => $products, "sectii" => $sectii, "tva" => $tvaList]);
+    // Lista sectiilor de tiparire pentru combobox (tblKP: NrLogic, Nume, Stare)
+    $kpList = [];
+    $stmtK = sqlsrv_query($conn, "SELECT NrLogic, Nume, Stare FROM tblKP ORDER BY Nume");
+    if ($stmtK) {
+        while ($k = sqlsrv_fetch_array($stmtK, SQLSRV_FETCH_ASSOC)) {
+            $kpList[] = [
+                "NrLogic" => (int)$k['NrLogic'],
+                "Nume" => trim($k['Nume'] ?? ''),
+                "Stare" => (bool)$k['Stare']
+            ];
+        }
+    }
+
+    sendJsonResponse(["status" => "success", "products" => $products, "sectii" => $sectii, "tva" => $tvaList, "kpList" => $kpList]);
 }
 
 $raw = file_get_contents('php://input');

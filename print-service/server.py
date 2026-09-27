@@ -17,12 +17,38 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from config import load_config
-from worker import log, run_loop
+from config import CONFIG_PATH, load_config, print_config_payload, save_print_config
+from targets import deliver
+from worker import build_fiscal_bytes, build_test, log, run_loop
 
 STOP = threading.Event()
 WAKE = threading.Event()
 CFG = load_config()
+
+
+def reload_config():
+    """Re-citeste config.json (hot-reload, fara repornire)."""
+    global CFG
+    CFG = load_config()
+    return CFG
+
+
+def _windows_printers():
+    try:
+        import win32print  # type: ignore
+    except ImportError:
+        return {"available": False, "printers": []}
+    names = []
+    try:
+        flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+        for p in win32print.EnumPrinters(flags, None, 2):
+            name = p.get("pPrinterName")
+            if name:
+                names.append(name)
+    except Exception:  # noqa: BLE001 - nu blocam ecranul daca lista esueaza
+        return {"available": False, "printers": []}
+    names.sort(key=lambda s: s.lower())
+    return {"available": True, "printers": names}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -47,6 +73,20 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _read_json(self):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            length = 0
+        if length <= 0:
+            return {}
+        raw = self.rfile.read(length)
+        try:
+            data = json.loads(raw.decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
     def do_GET(self):
         path = urlparse(self.path).path
 
@@ -60,6 +100,15 @@ class Handler(BaseHTTPRequestHandler):
                 "fiscal_spool_dir": CFG.get("fiscal_spool_dir"),
                 "printers": CFG.get("printers"),
             })
+            return
+
+        if path == "/config":
+            self._json({"status": "success", "config": print_config_payload(CFG)})
+            return
+
+        if path == "/printers":
+            info = _windows_printers()
+            self._json({"status": "success", "available": info["available"], "printers": info["printers"]})
             return
 
         if path == "/wake":
@@ -77,10 +126,49 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"status": "error", "message": "Ruta necunoscuta"}, 404)
 
     def do_POST(self):
-        if urlparse(self.path).path in ("/wake", "/health"):
+        path = urlparse(self.path).path
+
+        if path in ("/wake", "/health"):
             WAKE.set()
             self._json({"status": "ok", "message": "worker trezit"})
             return
+
+        if path == "/config":
+            data = self._read_json()
+            new_print = data.get("config", data)
+            cfg, err = save_print_config(CONFIG_PATH, new_print)
+            if err is not None:
+                self._json({"status": "error", "message": err}, 400)
+                return
+            reload_config()
+            WAKE.set()
+            log("Config de tiparire actualizat (hot-reload).", CFG)
+            self._json({"status": "success", "message": "Configurare salvata", "config": print_config_payload(CFG)})
+            return
+
+        if path == "/test":
+            data = self._read_json()
+            which = str(data.get("which") or "").strip().lower()
+            target = None
+            if which in ("nota", "raport", "fiscal"):
+                target = CFG.get(which + "_target")
+            elif isinstance(data.get("target"), dict):
+                target = data.get("target")
+            if not target:
+                self._json({"status": "error", "message": "Tinta de test invalida"}, 400)
+                return
+            try:
+                if which == "fiscal":
+                    payload = build_fiscal_bytes({"text": "TEST FISCAL\r\n"}, CFG)
+                else:
+                    payload = build_test(CFG)
+                message = deliver(target, payload, CFG, job_id=0)
+            except Exception as exc:  # noqa: BLE001 - raportam orice eroare de livrare
+                self._json({"status": "error", "message": str(exc)}, 500)
+                return
+            self._json({"status": "success", "message": message})
+            return
+
         self._json({"status": "error", "message": "Ruta necunoscuta"}, 404)
 
     def _serve_preview(self, name):
@@ -106,7 +194,8 @@ def main():
             pass
 
     log("Serviciu de tiparire pornit pe %s:%s" % (CFG["http_host"], CFG["http_port"]), CFG)
-    thread = threading.Thread(target=run_loop, args=(CFG, STOP, WAKE), daemon=True)
+    # Worker-ul primeste un provider de config, ca sa vada modificarile la cald.
+    thread = threading.Thread(target=run_loop, args=(lambda: CFG, STOP, WAKE), daemon=True)
     thread.start()
 
     server = ThreadingHTTPServer((CFG["http_host"], CFG["http_port"]), Handler)

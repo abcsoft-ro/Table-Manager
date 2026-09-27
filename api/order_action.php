@@ -26,6 +26,71 @@ function getTipVanz($conn) {
 }
 
 /**
+ * Cantitatea maxima admisa pe o linie de nota (tblSet.CantMax). Implicit 1000
+ * cand setarea lipseste sau este invalida. Protejeaza impotriva tastarii gresite.
+ */
+function getCantMax($conn) {
+    static $cache = null;
+    if ($cache !== null) { return $cache; }
+    $cache = 1000.0;
+    $stmt = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'CantMax'");
+    if ($stmt) {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        if ($row && trim((string)$row['Value']) !== '') {
+            $v = (float)str_replace(',', '.', trim((string)$row['Value']));
+            if ($v > 0) { $cache = $v; }
+        }
+    }
+    return $cache;
+}
+
+/**
+ * Numarul de zecimale pentru cantitate (tblSet.NrZecCant): 0, 1 sau 2.
+ * Implicit 1 cand setarea lipseste sau este invalida.
+ */
+function getNrZecCant($conn) {
+    static $cache = null;
+    if ($cache !== null) { return $cache; }
+    $cache = 1;
+    $stmt = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'NrZecCant'");
+    if ($stmt) {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        if ($row && trim((string)$row['Value']) !== '') {
+            $v = (int)trim((string)$row['Value']);
+            if ($v >= 0 && $v <= 2) { $cache = $v; }
+        }
+    }
+    return $cache;
+}
+
+/**
+ * Discountul permis/interzis (tblSet.RED): 1 = permis, 0 = interzis.
+ * Implicit 1 cand setarea lipseste sau este invalida.
+ */
+function getRed($conn) {
+    static $cache = null;
+    if ($cache !== null) { return $cache; }
+    $cache = 1;
+    $stmt = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'RED'");
+    if ($stmt) {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        if ($row && trim((string)$row['Value']) !== '') {
+            $cache = ((int)trim((string)$row['Value']) === 0) ? 0 : 1;
+        }
+    }
+    return $cache;
+}
+
+/**
+ * Parola de discount din tblParola.ParolaDiscount (string; '' = nu se cere).
+ */
+function getDiscountParola($conn) {
+    $stmt = @sqlsrv_query($conn, "SELECT TOP 1 ParolaDiscount FROM tblParola");
+    $row = $stmt ? sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC) : null;
+    return $row ? trim((string)($row['ParolaDiscount'] ?? '')) : '';
+}
+
+/**
  * Repartizeaza o suma (in centi) pe o lista de ponderi (in centi), folosind
  * metoda celui mai mare rest, astfel incat suma alocata sa fie exact $amount
  * si nicio alocare sa nu depaseasca ponderea corespunzatoare.
@@ -162,8 +227,16 @@ function printKitchen($conn, $docId) {
         return ["jobs" => 0, "lines" => 0, "error" => null];
     }
 
-    // 4. Scriem joburile si marcam liniile Preluat = 1, atomic
+    // 4. Scriem joburile si marcam liniile Preluat = 1, atomic.
+    //    Numarul de bon de sectie vine din contorul dedicat tblSet.NrBon si este
+    //    acelasi pentru toate imprimantele acestei marcari.
     sqlsrv_begin_transaction($conn);
+
+    $nrBon = nextNrBon($conn);
+    if ($nrBon === null) {
+        sqlsrv_rollback($conn);
+        return ["jobs" => 0, "lines" => 0, "error" => "Eroare contor bon sectie (tblSet.NrBon)"];
+    }
 
     $jobs = 0;
     foreach ($groups as $kp => $lines) {
@@ -174,6 +247,7 @@ function printKitchen($conn, $docId) {
             "casier" => trim((string)$bon['NumeCasier']),
             "dataOra" => $dataOraStr,
             "nrDoc" => (int)$bon['NrDoc'],
+            "nrBon" => (int)$nrBon,
             "printerNr" => (int)$kp,
             "printerName" => $printerNames[(int)$kp] ?? "",
             "lines" => $lines
@@ -195,7 +269,7 @@ function printKitchen($conn, $docId) {
     sqlsrv_commit($conn);
     wakePrintService();
 
-    return ["jobs" => $jobs, "lines" => $lineCount, "error" => null];
+    return ["jobs" => $jobs, "lines" => $lineCount, "nrBon" => $nrBon, "error" => null];
 }
 
 /**
@@ -313,7 +387,7 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title) {
     $total = 0.0;     // valoare neta (PV, dupa discount)
     $tvaByCota = [];
 
-    $sqlArt = "SELECT d.ProdID, d.Cant, d.PV, d.PVC, d.TVAc, d.Descriere,
+    $sqlArt = "SELECT d.ProdID, d.Cant, d.PV, d.PVC, d.TVAc, d.Descriere, d.[Comment],
                       COALESCE(p.Denumire, d.Descriere, 'Produs #' + CAST(d.ProdID AS VARCHAR)) AS Denumire
                FROM tblNoteD d
                LEFT JOIN tblProd p ON d.ProdID = p.ProdID
@@ -341,12 +415,16 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title) {
         $tvaByCota[$cota] += $tva;
 
         $den = trim((string)$r['Denumire']);
+        // O linie are discount "pe produs" (nu pe subtotal) daca are [Comment]
+        // (motivul discountului de linie). Doar acestea se evidentiaza pe produs.
+        $discountLinie = (trim((string)($r['Comment'] ?? '')) !== '');
         $items[] = [
             "cant" => $cant,
             "denumire" => $den,
             "valoare" => round($val, 2),
             "valoareOriginala" => round($valOrig, 2),
-            "tva" => $cota
+            "tva" => $cota,
+            "discountLinie" => $discountLinie
         ];
         $fiscalItems[] = ["cant" => $cant, "denumire" => $den, "pret" => $pv, "cota" => $cota];
     }
@@ -505,6 +583,15 @@ switch ($action) {
         if ($prodId <= 0) {
             sendJsonResponse(["status" => "error", "message" => "ProdID invalid"], 400);
         }
+        if ($cantitate > getCantMax($conn)) {
+            $cmTxt = rtrim(rtrim(number_format(getCantMax($conn), 2, '.', ''), '0'), '.');
+            sendJsonResponse(["status" => "error", "message" => "Cantitatea maxima admisa este " . $cmTxt], 400);
+        }
+        // Rotunjim la numarul de zecimale configurat (tblSet.NrZecCant).
+        $cantitate = round($cantitate, getNrZecCant($conn));
+        if ($cantitate <= 0) {
+            sendJsonResponse(["status" => "error", "message" => "Cantitatea trebuie sa fie mai mare decat 0"], 400);
+        }
 
         // 1. Obtinem datele, pretul si cota de TVA a produsului.
         //    Pretul: tblProd.PV. Cota TVA: via tblProd.Nr_TVA -> tblTVA.Cota.
@@ -661,12 +748,18 @@ switch ($action) {
     case 'update_qty':
         $ecrId = (int)($input['ecrId'] ?? 0);
         $cantitate = (float)($input['cantitate'] ?? 0);
+        // Rotunjim la numarul de zecimale configurat (tblSet.NrZecCant).
+        $cantitate = round($cantitate, getNrZecCant($conn));
 
         if ($ecrId <= 0) {
             sendJsonResponse(["status" => "error", "message" => "ECRID invalid"], 400);
         }
         if ($cantitate <= 0) {
             sendJsonResponse(["status" => "error", "message" => "Cantitatea trebuie sa fie mai mare decat 0"], 400);
+        }
+        if ($cantitate > getCantMax($conn)) {
+            $cmTxt = rtrim(rtrim(number_format(getCantMax($conn), 2, '.', ''), '0'), '.');
+            sendJsonResponse(["status" => "error", "message" => "Cantitatea maxima admisa este " . $cmTxt], 400);
         }
 
         $sqlBon = "SELECT TOP 1 DocID FROM tblBonCurent WHERE NrMasa = ? AND Stare = 'D' ORDER BY DocID DESC";
@@ -931,7 +1024,38 @@ switch ($action) {
         ]);
         break;
 
+    case 'verify_discount_parola':
+        // Verifica parola de discount (tblParola.ParolaDiscount). Daca nu este
+        // setata, orice parola este acceptata (discountul nu cere parola).
+        $parolaDisc = getDiscountParola($conn);
+        if ($parolaDisc === '') {
+            sendJsonResponse(["status" => "success", "required" => false]);
+        }
+        $parolaIn = trim((string)($input['parola'] ?? ''));
+        if ($parolaIn !== '' && $parolaIn === $parolaDisc) {
+            sendJsonResponse(["status" => "success", "required" => true]);
+        }
+        // Intoarcem si `required` ca clientul sa stie ca trebuie sa ceara parola
+        // (chiar daca nu a trimis inca una sau flag-ul local e invechit).
+        sendJsonResponse(["status" => "error", "required" => true, "message" => "Parola de discount incorecta."], 401);
+        break;
+
     case 'apply_discount':
+        // Discountul poate fi interzis din setari (tblSet.RED = 0).
+        if (getRed($conn) === 0) {
+            sendJsonResponse(["status" => "error", "message" => "Discountul nu este permis."], 403);
+        }
+
+        // Daca este configurata o parola de discount, o cerem si aici (protectie
+        // la apeluri directe ale API-ului, nu doar in UI).
+        $parolaDisc = getDiscountParola($conn);
+        if ($parolaDisc !== '') {
+            $parolaIn = trim((string)($input['parola'] ?? ''));
+            if ($parolaIn !== $parolaDisc) {
+                sendJsonResponse(["status" => "error", "required" => true, "message" => "Parola de discount incorecta."], 401);
+            }
+        }
+
         $scope = $input['scope'] ?? 'bill';
         $mode = $input['mode'] ?? 'percent';
         $value = (float)($input['value'] ?? 0);
@@ -1038,11 +1162,21 @@ switch ($action) {
             sendJsonResponse(["status" => "error", "message" => "Valoarea discountului este prea mare"], 400);
         }
 
-        // Un singur discount activ pe nota: resetam toate liniile la pretul de catalog
-        // si stergem motivul anterior, apoi aplicam discountul nou.
-        $sqlReset = "UPDATE tblNoteD SET PV = COALESCE(PVC, PV), [Comment] = NULL WHERE DocID = ? AND Cant > 0";
-        if (!sqlsrv_query($conn, $sqlReset, [$docId])) {
-            sendJsonResponse(["status" => "error", "message" => "Eroare resetare discount: " . sqlsrv_errors()[0]['message']], 500);
+        // Discountul PE PRODUS se aplica independent pe linia tinta: mai multe
+        // linii pot avea discounturi diferite (ex. 25% pe un produs, 30% pe altul)
+        // si aplicarea pe o linie NU le reseteaza pe celelalte.
+        // Discountul PE SUBTOTAL este unic pe nota: reseteaza toate liniile la
+        // pretul de catalog, apoi il repartizeaza proportional.
+        // Doar discountul PE PRODUS marcheaza linia cu [Comment] (motivul), ca sa
+        // fie afisat sub produsul redus; cel pe subtotal se arata doar ca total.
+        $lineComment = null;
+        if ($scope === 'line') {
+            $lineComment = ($motiv !== null && $motiv !== '') ? $motiv : 'Discount produs';
+        } else {
+            $sqlReset = "UPDATE tblNoteD SET PV = COALESCE(PVC, PV), [Comment] = NULL WHERE DocID = ? AND Cant > 0";
+            if (!sqlsrv_query($conn, $sqlReset, [$docId])) {
+                sendJsonResponse(["status" => "error", "message" => "Eroare resetare discount: " . sqlsrv_errors()[0]['message']], 500);
+            }
         }
 
         // Repartizam discountul pe fiecare linie, in centi
@@ -1073,15 +1207,20 @@ switch ($action) {
         // Scriem noile preturi (PV) si motivul discountului (Comment).
         // Discountul se scade din valoarea BRUTA a liniei (care pastreaza toata
         // cantitatea); liniile de storno ramanand sa scada pretul intreg.
-        $subtotalNou = 0.0;
+        // La discountul PE PRODUS modificam doar linia tinta; celelalte linii
+        // isi pastreaza discounturile existente.
+        $subtotalNou = $totalC / 100;
         foreach ($lines as $l) {
+            if ($scope === 'line' && $l['ecrId'] !== $target['ecrId']) {
+                continue;
+            }
             $dc = isset($perLine[$l['ecrId']]) ? $perLine[$l['ecrId']] : 0;
             $valNouC = $l['valC'] - $dc;
             $newPV = ($valNouC / 100) / $l['cant'];
 
             if ($dc > 0) {
                 $sqlUpd = "UPDATE tblNoteD SET PV = ?, [Comment] = ? WHERE ECRID = ? AND DocID = ?";
-                $ok = sqlsrv_query($conn, $sqlUpd, [$newPV, $motiv, $l['ecrId'], $docId]);
+                $ok = sqlsrv_query($conn, $sqlUpd, [$newPV, $lineComment, $l['ecrId'], $docId]);
             } else {
                 $sqlUpd = "UPDATE tblNoteD SET PV = ?, [Comment] = NULL WHERE ECRID = ? AND DocID = ?";
                 $ok = sqlsrv_query($conn, $sqlUpd, [$newPV, $l['ecrId'], $docId]);
@@ -1089,8 +1228,6 @@ switch ($action) {
             if (!$ok) {
                 sendJsonResponse(["status" => "error", "message" => "Eroare aplicare discount: " . sqlsrv_errors()[0]['message']], 500);
             }
-
-            $subtotalNou += $l['netValC'] / 100;
         }
 
         // Recalculam TotalB (valoarea randului = Cant * PV)
@@ -1384,7 +1521,7 @@ switch ($action) {
         }
 
         $message = ($result['jobs'] > 0)
-            ? "Comanda a fost trimisa la bucatarie (" . $result['jobs'] . " bon(uri))"
+            ? "Comanda (bon " . ($result['nrBon'] ?? '-') . ") a fost trimisa la bucatarie (" . $result['jobs'] . " bon(uri))"
             : "Nu exista linii netrimise";
 
         sendJsonResponse([
@@ -1392,7 +1529,8 @@ switch ($action) {
             "message" => $message,
             "docId" => $docId,
             "jobs" => $result['jobs'],
-            "marcate" => $result['lines']
+            "marcate" => $result['lines'],
+            "nrBon" => $result['nrBon'] ?? null
         ]);
         break;
 

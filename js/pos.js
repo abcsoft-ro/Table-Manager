@@ -21,6 +21,16 @@ const POS_STATE = {
   // In FastFood nu se afiseaza ecranul de mese, comanda nu pleaca la sectie si
   // nota de plata nu se tipareste (doar bonul fiscal).
   tipVanz: "restaurant",
+  // Cantitatea maxima admisa pe o linie (tblSet.CantMax, implicit 1000).
+  cantMax: 1000,
+  // Numarul de zecimale pentru cantitate (tblSet.NrZecCant: 0, 1 sau 2).
+  nrZecCant: 1,
+  // Discountul permis/interzis (tblSet.RED: 1 = DA, 0 = NU).
+  red: 1,
+  // Daca discountul cere parola (tblParola.ParolaDiscount setata) si parola
+  // verificata in sesiunea curenta de discount.
+  parolaDiscount: 0,
+  discountParola: "",
   reducereProcent: 0,
   tvaProcent: 9,
   selectedItemIndex: 0,
@@ -90,10 +100,16 @@ async function loadMenu() {
   POS_STATE.meniulZilei = (data.meniulZilei == 1) ? 1 : 0;
   POS_STATE.modLogare = (data.modLogare == 0) ? 0 : 1;
   POS_STATE.tipVanz = (data.tipVanz === "fastfood") ? "fastfood" : "restaurant";
+  POS_STATE.cantMax = (Number(data.cantMax) > 0) ? Number(data.cantMax) : 1000;
+  const nz = parseInt(data.nrZecCant, 10);
+  POS_STATE.nrZecCant = (nz >= 0 && nz <= 2) ? nz : 1;
+  POS_STATE.red = (data.red === 0 || data.red === "0") ? 0 : 1;
+  POS_STATE.parolaDiscount = (data.parolaDiscount == 1) ? 1 : 0;
 
   renderMenuGrid();
   updateMeniulZileiButton();
   applyTipVanzUI();
+  applyRedUI();
   updateTablesFooter(data.distrRand1, data.distrRand2);
 }
 
@@ -118,6 +134,14 @@ function applyTipVanzUI() {
       navigateToScreen("screen-marcare");
     }
   }
+}
+
+// Afiseaza/ascunde butoanele de discount in functie de tblSet.RED.
+function applyRedUI() {
+  const allowed = POS_STATE.red !== 0;
+  document.querySelectorAll(".js-discount-btn").forEach(el => {
+    el.style.display = allowed ? "" : "none";
+  });
 }
 
 // Footer-ul ecranului mese: datele de contact din tblSet (DistrRand1/2)
@@ -528,6 +552,12 @@ function lineValNet(item) {
   return Math.max(0, ramas) * p;
 }
 
+// Formateaza o cantitate cu numarul de zecimale configurat (tblSet.NrZecCant).
+function formatQtyCant(v) {
+  const n = Number(v || 0);
+  return n.toFixed(POS_STATE.nrZecCant);
+}
+
 function renderOrderItems(subtotalCalculat = null, totalCalculat = null) {
   const container = document.getElementById("order-items-list");
   if (!container) return;
@@ -546,7 +576,10 @@ function renderOrderItems(subtotalCalculat = null, totalCalculat = null) {
     const orig = lineValOriginal(item);
     const net = lineVal(item);
     const isStorno = !!item.storno;
-    const isDisc = !isStorno && net < orig - 0.005;
+    // Doar discountul PE PRODUS (linie) se evidentiaza pe rand (badge); cel pe
+    // subtotal apare doar in totalul de reducere de sub subtotal.
+    const isLineDisc = !isStorno && !!item.comment;
+    const isDisc = isLineDisc && net < orig - 0.005;
     sumOriginal += orig;
     sumNet += net;
 
@@ -564,10 +597,10 @@ function renderOrderItems(subtotalCalculat = null, totalCalculat = null) {
     const numeAfis = (isStorno ? "ANULAT: " : "") + escapeHtml(capitalizeName(item.denumire));
     const qtyLocked = !isStorno && !!item.preluat;
     const qtyHtml = isStorno
-      ? `<div class="order-row-qty">${parseFloat(item.cantitate).toFixed(1)}</div>`
+      ? `<div class="order-row-qty">${formatQtyCant(item.cantitate)}</div>`
       : (qtyLocked
-          ? `<div class="order-row-qty qty-locked" title="Trimis la sectie">${parseFloat(item.cantitate).toFixed(1)}</div>`
-          : `<div class="order-row-qty ${index === POS_STATE.selectedItemIndex ? "active" : ""}" title="Cantitate" onclick="openQtyModal(${index}, event)">${parseFloat(item.cantitate).toFixed(1)}</div>`);
+          ? `<div class="order-row-qty qty-locked" title="Trimis la sectie">${formatQtyCant(item.cantitate)}</div>`
+          : `<div class="order-row-qty ${index === POS_STATE.selectedItemIndex ? "active" : ""}" title="Cantitate" onclick="openQtyModal(${index}, event)">${formatQtyCant(item.cantitate)}</div>`);
 
     row.innerHTML = `
       <div class="order-row-name">${numeAfis}</div>
@@ -1446,7 +1479,7 @@ function progAction(nume) {
     return;
   }
   if (nume === "Imprimante sectii") {
-    openKpEditor();
+    openProgImprimante();
     return;
   }
   if (nume === "Forme de plata") {
@@ -1550,6 +1583,8 @@ const SETARI_TABS = [
 let setariRows = [];
 let setariActiveTab = "general";
 let setariDirty = {};
+// In modul Restaurant, NrZecCant e editabil doar cand toate mesele sunt inchise.
+let setariCanEditNrZecCant = true;
 
 // Confirmare in-app (nu depinde de dialogul nativ confirm(), care poate fi
 // suprimat de browser). Fallback pe confirm() daca modalul nu exista.
@@ -1629,12 +1664,17 @@ function closeProgSetari() {
   navigateToScreen("screen-programare");
 }
 
+// Setari tblSet ascunse in ecranul Setari (legacy / fara efect).
+const SETARI_ASCUNSE = new Set(["start", "nrboncmd", "paradiscount", "storno_parola", "retea"]);
+
 async function loadSetari() {
   try {
     const resp = await fetch("api/setari.php");
     const data = await resp.json();
     if (data.status !== "success") throw new Error(data.message || "Eroare");
-    setariRows = (data.rows || []).filter(r => (r.Setting || "").trim() !== "Start");
+    setariRows = (data.rows || []).filter(r => !SETARI_ASCUNSE.has((r.Setting || "").trim().toLowerCase()));
+    // Restrictia pentru NrZecCant (Restaurant + mese deschise) vine de la server.
+    setariCanEditNrZecCant = (data.canEditNrZecCant !== false);
     renderSetariTabs();
     renderSetariTab(setariActiveTab);
   } catch (err) {
@@ -1683,6 +1723,14 @@ function setariField(row) {
   // Tipul de vanzare se editeaza ca lista (Restaurant / FastFood), nu ca text.
   if (row.Setting === "TipVanz") {
     return setariTipVanzField(row);
+  }
+  // Numarul de zecimale pentru cantitate: lista 0 / 1 / 2.
+  if (row.Setting === "NrZecCant") {
+    return setariNrZecCantField(row);
+  }
+  // Discountul permis/interzis: lista DA / NU.
+  if (row.Setting === "RED") {
+    return setariRedField(row);
   }
 
   const div = document.createElement("div");
@@ -1764,6 +1812,91 @@ function setariTipVanzField(row) {
   return div;
 }
 
+// Combobox pentru tblSet.NrZecCant: 0 / 1 / 2 zecimale la cantitate.
+function setariNrZecCantField(row) {
+  const div = document.createElement("div");
+  div.className = "setari-field";
+
+  const label = document.createElement("label");
+  label.className = "setari-label";
+  label.textContent = row.Setting;
+  div.appendChild(label);
+
+  const select = document.createElement("select");
+  select.className = "tva-input setari-input";
+  select.id = "setari-inp-" + row.Setting;
+
+  const cur = String(row.Value === null || row.Value === undefined ? "" : row.Value).trim();
+  [["0", "0 zecimale (numere intregi)"], ["1", "1 zecimala"], ["2", "2 zecimale"]].forEach(pair => {
+    const opt = document.createElement("option");
+    opt.value = pair[0];
+    opt.textContent = pair[1];
+    if (pair[0] === (cur === "1" || cur === "2" ? cur : "0")) opt.selected = true;
+    select.appendChild(opt);
+  });
+  select.onchange = () => { setariDirty[row.Setting] = select.value; };
+
+  // In modul Restaurant, setarea e blocata cat timp exista mese deschise.
+  if (!setariCanEditNrZecCant) {
+    select.disabled = true;
+    select.title = "Toate mesele trebuie sa fie inchise pentru a modifica zecimalele.";
+  }
+  div.appendChild(select);
+
+  if (!setariCanEditNrZecCant) {
+    const lock = document.createElement("div");
+    lock.className = "setari-desc";
+    lock.style.color = "#b00";
+    lock.style.fontWeight = "bold";
+    lock.textContent = "Toate mesele trebuie sa fie inchise pentru a modifica zecimalele cantitatii.";
+    div.appendChild(lock);
+  }
+
+  if (row.Descriere && String(row.Descriere).trim() !== "") {
+    const d = document.createElement("div");
+    d.className = "setari-desc";
+    d.textContent = row.Descriere;
+    div.appendChild(d);
+  }
+
+  return div;
+}
+
+// Combobox pentru tblSet.RED: 1 = DA (discount permis), 0 = NU (ascuns).
+function setariRedField(row) {
+  const div = document.createElement("div");
+  div.className = "setari-field";
+
+  const label = document.createElement("label");
+  label.className = "setari-label";
+  label.textContent = row.Setting;
+  div.appendChild(label);
+
+  const select = document.createElement("select");
+  select.className = "tva-input setari-input";
+  select.id = "setari-inp-" + row.Setting;
+
+  const cur = String(row.Value === null || row.Value === undefined ? "" : row.Value).trim();
+  [["1", "DA"], ["0", "NU"]].forEach(pair => {
+    const opt = document.createElement("option");
+    opt.value = pair[0];
+    opt.textContent = pair[1];
+    if (pair[0] === (cur === "0" ? "0" : "1")) opt.selected = true;
+    select.appendChild(opt);
+  });
+  select.onchange = () => { setariDirty[row.Setting] = select.value; };
+  div.appendChild(select);
+
+  if (row.Descriere && String(row.Descriere).trim() !== "") {
+    const d = document.createElement("div");
+    d.className = "setari-desc";
+    d.textContent = row.Descriere;
+    div.appendChild(d);
+  }
+
+  return div;
+}
+
 function renderSetariTab(tabId) {
   const wrap = document.getElementById("setari-content");
   if (!wrap) return;
@@ -1814,6 +1947,19 @@ async function saveSetari() {
     if (keys.indexOf("TipVanz") !== -1) {
       POS_STATE.tipVanz = (String(setariDirty["TipVanz"]).trim() === "1") ? "fastfood" : "restaurant";
       applyTipVanzUI();
+    }
+
+    // Numarul de zecimale se aplica imediat in nota afisata.
+    if (keys.indexOf("NrZecCant") !== -1) {
+      const nz = parseInt(setariDirty["NrZecCant"], 10);
+      POS_STATE.nrZecCant = (nz >= 0 && nz <= 2) ? nz : 1;
+      renderOrderItems();
+    }
+
+    // Discountul permis/interzis se aplica imediat (ascunde butoanele).
+    if (keys.indexOf("RED") !== -1) {
+      POS_STATE.red = (String(setariDirty["RED"]).trim() === "0") ? 0 : 1;
+      applyRedUI();
     }
 
     setariDirty = {};
@@ -2454,6 +2600,7 @@ let prodTempCounter = 0;
 let prodGroups = [];       // din tblGrp
 let prodSectii = [];       // din tblSectii
 let prodTvaList = [];      // din tblTVA
+let prodKpList = [];       // din tblKP (sectii de tiparire)
 
 function prodNum(v) {
   const s = (v === null || v === undefined) ? "" : String(v).trim();
@@ -2552,6 +2699,7 @@ async function loadProdGroup() {
 
     prodSectii = data.sectii || [];
     prodTvaList = data.tva || [];
+    prodKpList = data.kpList || [];
 
     const headerSel = document.getElementById("prod-grup-select");
     if (headerSel) {
@@ -2578,6 +2726,12 @@ async function loadProdGroup() {
       prodTvaList.map(t => t.Nr_TVA), v => {
         const t = prodTvaList.find(x => x.Nr_TVA === v);
         return v + (t ? " - " + t.Cota + "%" : "");
+      });
+    fillProdCombo(document.getElementById("prod-kp-select"),
+      [""].concat(prodKpList.map(k => k.NrLogic)), v => {
+        if (v === "") return "(fara sectie de tiparire)";
+        const k = prodKpList.find(x => x.NrLogic === v);
+        return v + (k ? " - " + k.Nume : "");
       });
 
     prodWorking = {};
@@ -2768,7 +2922,8 @@ function renderProduseInspector() {
   setProdField("prod-den-input", row.Denumire);
   setProdField("prod-um-input", row.UM);
   if (document.getElementById("prod-grup-field")) document.getElementById("prod-grup-field").value = String(row.NrGrp);
-  setProdField("prod-kp-input", row.KP);
+  const kpSel = document.getElementById("prod-kp-select");
+  if (kpSel) kpSel.value = (row.KP === null || row.KP === undefined) ? "" : String(row.KP);
   if (document.getElementById("prod-sectie-select")) document.getElementById("prod-sectie-select").value = String(row.Sectie);
   if (document.getElementById("prod-tva-select")) document.getElementById("prod-tva-select").value = String(row.Nr_TVA);
   setProdField("prod-pv-input", row.PV);
@@ -2820,7 +2975,7 @@ function syncProdFromInputs() {
   row.Denumire = prodFieldValue("prod-den-input", "");
   row.UM = prodFieldValue("prod-um-input", "");
   row.NrGrp = prodNum(document.getElementById("prod-grup-field") ? document.getElementById("prod-grup-field").value : row.NrGrp);
-  row.KP = prodNum(document.getElementById("prod-kp-input") ? document.getElementById("prod-kp-input").value : "");
+  row.KP = prodNum(document.getElementById("prod-kp-select") ? document.getElementById("prod-kp-select").value : "");
   row.Sectie = prodNum(document.getElementById("prod-sectie-select") ? document.getElementById("prod-sectie-select").value : "");
   row.Nr_TVA = prodNum(document.getElementById("prod-tva-select") ? document.getElementById("prod-tva-select").value : "");
   row.PV = prodNum(document.getElementById("prod-pv-input") ? document.getElementById("prod-pv-input").value : "");
@@ -2834,7 +2989,7 @@ function syncProdFromInputs() {
 
 function bindProdInputs() {
   const textIds = ["prod-key-input", "prod-barcod-input", "prod-den-input", "prod-um-input",
-    "prod-kp-input", "prod-pv-input", "prod-poz-input", "prod-size-input", "prod-font-input",
+    "prod-pv-input", "prod-poz-input", "prod-size-input", "prod-font-input",
     "prod-imagine-input", "prod-irp-input", "prod-iivcn-input"];
   textIds.forEach(id => {
     const el = document.getElementById(id);
@@ -3322,6 +3477,9 @@ async function saveParole() {
     });
     const res = await resp.json();
     if (res.status !== "success") throw new Error(res.message);
+    // Reflectam imediat daca discountul cere parola.
+    POS_STATE.parolaDiscount = (String(payload.ParolaDiscount || "").trim() !== "") ? 1 : 0;
+    POS_STATE.discountParola = "";
     showToast(res.message);
   } catch (err) {
     appAlert("Eroare salvare parole: " + err.message);
@@ -4303,215 +4461,380 @@ function deleteSect() {
   }, "Da", "Nu");
 }
 
-// IMPRIMANTE SECTII (tblKP)
 // --------------------------------------------------------------------------
-let kpRows = [];
-let kpSelected = null;
-let kpMode = "insert";
-let kpStare = false;
+// IMPRIMANTE (sectii tblKP + destinatii fizice in print-service/config.json)
+// --------------------------------------------------------------------------
+let imprSections = [];     // [{NrLogic, Nume, Stare, usedCount, isNew, target:{type,host,port,name}}]
+let imprDeleted = [];      // NrLogic de sters la salvare
+let imprGlobal = {         // tinte globale
+  nota: { type: "preview", host: "", port: "9100", name: "" },
+  raport: { type: "preview", host: "", port: "9100", name: "" },
+  fiscal: { type: "file", host: "", port: "9100", name: "" },
+  defaultPrinter: ""
+};
+let imprSelected = null;
+let imprWindowsPrinters = [];
+let imprServiceUp = false;
 
-const KP_FIELD_DEFS = [
-  { key: "NrLogic", label: "NrLogic (1-255)", num: true },
-  { key: "Nume", label: "Nume" },
-  { key: "DenumirePrinter", label: "Denumire printer" },
-  { key: "Serie", label: "Serie" },
-  { key: "MagID", label: "MagID", num: true },
-  { key: "raport", label: "raport", num: true },
-  { key: "CaleTSC", label: "CaleTSC" }
+const IMPR_TARGET_TYPES = [
+  ["network", "Retea (IP:port)"],
+  ["windows", "Windows (nume imprimanta)"],
+  ["preview", "Preview (emulator)"],
+  ["file", "Fisier (spool)"]
 ];
 
-function openKpEditor() {
-  document.getElementById("modal-kp").classList.add("active");
-  loadKpRows();
+function imprNormalizeTarget(t) {
+  t = t || {};
+  return {
+    type: (t.target || "preview"),
+    host: (t.host || ""),
+    port: (t.port !== undefined && t.port !== null ? String(t.port) : "9100"),
+    name: (t.name || t.printer || "")
+  };
 }
 
-function closeKpModal() {
-  document.getElementById("modal-kp").classList.remove("active");
-  kpSelected = null;
+function openProgImprimante() {
+  navigateToScreen("screen-prog-imprimante");
+  loadImprimante();
 }
 
-function loadKpRows() {
-  fetch("api/kp.php")
-    .then(r => r.json())
-    .then(data => {
-      if (data.status !== "success") throw new Error(data.message || "Eroare");
-      kpRows = data.rows || [];
-      renderKpList();
-    })
-    .catch(err => showToast("Eroare imprimante: " + err.message));
+function closeProgImprimante() {
+  navigateToScreen("screen-programare");
 }
 
-function renderKpList() {
-  const list = document.getElementById("kp-list");
-  if (!list) return;
-  list.innerHTML = "";
+function reloadImprimante() {
+  loadImprimante();
+}
 
-  if (kpRows.length === 0) {
-    list.innerHTML = '<div class="kp-row" style="display:block; color:#888;">Nu exista imprimante</div>';
-  }
+async function loadImprimante() {
+  try {
+    const kpRes = await fetch("api/kp.php").then(r => r.json());
+    if (kpRes.status !== "success") throw new Error(kpRes.message || "Eroare sectii");
+    const cfgRes = await fetch("api/print_config.php?action=config").then(r => r.json());
+    const cfg = (cfgRes && cfgRes.status === "success" && cfgRes.config) ? cfgRes.config : {};
+    imprServiceUp = !!(cfgRes && cfgRes.service_up);
+    const printers = cfg.printers || {};
 
-  kpRows.forEach(r => {
-    const row = document.createElement("div");
-    row.className = `kp-row ${r.NrLogic === kpSelected ? "selected" : ""} ${r.Stare ? "" : "inactive"}`;
-    const stCell = r.Stare
-      ? '<span class="kp-on">Da</span>'
-      : '<span class="kp-off">Nu</span>';
-    row.innerHTML = `
-      <span class="kp-cell"><b>${r.NrLogic}</b></span>
-      <span class="kp-cell">${escapeHtml(r.Nume)}</span>
-      <span class="kp-cell">${escapeHtml(r.DenumirePrinter)}</span>
-      ${stCell}
-    `;
-    row.onclick = () => {
-      kpSelected = r.NrLogic;
-      renderKpList();
-      updateKpBtns();
+    imprSections = (kpRes.rows || []).map(r => ({
+      NrLogic: r.NrLogic,
+      Nume: r.Nume,
+      Stare: !!r.Stare,
+      usedCount: r.usedCount || 0,
+      isNew: false,
+      target: imprNormalizeTarget(printers[String(r.NrLogic)])
+    }));
+    imprDeleted = [];
+    imprGlobal = {
+      nota: imprNormalizeTarget(cfg.nota_target),
+      raport: imprNormalizeTarget(cfg.raport_target || cfg.nota_target),
+      fiscal: imprNormalizeTarget(cfg.fiscal_target || { target: "file" }),
+      defaultPrinter: (cfg.default_printer_nr !== undefined && cfg.default_printer_nr !== null) ? String(cfg.default_printer_nr) : ""
     };
-    list.appendChild(row);
-  });
+    imprSelected = imprSections.length ? imprSections[0].NrLogic : null;
 
-  updateKpBtns();
+    // Lista imprimantelor Windows (optional, pentru combo).
+    imprWindowsPrinters = [];
+    fetch("api/print_config.php?action=printers")
+      .then(r => r.json())
+      .then(d => { if (d && d.status === "success") { imprWindowsPrinters = d.printers || []; renderImprimante(); } })
+      .catch(() => {});
+
+    renderImprimante();
+  } catch (err) {
+    appAlert("Eroare incarcare imprimante: " + err.message);
+  }
 }
 
-function updateKpBtns() {
-  const hasSel = kpSelected !== null;
-  const ed = document.getElementById("btn-kp-edit");
-  const del = document.getElementById("btn-kp-del");
-  if (ed) ed.disabled = !hasSel;
-  if (del) del.disabled = !hasSel;
+function imprSel() {
+  return imprSections.find(s => s.NrLogic === imprSelected) || null;
 }
 
-function buildKpFields(values, roNr) {
-  const wrap = document.getElementById("kp-fields");
+function renderImprimante() {
+  const badge = document.getElementById("impr-service-badge");
+  if (badge) {
+    badge.textContent = imprServiceUp ? "Serviciu: ONLINE" : "Serviciu: OFFLINE";
+    badge.className = "impr-badge " + (imprServiceUp ? "on" : "off");
+  }
+  renderImprList();
+  renderImprInspector();
+  renderImprGlobal();
+}
+
+function imprTargetLabel(t) {
+  if (!t) return "-";
+  if (t.type === "network") return "Retea " + (t.host || "?") + ":" + (t.port || "9100");
+  if (t.type === "windows") return "Windows " + (t.name || "?");
+  if (t.type === "file") return "Fisier";
+  return "Preview";
+}
+
+function renderImprList() {
+  const list = document.getElementById("impr-list");
+  if (!list) return;
+  if (!imprSections.length) {
+    list.innerHTML = '<div class="impr-empty">Nu exista sectii. Apasa Adauga.</div>';
+  } else {
+    list.innerHTML = imprSections.map(s => {
+      const sel = (s.NrLogic === imprSelected) ? " selected" : "";
+      const off = s.Stare ? "" : " inactive";
+      return `<div class="impr-list-item${sel}${off}" onclick="imprSelect(${s.NrLogic})">
+        <div><span class="impr-li-nr">${s.NrLogic}</span> ${escapeHtml(s.Nume || "(fara nume)")}${s.isNew ? ' <span class="impr-dirty">*</span>' : ''}</div>
+        <div class="impr-li-sub">${escapeHtml(imprTargetLabel(s.target))}</div>
+      </div>`;
+    }).join("");
+  }
+  const del = document.getElementById("impr-del-btn");
+  if (del) del.disabled = (imprSelected === null);
+}
+
+function imprSelect(nr) {
+  imprSelected = nr;
+  renderImprInspector();
+  renderImprList();
+}
+
+function imprSetNume(v) {
+  const s = imprSel(); if (!s) return;
+  s.Nume = v;
+}
+
+function imprToggleStare() {
+  const s = imprSel(); if (!s) return;
+  s.Stare = !s.Stare;
+  renderImprInspector();
+}
+
+function imprTargetFieldChanged(prefix, field, value) {
+  if (prefix === "sect") { const s = imprSel(); if (s) s.target[field] = value; }
+  else if (imprGlobal[prefix]) { imprGlobal[prefix][field] = value; }
+}
+
+function imprTargetTypeChanged(prefix, type) {
+  if (prefix === "sect") { const s = imprSel(); if (s) { s.target.type = type; renderImprInspector(); } }
+  else if (imprGlobal[prefix]) { imprGlobal[prefix].type = type; renderImprGlobal(); }
+}
+
+function imprTypeOptions(selected) {
+  return IMPR_TARGET_TYPES.map(([v, l]) =>
+    `<option value="${v}"${v === selected ? " selected" : ""}>${l}</option>`).join("");
+}
+
+function imprWinPrinterField(prefix, current) {
+  if (imprWindowsPrinters && imprWindowsPrinters.length) {
+    const has = imprWindowsPrinters.indexOf(current) !== -1;
+    let opts = "";
+    if (current && !has) {
+      opts += `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} (actual)</option>`;
+    }
+    opts += imprWindowsPrinters.map(n =>
+      `<option value="${escapeHtml(n)}"${n === current ? " selected" : ""}>${escapeHtml(n)}</option>`).join("");
+    return `<div class="tva-field"><label>Imprimanta Windows</label>
+      <select class="prod-combo" onchange="imprTargetFieldChanged('${prefix}','name',this.value)">${opts}</select></div>`;
+  }
+  return `<div class="tva-field"><label>Imprimanta Windows</label>
+    <div class="tva-field-row">
+      <input type="text" class="tva-input" value="${escapeHtml(current || "")}" oninput="imprTargetFieldChanged('${prefix}','name',this.value)">
+    </div>
+    <div class="impr-hint">Lista imprimantelor Windows nu este disponibila (pywin32 lipseste). Scrie numele exact.</div></div>`;
+}
+
+function imprTargetFieldsHtml(prefix, t) {
+  let html = `<div class="tva-field"><label>Tip destinatie</label>
+    <select class="prod-combo" onchange="imprTargetTypeChanged('${prefix}', this.value)">${imprTypeOptions(t.type)}</select></div>`;
+  if (t.type === "network") {
+    html += `<div class="tva-field"><label>Host / IP</label>
+      <div class="tva-field-row"><input type="text" class="tva-input" value="${escapeHtml(t.host || "")}" oninput="imprTargetFieldChanged('${prefix}','host',this.value)"></div></div>
+      <div class="tva-field"><label>Port</label>
+      <div class="tva-field-row"><input type="text" class="tva-input" value="${escapeHtml(t.port || "9100")}" oninput="imprTargetFieldChanged('${prefix}','port',this.value)"></div></div>`;
+  } else if (t.type === "windows") {
+    html += imprWinPrinterField(prefix, t.name);
+  } else if (t.type === "file") {
+    html += `<div class="impr-hint">Bonurile se scriu in spool-ul serviciului de tiparire (fara imprimanta).</div>`;
+  } else {
+    html += `<div class="impr-hint">Bonul merge in emulatorul de previzualizare.</div>`;
+  }
+  return html;
+}
+
+function renderImprInspector() {
+  const wrap = document.getElementById("impr-insp-body");
   if (!wrap) return;
-  wrap.innerHTML = "";
-
-  KP_FIELD_DEFS.forEach(f => {
-    const v = (values && values[f.key] !== null && values[f.key] !== undefined) ? values[f.key] : "";
-    const ro = (roNr && f.key === "NrLogic") ? "readonly" : "";
-    const kb = f.num
-      ? '<button class="act-btn fkb-mini" onclick="openNumericKeyboardFor(\'kp-inp-' + f.key + '\', \'' + f.label + '\')">123</button>'
-      : '<button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor(\'kp-inp-' + f.key + '\')">⌨️</button>';
-    wrap.insertAdjacentHTML("beforeend",
-      '<div class="tva-field">' +
-        '<label>' + f.label + '</label>' +
-        '<div class="tva-field-row">' +
-          '<input type="text" id="kp-inp-' + f.key + '" class="tva-input" value="' + escapeHtml(String(v)) + '" ' + ro + '>' +
-          kb +
-        '</div>' +
-      '</div>'
-    );
-  });
+  const s = imprSel();
+  if (!s) {
+    wrap.innerHTML = '<div class="impr-empty">Selecteaza o sectie sau adauga una noua.</div>';
+    return;
+  }
+  const title = s.isNew ? "SECTIE NOUA" : ("SECTIE " + s.NrLogic);
+  wrap.innerHTML = `
+    <div class="impr-insp-head"><span>${title}</span>${s.isNew ? '<span class="impr-dirty">* nesalvata</span>' : ''}</div>
+    <div class="tva-field"><label>NrLogic</label>
+      <div class="tva-field-row"><input type="text" class="tva-input" value="${s.NrLogic}" readonly></div></div>
+    <div class="tva-field"><label>Nume sectie</label>
+      <div class="tva-field-row">
+        <input type="text" id="impr-nume-input" class="tva-input" maxlength="255" value="${escapeHtml(s.Nume || "")}" oninput="imprSetNume(this.value)">
+        <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('impr-nume-input')">&#9000;</button>
+      </div></div>
+    <div class="tva-field"><label>Stare (activa)</label>
+      <button class="act-btn" onclick="imprToggleStare()" style="width:100%;${s.Stare ? "background:#008000;color:#fff;" : "background:#ffff00;"}">${s.Stare ? "Da" : "Nu"}</button></div>
+    <div class="impr-sep"></div>
+    <div class="impr-panel-title">Destinatie fizica</div>
+    ${imprTargetFieldsHtml("sect", s.target)}
+    <div class="tva-actions"><button class="act-btn" onclick="imprTestSection()">Test tiparire</button></div>
+  `;
 }
 
-function readKpValues() {
-  const out = {};
-  KP_FIELD_DEFS.forEach(f => {
-    const el = document.getElementById("kp-inp-" + f.key);
-    out[f.key] = el ? el.value.trim() : "";
+function renderImprGlobal() {
+  const wrap = document.getElementById("impr-global-body");
+  if (!wrap) return;
+  let html = "";
+  html += `<div class="impr-global-block"><div class="impr-panel-title">Nota de plata</div>${imprTargetFieldsHtml("nota", imprGlobal.nota)}
+    <div class="tva-actions"><button class="act-btn" onclick="imprTestGlobal('nota')">Test</button></div></div>`;
+  html += `<div class="impr-global-block"><div class="impr-panel-title">Rapoarte</div>${imprTargetFieldsHtml("raport", imprGlobal.raport)}
+    <div class="tva-actions"><button class="act-btn" onclick="imprTestGlobal('raport')">Test</button></div></div>`;
+  html += `<div class="impr-global-block"><div class="impr-panel-title">Fiscal</div>${imprTargetFieldsHtml("fiscal", imprGlobal.fiscal)}</div>`;
+
+  const defOpts = imprSections.map(s =>
+    `<option value="${s.NrLogic}"${String(s.NrLogic) === imprGlobal.defaultPrinter ? " selected" : ""}>${escapeHtml(s.Nume || ("Sectia " + s.NrLogic))}</option>`).join("");
+  html += `<div class="impr-global-block"><div class="impr-panel-title">Imprimanta implicita</div>
+    <div class="tva-field"><select class="prod-combo" onchange="imprSetDefault(this.value)">
+      <option value=""${imprGlobal.defaultPrinter === "" ? " selected" : ""}>(implicit / preview)</option>
+      ${defOpts}
+    </select></div>
+    <div class="impr-hint">Folosita pentru bonurile de sectie fara destinatie proprie.</div></div>`;
+  wrap.innerHTML = html;
+}
+
+function imprSetDefault(v) {
+  imprGlobal.defaultPrinter = v;
+}
+
+function imprAddSection() {
+  const maxNr = imprSections.reduce((m, s) => Math.max(m, Number(s.NrLogic) || 0), 0);
+  const nr = maxNr + 1;
+  imprSections.push({
+    NrLogic: nr, Nume: "", Stare: true, usedCount: 0, isNew: true,
+    target: { type: "preview", host: "", port: "9100", name: "" }
   });
+  imprSelected = nr;
+  renderImprimante();
+}
+
+function imprDeleteSection() {
+  const s = imprSel();
+  if (!s) return;
+  if (!s.isNew && s.usedCount > 0) {
+    appAlert("Sectia are " + s.usedCount + " produse atasate. Mutati-le pe alta sectie inainte de stergere.");
+    return;
+  }
+  appConfirm("Stergeti sectia " + s.NrLogic + " (" + (s.Nume || "fara nume") + ")?", () => {
+    if (!s.isNew) imprDeleted.push(s.NrLogic);
+    imprSections = imprSections.filter(x => x.NrLogic !== s.NrLogic);
+    imprSelected = imprSections.length ? imprSections[0].NrLogic : null;
+    renderImprimante();
+  }, "Sterge", "Renunta");
+}
+
+function imprValidateTarget(t) {
+  if (t.type === "network") {
+    if (!String(t.host || "").trim()) return "lipseste host/IP";
+    const p = parseInt(t.port, 10);
+    if (isNaN(p) || p < 1 || p > 65535) return "port invalid (1-65535)";
+  }
+  if (t.type === "windows") {
+    if (!String(t.name || "").trim()) return "lipseste numele imprimantei Windows";
+  }
+  return null;
+}
+
+function imprTargetToPayload(t) {
+  const out = { target: t.type };
+  if (t.type === "network") { out.host = String(t.host || "").trim(); out.port = parseInt(t.port, 10) || 9100; }
+  if (t.type === "windows") { out.name = String(t.name || "").trim(); }
   return out;
 }
 
-function renderKpStareToggle() {
-  const btn = document.getElementById("kp-stare-toggle");
-  if (!btn) return;
-  btn.innerText = kpStare ? "Da" : "Nu";
-  btn.style.background = kpStare ? "#008000" : "#ffff00";
-  btn.style.color = kpStare ? "#ffffff" : "#000000";
+async function imprPost(url, payload) {
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  return resp.json();
 }
 
-function toggleKpStare() {
-  kpStare = !kpStare;
-  renderKpStareToggle();
-}
-
-function openKpInsert() {
-  kpMode = "insert";
-  kpStare = false;
-  const defs = { MagID: "11" };
-  buildKpFields(defs, false);
-  renderKpStareToggle();
-  document.getElementById("kp-edit-title").innerText = "IMPRIMANTA NOUA";
-  document.getElementById("modal-kp-edit").classList.add("active");
-}
-
-function openKpEdit() {
-  if (kpSelected === null) {
-    showToast("Selectati mai intai o imprimanta");
-    return;
+async function saveImprimante() {
+  for (const s of imprSections) {
+    if (!String(s.Nume || "").trim()) {
+      appAlert("Sectia " + s.NrLogic + " nu are nume.");
+      imprSelected = s.NrLogic; renderImprimante(); return;
+    }
+    const e = imprValidateTarget(s.target);
+    if (e) { appAlert("Sectia " + (s.Nume || s.NrLogic) + ": " + e); imprSelected = s.NrLogic; renderImprimante(); return; }
   }
-  const found = kpRows.find(r => r.NrLogic === kpSelected);
-  if (!found) return;
-
-  kpMode = "update";
-  buildKpFields(found, true);
-  kpStare = !!found.Stare;
-  renderKpStareToggle();
-  document.getElementById("kp-edit-title").innerText = "EDITARE IMPRIMANTA";
-  document.getElementById("modal-kp-edit").classList.add("active");
-}
-
-function closeKpEdit() {
-  document.getElementById("modal-kp-edit").classList.remove("active");
-}
-
-async function saveKp() {
-  const v = readKpValues();
-  const nrLogic = parseInt(v.NrLogic, 10);
-  if (isNaN(nrLogic) || nrLogic < 1 || nrLogic > 255) {
-    showToast("NrLogic trebuie sa fie intre 1 si 255");
-    return;
+  for (const key of ["nota", "raport", "fiscal"]) {
+    const e = imprValidateTarget(imprGlobal[key]);
+    if (e) { appAlert("Tinta " + key + ": " + e); return; }
   }
-  const magId = v.MagID === "" ? "" : v.MagID;
-
-  const payload = {
-    action: kpMode === "update" ? "update" : "insert",
-    NrLogic: nrLogic,
-    Serie: v.Serie,
-    Stare: kpStare ? 1 : 0,
-    Nume: v.Nume,
-    MagID: magId,
-    CaleTSC: v.CaleTSC,
-    raport: v.raport,
-    DenumirePrinter: v.DenumirePrinter
-  };
+  if (!imprServiceUp) { appAlert("Serviciul de tiparire este oprit; configuratia nu poate fi salvata."); return; }
 
   try {
-    const resp = await fetch("api/kp.php", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    const res = await resp.json();
+    for (const nr of imprDeleted) {
+      const res = await imprPost("api/kp.php", { action: "delete", NrLogic: nr });
+      if (res.status !== "success") throw new Error(res.message);
+    }
+    for (const s of imprSections) {
+      const res = await imprPost("api/kp.php", {
+        action: s.isNew ? "insert" : "update",
+        NrLogic: s.NrLogic,
+        Nume: String(s.Nume).trim(),
+        Stare: s.Stare ? 1 : 0,
+        DenumirePrinter: s.target.type === "windows" ? s.target.name : (s.target.type === "network" ? s.target.host : "")
+      });
+      if (res.status !== "success") throw new Error(res.message);
+      s.isNew = false;
+    }
+
+    const printers = {};
+    imprSections.forEach(s => { printers[String(s.NrLogic)] = imprTargetToPayload(s.target); });
+    const config = {
+      printers: printers,
+      nota_target: imprTargetToPayload(imprGlobal.nota),
+      raport_target: imprTargetToPayload(imprGlobal.raport),
+      fiscal_target: imprTargetToPayload(imprGlobal.fiscal),
+      default_printer_nr: imprGlobal.defaultPrinter === "" ? null : imprGlobal.defaultPrinter
+    };
+    const res = await imprPost("api/print_config.php", { action: "save", config: config });
     if (res.status !== "success") throw new Error(res.message);
-    closeKpEdit();
-    showToast(res.message);
-    kpSelected = nrLogic;
-    loadKpRows();
+
+    showToast("Configurare salvata");
+    imprDeleted = [];
+    await loadImprimante();
   } catch (err) {
-    appAlert("Eroare salvare imprimanta: " + err.message);
+    appAlert("Eroare salvare imprimante: " + err.message);
   }
 }
 
-function deleteKp() {
-  if (kpSelected === null) return;
-  appConfirm("Stergeti imprimanta " + kpSelected + "?", async () => {
-    try {
-      const resp = await fetch("api/kp.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "delete", NrLogic: kpSelected })
-      });
-      const res = await resp.json();
-      if (res.status !== "success") throw new Error(res.message);
-      showToast(res.message);
-      kpSelected = null;
-      loadKpRows();
-    } catch (err) {
-      appAlert("Eroare stergere imprimanta: " + err.message);
-    }
-  }, "Da", "Nu");
+async function imprTestTarget(t) {
+  if (!imprServiceUp) { appAlert("Serviciul de tiparire este oprit."); return; }
+  const e = imprValidateTarget(t);
+  if (e) { appAlert(e); return; }
+  showToast("Se trimite testul...");
+  try {
+    const res = await imprPost("api/print_config.php", { action: "test", target: imprTargetToPayload(t) });
+    if (res.status === "success") appAlert("Test trimis: " + (res.message || "OK"));
+    else appAlert("Eroare test: " + (res.message || "eroare"));
+  } catch (err) {
+    appAlert("Eroare test: " + err.message);
+  }
+}
+
+function imprTestSection() {
+  const s = imprSel(); if (!s) return;
+  imprTestTarget(s.target);
+}
+
+function imprTestGlobal(key) {
+  if (imprGlobal[key]) imprTestTarget(imprGlobal[key]);
 }
 
 // --------------------------------------------------------------------------
@@ -4943,29 +5266,53 @@ function fkbEnsureFieldVisible(targetEl) {
   }
 }
 
-// Tastatura numerica generica: scrie in input-ul tinta (butonul "123" de langa camp)
+// Tastatura numerica generica: scrie in input-ul tinta (butonul "123" de langa
+// camp) SAU ruleaza un callback (mod "prompt", ex. parola de discount).
 let numpadTargetId = null;
+let numpadPromptCallback = null;
+let numpadDigitsOnly = false;
 
 function openNumericKeyboardFor(inputId, title) {
   const el = document.getElementById(inputId);
   if (!el) return;
   numpadTargetId = inputId;
+  numpadPromptCallback = null;
+  numpadDigitsOnly = false;
   const disp = document.getElementById("num-display");
-  if (disp) disp.value = el.value || "";
+  if (disp) { disp.type = "text"; disp.value = el.value || ""; }
+  const dot = document.getElementById("num-dot-key");
+  if (dot) { dot.style.visibility = "visible"; dot.disabled = false; }
   const t = document.getElementById("num-title");
   if (t) t.innerText = title || "TASTATURA NUMERICA";
+  document.getElementById("modal-num").classList.add("active");
+}
+
+// Mod prompt: colecteaza o valoare numerica si o trimite callback-ului la OK.
+function openNumericPrompt(title, onSubmit) {
+  numpadTargetId = null;
+  numpadPromptCallback = onSubmit || null;
+  numpadDigitsOnly = true;
+  const disp = document.getElementById("num-display");
+  if (disp) { disp.type = "password"; disp.value = ""; }
+  const dot = document.getElementById("num-dot-key");
+  if (dot) { dot.style.visibility = "hidden"; dot.disabled = true; }
+  const t = document.getElementById("num-title");
+  if (t) t.innerText = title || "INTRODUCETI";
   document.getElementById("modal-num").classList.add("active");
 }
 
 function closeNumericKeyboard() {
   document.getElementById("modal-num").classList.remove("active");
   numpadTargetId = null;
+  numpadPromptCallback = null;
+  numpadDigitsOnly = false;
 }
 
 function numpadKey(ch) {
   const disp = document.getElementById("num-display");
   let v = disp.value;
   if (ch === ".") {
+    if (numpadDigitsOnly) return; // parola = doar cifre
     if (!v.includes(".")) disp.value = v === "" ? "0." : v + ".";
     return;
   }
@@ -4983,9 +5330,16 @@ function numpadClear() {
 }
 
 function numpadOk() {
+  const value = document.getElementById("num-display").value;
+  if (numpadPromptCallback) {
+    const cb = numpadPromptCallback;
+    closeNumericKeyboard();
+    cb(value);
+    return;
+  }
   const el = document.getElementById(numpadTargetId);
   if (el) {
-    el.value = document.getElementById("num-display").value;
+    el.value = value;
     el.dispatchEvent(new Event("input", { bubbles: true }));
   }
   closeNumericKeyboard();
@@ -5646,6 +6000,22 @@ function openQtyModal(index, ev) {
   // Campul porneste gol: utilizatorul tasteaza direct cantitatea noua (ex: 5)
   const input = document.getElementById("qty-input-display");
   input.value = "";
+
+  // Adaptam tastatura la numarul de zecimale configurat (tblSet.NrZecCant).
+  const zec = POS_STATE.nrZecCant;
+  const dot = document.getElementById("qty-dot-key");
+  if (dot) {
+    // Pastram celula in grid (nu stricam aranjarea tastaturii).
+    dot.style.visibility = (zec > 0) ? "visible" : "hidden";
+    dot.disabled = (zec <= 0);
+  }
+  const hint = document.getElementById("qty-dec-hint");
+  if (hint) {
+    hint.textContent = (zec === 0)
+      ? "doar numere intregi"
+      : "maxim " + zec + (zec === 1 ? " zecimala" : " zecimale");
+  }
+
   document.getElementById("modal-qty").classList.add("active");
 }
 
@@ -5658,24 +6028,28 @@ function closeQtyModal() {
 function qtyKey(ch) {
   const input = document.getElementById("qty-input-display");
   let v = input.value;
+  const zec = POS_STATE.nrZecCant;
 
   if (ch === ".") {
+    if (zec <= 0) return; // fara zecimale
     if (!v.includes(".")) {
       input.value = v === "" ? "0." : v + ".";
     }
     return;
   }
 
-  // cifra: maxim o zecimala
+  // cifra: respectam numarul de zecimale configurat
   if (v.includes(".")) {
     const dec = v.split(".")[1];
-    if (dec.length >= 1) return;
+    if (dec.length >= zec) return;
   }
-  if (v === "0") {
-    input.value = ch;
+  const nv = (v === "0") ? ch : (v + ch);
+  const n = parseFloat(nv);
+  if (!isNaN(n) && n > POS_STATE.cantMax) {
+    showToast("Cantitatea maxima admisa este " + POS_STATE.cantMax);
     return;
   }
-  input.value = v + ch;
+  input.value = nv;
 }
 
 function qtyBackspace() {
@@ -5696,6 +6070,10 @@ async function confirmQty() {
 
   if (isNaN(cantitate) || cantitate <= 0 || !item) {
     showToast("Cantitatea trebuie sa fie mai mare decat 0");
+    return;
+  }
+  if (cantitate > POS_STATE.cantMax) {
+    showToast("Cantitatea maxima admisa este " + POS_STATE.cantMax);
     return;
   }
 
@@ -5805,6 +6183,8 @@ function openDiscountModal() {
 
 function closeDiscountModal() {
   document.getElementById("modal-discount").classList.remove("active");
+  // Parola verificata este valabila doar pentru aceasta operatiune de discount.
+  POS_STATE.discountParola = "";
 }
 
 function discSetScope(scope) {
@@ -5927,6 +6307,12 @@ function discNumpad(ch) {
 }
 
 async function discApply() {
+  // Daca discountul cere parola si nu a fost inca verificata, o cerem acum.
+  if (POS_STATE.parolaDiscount === 1 && !POS_STATE.discountParola) {
+    ensureDiscountParola(() => discApply());
+    return;
+  }
+
   const base = discBase();
   const v = discNum();
   if (base <= 0) {
@@ -5957,6 +6343,9 @@ async function discApply() {
     value: v,
     motiv: discMotiv
   };
+  if (POS_STATE.parolaDiscount === 1) {
+    payload.parola = POS_STATE.discountParola;
+  }
 
   if (discScope === "line") {
     const it = discSelectedItem();
@@ -5974,8 +6363,18 @@ async function discApply() {
       body: JSON.stringify(payload)
     });
     const res = await resp.json();
-    if (res.status !== "success") throw new Error(res.message);
+    if (res.status !== "success") {
+      // Daca serverul cere parola (sau a fost schimbata intre timp), o cerem acum.
+      if (res.required === true || /parola/i.test(res.message || "")) {
+        POS_STATE.discountParola = "";
+        POS_STATE.parolaDiscount = 1;
+        ensureDiscountParola(() => discApply());
+        return;
+      }
+      throw new Error(res.message);
+    }
 
+    POS_STATE.discountParola = "";
     closeDiscountModal();
     await loadOrder(POS_STATE.masaCurenta);
     syncPaymentScreen();
@@ -5991,11 +6390,72 @@ async function discApply() {
 }
 
 function actionDiscount() {
+  if (POS_STATE.red === 0) {
+    showToast("Discountul nu este permis.");
+    return;
+  }
   if (!POS_STATE.articole.length) {
     showToast("Nota este goala; nu exista pe ce sa se aplice discount");
     return;
   }
-  openDiscountModal();
+  ensureDiscountParola(() => openDiscountModal());
+}
+
+// Cere parola de discount (daca este setata in tblParola.ParolaDiscount) inainte
+// de o operatiune de discount. Tastatura este numerica (parola = doar cifre).
+// Intreaba serverul de fiecare data, ca sa nu depinda de un flag local invechit.
+async function ensureDiscountParola(cb) {
+  if (POS_STATE.discountParola) {
+    if (cb) cb();
+    return;
+  }
+
+  let required = (POS_STATE.parolaDiscount === 1);
+  try {
+    const resp = await fetch("api/order_action.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "verify_discount_parola", parola: "" })
+    });
+    const res = await resp.json();
+    required = (res.required === true);
+    POS_STATE.parolaDiscount = required ? 1 : 0;
+  } catch (err) {
+    // Daca nu putem verifica, ne bazam pe flag-ul local.
+  }
+
+  if (!required) {
+    if (cb) cb();
+    return;
+  }
+  promptDiscountParola(cb);
+}
+
+function promptDiscountParola(cb) {
+  openNumericPrompt("PAROLA DISCOUNT", async (val) => {
+    if (!val) {
+      showToast("Introduceti parola de discount!");
+      promptDiscountParola(cb);
+      return;
+    }
+    try {
+      const resp = await fetch("api/order_action.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify_discount_parola", parola: val })
+      });
+      const res = await resp.json();
+      if (res.status !== "success") {
+        appAlert("Parola de discount incorecta!");
+        promptDiscountParola(cb);
+        return;
+      }
+      POS_STATE.discountParola = val;
+      if (cb) cb();
+    } catch (err) {
+      appAlert("Eroare verificare parola: " + err.message);
+    }
+  });
 }
 
 // --------------------------------------------------------------------------

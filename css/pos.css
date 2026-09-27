@@ -2558,3 +2558,183 @@ select.tva-input {
   font-weight: 900;
   margin-left: 4px;
 }
+
+/* ==========================================================================
+   ECRAN IMPRIMANTE (sectii logice + destinatii fizice)
+   ========================================================================== */
+.impr-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
+}
+
+.impr-list-panel {
+  width: 300px;
+  flex-shrink: 0;
+  background: #e6e6e6;
+  border: 1px solid #555;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  min-height: 0;
+}
+
+.impr-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 6px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.impr-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #bbb;
+  border-radius: 5px;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  color: #222;
+}
+
+.impr-list-item.selected {
+  background: var(--btn-selected-yellow);
+  border-color: #000;
+}
+
+.impr-list-item.inactive {
+  opacity: .55;
+}
+
+.impr-list-item .impr-li-nr {
+  color: var(--bg-blue-panel);
+  font-weight: 900;
+}
+
+.impr-list-item .impr-li-sub {
+  font-size: 11px;
+  font-weight: normal;
+  color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.impr-inspector {
+  flex: 1;
+  min-width: 0;
+  background: #e6e6e6;
+  border: 1px solid #555;
+  border-radius: 6px;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.impr-global {
+  width: 400px;
+  flex-shrink: 0;
+  background: #e6e6e6;
+  border: 1px solid #555;
+  border-radius: 6px;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.impr-panel-title {
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: .6px;
+  color: var(--bg-blue-panel);
+  padding: 4px 2px;
+  text-transform: uppercase;
+}
+
+.impr-sep {
+  height: 1px;
+  background: #bbb;
+  margin: 10px 0;
+}
+
+.impr-empty {
+  background: #ffffff;
+  border: 1px dashed #999;
+  border-radius: 4px;
+  padding: 12px;
+  color: #333;
+  font-size: 13px;
+}
+
+.impr-badge {
+  display: inline-block;
+  padding: 5px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: bold;
+  color: #ffffff;
+}
+
+.impr-badge.on {
+  background: #008000;
+}
+
+.impr-badge.off {
+  background: #b00000;
+}
+
+.impr-hint {
+  font-size: 12px;
+  color: #444;
+  background: #f5f5f5;
+  border-left: 3px solid var(--bg-blue-panel);
+  padding: 6px 8px;
+  border-radius: 3px;
+}
+
+.impr-insp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-blue-panel);
+  color: #ffffff;
+  font-weight: 900;
+  font-size: 16px;
+  letter-spacing: 1px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+}
+
+.impr-dirty {
+  color: #ffff00;
+  font-size: 12px;
+}
+
+.impr-global-block {
+  background: #ffffff;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  padding: 8px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.impr-global-block .impr-panel-title {
+  padding: 0;
+}
+
+.impr-inspector .tva-field,
+.impr-global-block .tva-field {
+  margin-bottom: 6px;
+}

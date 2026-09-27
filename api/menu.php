@@ -209,6 +209,51 @@ if ($stmtTV) {
     }
 }
 
+// 4d. Cantitatea maxima admisa pe o linie de nota (tblSet.CantMax).
+//     Protejeaza impotriva tastarii gresite a unei cantitati uriașe.
+//     Implicit 1000 cand setarea lipseste sau este invalida.
+$cantMax = 1000;
+$stmtCM = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'CantMax'");
+if ($stmtCM) {
+    $cm = sqlsrv_fetch_array($stmtCM, SQLSRV_FETCH_ASSOC);
+    if ($cm && trim((string)$cm['Value']) !== '') {
+        $cmVal = (float)str_replace(',', '.', trim((string)$cm['Value']));
+        if ($cmVal > 0) { $cantMax = $cmVal; }
+    }
+}
+
+// 4e. Numarul de zecimale pentru cantitate (tblSet.NrZecCant): 0, 1 sau 2.
+//     Implicit 1 (o zecimala) cand setarea lipseste sau este invalida.
+$nrZecCant = 1;
+$stmtNZ = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'NrZecCant'");
+if ($stmtNZ) {
+    $nz = sqlsrv_fetch_array($stmtNZ, SQLSRV_FETCH_ASSOC);
+    if ($nz && trim((string)$nz['Value']) !== '') {
+        $nzVal = (int)trim((string)$nz['Value']);
+        if ($nzVal >= 0 && $nzVal <= 2) { $nrZecCant = $nzVal; }
+    }
+}
+
+// 4f. Discountul permis/interzis (tblSet.RED): 1 = DA (permis), 0 = NU.
+//     Implicit 1 cand setarea lipseste sau este invalida.
+$red = 1;
+$stmtRed = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'RED'");
+if ($stmtRed) {
+    $rr = sqlsrv_fetch_array($stmtRed, SQLSRV_FETCH_ASSOC);
+    if ($rr && trim((string)$rr['Value']) !== '') {
+        $red = ((int)trim((string)$rr['Value']) === 0) ? 0 : 1;
+    }
+}
+
+// 4g. Parola de discount (tblParola.ParolaDiscount): 1 daca este setata (deci
+//     discountul cere parola), 0 daca nu. Valoarea parolei NU se trimite.
+$parolaDiscount = 0;
+$stmtPD = sqlsrv_query($conn, "SELECT TOP 1 ParolaDiscount FROM tblParola");
+if ($stmtPD) {
+    $pd = sqlsrv_fetch_array($stmtPD, SQLSRV_FETCH_ASSOC);
+    if ($pd && trim((string)($pd['ParolaDiscount'] ?? '')) !== '') { $parolaDiscount = 1; }
+}
+
 // 5. Date de contact pentru footer-ul ecranului mese (tblSet cheie/valoare)
 $distrRand1 = '';
 $distrRand2 = '';
@@ -232,6 +277,10 @@ sendJsonResponse([
     "meniulZilei" => $meniulZilei,
     "modLogare" => $modLogare,
     "tipVanz" => $tipVanz,
+    "cantMax" => $cantMax,
+    "nrZecCant" => $nrZecCant,
+    "red" => $red,
+    "parolaDiscount" => $parolaDiscount,
     "distrRand1" => $distrRand1,
     "distrRand2" => $distrRand2
 ]);

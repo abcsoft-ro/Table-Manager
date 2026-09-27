@@ -7,7 +7,8 @@
  *   3. scrie randul de Z in tblNrZ (NrZ, NRNota = ultimul NrDoc, Data, Ora);
  *   4. arhiveaza tblBonCurent -> tblBon (stampilat cu NrZ curent);
  *   5. arhiveaza tblNoteD -> tempECR;
- *   6. goleste tblNoteD si tblBonCurent.
+ *   6. goleste tblNoteD si tblBonCurent;
+ *   7. reseteaza contorul bonurilor de sectie tblSet.NrBon la 0.
  *
  * La orice eroare se face ROLLBACK si eroarea este propagata (THROW), deci
  * operatia nu se poate efectua partial. Intoarce noul NrZ ca resultset.
@@ -82,6 +83,10 @@ BEGIN
         -- Golire.
         DELETE FROM tblNoteD;
         DELETE FROM tblBonCurent;
+
+        -- Reset contorul bonurilor de sectie (numerotarea reporneste de la 1).
+        IF EXISTS (SELECT 1 FROM tblSet WHERE Setting = 'NrBon')
+            UPDATE tblSet SET Value = '0' WHERE Setting = 'NrBon';
 
         COMMIT TRANSACTION;
     END TRY

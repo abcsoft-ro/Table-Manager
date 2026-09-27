@@ -5,16 +5,46 @@
   "verify_ssl": false,
   "poll_interval_sec": 1.0,
   "max_attempts": 50,
-  "backoff_seconds": [5, 15, 30, 60, 300],
+  "backoff_seconds": [
+    5,
+    15,
+    30,
+    60,
+    300
+  ],
   "charset": "ascii",
   "receipt_width": 42,
-  "default_printer_nr": null,
+  "preview_dir": "C:\\Apache24\\htdocs\\rual\\print-service\\preview",
+  "fiscal_spool_dir": "C:\\Apache24\\htdocs\\rual\\print-service\\spool/fiscal",
+  "default_printer_nr": "1",
   "printers": {
-    "1": { "target": "preview", "name": "Bucatarie" },
-    "2": { "target": "preview", "name": "Bar" }
+    "1": {
+      "target": "network",
+      "host": "192.168.1.121",
+      "port": 9100,
+      "name": "Bucatarie"
+    },
+    "2": {
+      "target": "network",
+      "host": "192.168.1.121",
+      "port": 9100,
+      "name": "Bar"
+    }
   },
-  "nota_target": { "target": "preview" },
-  "fiscal_target": { "target": "file" },
+  "nota_target": {
+    "target": "network",
+    "host": "192.168.1.121",
+    "port": 9100
+  },
+  "fiscal_target": {
+    "target": "file"
+  },
+  "log_file": "C:\\Apache24\\htdocs\\rual\\print-service\\logs/print-service.log",
   "kitchen_title": "BON COMANDA",
-  "nota_title": "NOTA DE PLATA"
+  "nota_title": "NOTA DE PLATA",
+  "raport_target": {
+    "target": "network",
+    "host": "192.168.1.121",
+    "port": 9100
+  }
 }

@@ -613,18 +613,12 @@ function buildReportData($conn, $tip) {
 }
 
 /**
- * Se asigura ca procedura stocata dbo.RealizeazaZ exista (o creeaza din
- * api/sql/z_procedure.sql daca lipseste). Procedura face arhivarea + golirea
- * Z atomic (o singura tranzactie cu rollback).
+ * Se asigura ca procedura stocata dbo.RealizeazaZ exista si este la zi:
+ * o (re)creeaza mereu din api/sql/z_procedure.sql prin CREATE OR ALTER. Astfel
+ * instalatiile existente primesc automat modificarile procedurii (ex. resetarea
+ * contorului de bonuri de sectie la Z).
  */
 function ensureZProcedure($conn) {
-    $stmt = sqlsrv_query($conn, "SELECT OBJECT_ID('dbo.RealizeazaZ', 'P') AS OID");
-    if ($stmt !== false) {
-        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
-        if (!empty($row['OID'])) {
-            return true;
-        }
-    }
     $file = __DIR__ . '/sql/z_procedure.sql';
     if (!is_readable($file)) {
         return false;

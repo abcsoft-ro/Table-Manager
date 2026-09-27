@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>TableManager 2.1C - Modern Web POS (MSSQL Rual)</title>
-  <link rel="stylesheet" href="css/pos.css?v=20260913i">
+  <link rel="stylesheet" href="css/pos.css?v=20260929a">
   <script>
     /* Scalare UI libera pe AMBELE axe, plecand de la canvasul minim 1024x768.
        --pos-scale = factorul proportional (limitat de axa cu raportul cel mai mic);
@@ -132,7 +132,7 @@
         <button class="act-btn" id="btn-marcare" onclick="actionMarcare()">Marcare</button>
         <button class="act-btn red-text" onclick="actionNota()">NOTA</button>
         <button class="act-btn" onclick="actionModPreparare()">Mod<br>Preparare</button>
-        <button class="act-btn" onclick="actionDiscount()">Discount</button>
+        <button class="act-btn js-discount-btn" onclick="actionDiscount()">Discount</button>
         <button class="act-btn vd-btn" onclick="actionVoid()">VD</button>
         <button class="act-btn" onclick="actionQty()">QTY</button>
         
@@ -243,7 +243,7 @@
       <!-- Bara de jos pentru plata -->
       <div class="bottom-actions-bar">
         <button class="act-btn" id="btn-transfer" onclick="actionTransfer()">Transfer</button>
-        <button class="act-btn" onclick="actionDiscount()">Discount</button>
+        <button class="act-btn js-discount-btn" onclick="actionDiscount()">Discount</button>
         <button class="act-btn" onclick="actionCUI()">CUI</button>
         <button class="act-btn" id="btn-proforma" onclick="actionProforma()">Nota<br>Proforma</button>
         <div class="act-spacer"></div>
@@ -311,6 +311,7 @@
         <button class="prog-btn" onclick="progAction('Cote TVA')">Cote TVA</button>
         <button class="prog-btn" onclick="progAction('Conectare server')">Conectare server</button>
         <button class="prog-btn" onclick="progAction('Sincronizare produse')">Sincronizare produse</button>
+        <button class="prog-btn" onclick="openPrintQueue()">Coada printare</button>
       </div>
     </div>
 
@@ -677,11 +678,8 @@
                 </div>
               </div>
               <div class="tva-field">
-                <label>KP</label>
-                <div class="tva-field-row">
-                  <input type="text" id="prod-kp-input" class="tva-input" value="">
-                  <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('prod-kp-input', 'KP')">123</button>
-                </div>
+                <label>Sectie tiparire (KP)</label>
+                <select id="prod-kp-select" class="prod-combo" onchange="markProdDirtyFromField()"></select>
               </div>
             </div>
 
@@ -975,6 +973,37 @@
               <button class="act-btn" id="mese-save-btn" style="background:#ffff00;">Salveaza</button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================================================
+         ECRAN: IMPRIMANTE (sectii logice tblKP + destinatii fizice)
+         ==================================================================== -->
+    <div id="screen-prog-imprimante" class="pos-screen">
+      <div class="prog-header">
+        <span>IMPRIMANTE</span>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <span id="impr-service-badge" class="impr-badge off">Serviciu: ...</span>
+          <button class="act-btn" onclick="reloadImprimante()">Reload</button>
+          <button class="act-btn" style="background:#ffff00;" onclick="saveImprimante()">Salveaza</button>
+          <button class="act-btn" onclick="closeProgImprimante()">Inapoi</button>
+        </div>
+      </div>
+      <div class="impr-layout">
+        <div class="impr-list-panel">
+          <div class="impr-panel-title">Sectii de tiparire</div>
+          <div class="impr-list" id="impr-list"></div>
+          <div class="tva-actions">
+            <button class="act-btn" style="background:#ffff00;" onclick="imprAddSection()">Adauga</button>
+            <button class="act-btn" id="impr-del-btn" onclick="imprDeleteSection()">Sterge</button>
+          </div>
+        </div>
+        <div class="impr-inspector">
+          <div id="impr-insp-body"></div>
+        </div>
+        <div class="impr-global">
+          <div id="impr-global-body"></div>
         </div>
       </div>
     </div>
@@ -1467,52 +1496,6 @@
     </div>
   </div>
 
-  <!-- Modal IMPRIMANTE SECTII: lista imprimantelor -->
-  <div class="modal-keyboard-overlay" id="modal-kp">
-    <div class="transfer-dialog">
-      <div class="keyboard-dialog-header">
-        <span>IMPRIMANTE SECTII</span>
-        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeKpModal()">Inchide</button>
-      </div>
-      <div class="transfer-body">
-        <div class="transfer-subtitle">Atinge o imprimanta pentru editare/stergere</div>
-        <div class="kp-head">
-          <span>NrLogic</span>
-          <span>Nume</span>
-          <span>DenumirePrinter</span>
-          <span>Stare</span>
-        </div>
-        <div class="kp-list" id="kp-list"></div>
-        <div class="tva-actions">
-          <button class="act-btn" style="background:#ffff00;" onclick="openKpInsert()">Adauga</button>
-          <button class="act-btn" id="btn-kp-edit" onclick="openKpEdit()">Editeaza</button>
-          <button class="act-btn" id="btn-kp-del" onclick="deleteKp()">Sterge</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal IMPRIMANTE SECTII: formular insert/update (campuri generate dinamic) -->
-  <div class="modal-keyboard-overlay" id="modal-kp-edit">
-    <div class="transfer-dialog">
-      <div class="keyboard-dialog-header">
-        <span id="kp-edit-title">IMPRIMANTA</span>
-        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeKpEdit()">Inapoi</button>
-      </div>
-      <div class="transfer-body kp-edit-body">
-        <div id="kp-fields"></div>
-        <div class="tva-field">
-          <label>Stare (activa)</label>
-          <button class="act-btn" id="kp-stare-toggle" onclick="toggleKpStare()" style="width:100%;">Nu</button>
-        </div>
-        <div class="tva-actions">
-          <button class="act-btn" onclick="saveKp()" style="background:#ffff00;">Salveaza</button>
-          <button class="act-btn" onclick="closeKpEdit()">Anuleaza</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Modal FORME DE PLATA: lista formelor -->
   <div class="modal-keyboard-overlay" id="modal-fp">
     <div class="transfer-dialog">
@@ -1603,13 +1586,13 @@
           <button class="qty-key" onclick="qtyKey('1')">1</button>
           <button class="qty-key" onclick="qtyKey('2')">2</button>
           <button class="qty-key" onclick="qtyKey('3')">3</button>
-          <button class="qty-key qty-fn" onclick="qtyKey('.')">.</button>
+          <button class="qty-key qty-fn" id="qty-dot-key" onclick="qtyKey('.')">.</button>
 
           <button class="qty-key qty-zero" onclick="qtyKey('0')">0</button>
           <button class="qty-key qty-ok" onclick="confirmQty()">OK</button>
         </div>
 
-        <div style="font-size: 11px; color: #b00;">maxim o zecimala (ex: 0.2)</div>
+        <div id="qty-dec-hint" style="font-size: 11px; color: #b00;">maxim o zecimala (ex: 0.2)</div>
       </div>
     </div>
   </div>
@@ -1635,7 +1618,7 @@
           <button class="qty-key" onclick="numpadKey('1')">1</button>
           <button class="qty-key" onclick="numpadKey('2')">2</button>
           <button class="qty-key" onclick="numpadKey('3')">3</button>
-          <button class="qty-key qty-fn" onclick="numpadKey('.')">.</button>
+          <button class="qty-key qty-fn" id="num-dot-key" onclick="numpadKey('.')">.</button>
           <button class="qty-key qty-zero" onclick="numpadKey('0')">0</button>
           <button class="qty-key qty-ok" onclick="numpadOk()">OK</button>
         </div>
@@ -1803,6 +1786,6 @@
   </div><!-- /#pos-stage -->
 
   <!-- Script aplicatie -->
-  <script src="js/pos.js?v=20260913i"></script>
+  <script src="js/pos.js?v=20260929a"></script>
 </body>
 </html>

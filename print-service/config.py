@@ -4,6 +4,11 @@ import json
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+
+# Cheile de configurare a tiparirii editabile din ecranul Setari > Imprimante.
+PRINT_KEYS = ("printers", "nota_target", "raport_target", "fiscal_target", "default_printer_nr")
+TARGET_KINDS = ("preview", "file", "windows", "network")
 
 DEFAULTS = {
     "http_host": "127.0.0.1",
@@ -55,3 +60,87 @@ def printer_target(cfg, printer_nr):
         if target:
             return target
     return {"target": "preview"}
+
+
+# --------------------------------------------------------------- config print
+
+def print_config_payload(cfg):
+    """Subsetul de configurare expus/editat din ecranul de imprimante."""
+    return {
+        "printers": cfg.get("printers") or {},
+        "nota_target": cfg.get("nota_target"),
+        "raport_target": cfg.get("raport_target"),
+        "fiscal_target": cfg.get("fiscal_target"),
+        "default_printer_nr": cfg.get("default_printer_nr"),
+    }
+
+
+def _validate_target(t):
+    if not isinstance(t, dict):
+        return "configuratie de tinta invalida"
+    kind = str(t.get("target") or "preview").strip()
+    if kind not in TARGET_KINDS:
+        return "tip de tinta necunoscut: %s" % kind
+    if kind == "network":
+        host = str(t.get("host") or "").strip()
+        if not host:
+            return "tinta de retea fara host/IP"
+        try:
+            port = int(t.get("port", 9100))
+        except (TypeError, ValueError):
+            return "port invalid"
+        if port < 1 or port > 65535:
+            return "port in afara intervalului (1-65535)"
+    if kind == "windows":
+        name = str(t.get("name") or t.get("printer") or "").strip()
+        if not name:
+            return "tinta Windows fara numele imprimantei"
+    return None
+
+
+def validate_print_config(cfg):
+    """Valideaza cheile de tiparire. Intoarce mesaj de eroare sau None."""
+    printers = cfg.get("printers")
+    if printers is not None and not isinstance(printers, dict):
+        return "lista imprimantelor invalida"
+    for key, target in (printers or {}).items():
+        err = _validate_target(target)
+        if err:
+            return "imprimanta %s: %s" % (key, err)
+    for key in ("nota_target", "raport_target", "fiscal_target"):
+        target = cfg.get(key)
+        if target is not None:
+            err = _validate_target(target)
+            if err:
+                return "%s: %s" % (key, err)
+    return None
+
+
+def save_print_config(path, new_print):
+    """Merge-uieste noile chei peste configul curent, valideaza si scrie atomic.
+
+    Pastreaza cheile neatinse (http_port, api_base, etc.). Intoarce
+    (config_nou, None) sau (None, mesaj_eroare).
+    """
+    if not isinstance(new_print, dict):
+        return None, "date de configurare invalide"
+
+    cfg = load_config(path)
+    for key in PRINT_KEYS:
+        if key in new_print:
+            cfg[key] = new_print[key]
+
+    err = validate_print_config(cfg)
+    if err:
+        return None, err
+
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(cfg, fh, indent=2, ensure_ascii=False)
+            fh.write("\n")
+        os.replace(tmp, path)
+    except OSError as exc:
+        return None, "nu pot scrie config.json: %s" % exc
+
+    return cfg, None

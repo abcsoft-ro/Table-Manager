@@ -83,7 +83,11 @@ def build_kitchen(payload, cfg):
     b.sep()
     b.lr("Masa: %s" % payload.get("masa", ""),
          "Casier: %s" % payload.get("casier", ""))
-    b.lr("NrDoc: %s" % payload.get("nrDoc", ""), payload.get("dataOra", ""))
+    # Numarul bonului de sectie = contorul dedicat tblSet.NrBon.
+    nr_bon = payload.get("nrBon")
+    if nr_bon is None:
+        nr_bon = payload.get("nrDoc", "")
+    b.lr("NrBon: %s" % nr_bon, payload.get("dataOra", ""))
     if payload.get("printerName"):
         b.line("Printer: %s" % payload.get("printerName"))
     b.sep()
@@ -152,11 +156,16 @@ def build_nota(payload, cfg):
     for item in payload.get("items", []) or []:
         name = item.get("denumire", "")
         cant = qty(item.get("cant", 0)).rjust(6)
-        val = money(item.get("valoare")).rjust(10)
+        # Afisam pretul de catalog pe linie; discountul pe subtotal se arata doar
+        # ca total (Reducere) dupa subtotal, nu repartizat pe fiecare produs.
+        orig = item.get("valoareOriginala")
+        val = money(orig if orig is not None else item.get("valoare")).rjust(10)
         b.lr(name, "%s %s" % (cant, val))
         original = float(item.get("valoareOriginala") or 0)
         current = float(item.get("valoare") or 0)
-        if original - current > 0.005:
+        # Discountul pe produs (pe linie) se evidentiaza sub produs; cel pe
+        # subtotal se arata doar ca total (Reducere) dupa subtotal.
+        if item.get("discountLinie") and (original - current > 0.005):
             b.line("      discount: -%s" % money(original - current))
 
     b.sep()
@@ -195,6 +204,17 @@ def build_raport(payload, cfg):
     for line in payload.get("lines", []) or []:
         # O linie poate fi string simplu sau {"text", "bold", "size", "font"}.
         styled_line(b, line, "left")
+    b.feed(2).cut()
+    return b.bytes()
+
+
+def build_test(cfg):
+    """Bon scurt de test, folosit de butonul 'Test' din Setari > Imprimante."""
+    b = EscposBuilder(cfg["receipt_width"], cfg.get("charset", "ascii"))
+    b.align("center").size(1, 2).bold(True).line("TEST IMPRIMANTA")
+    b.size(1, 1).bold(False).line("TableManager print-service")
+    b.sep()
+    b.line("Configurare OK")
     b.feed(2).cut()
     return b.bytes()
 
@@ -315,9 +335,14 @@ def process_once(cfg):
     return True
 
 
-def run_loop(cfg, stop_event, wake_event):
-    log("Worker pornit. API: %s" % cfg["api_base"], cfg)
+def run_loop(cfg_provider, stop_event, wake_event):
+    """cfg_provider: callable care intoarce configul curent (hot-reload) sau un
+    dict fix. Re-citim configul la fiecare iteratie, ca modificarile din ecranul
+    Setari > Imprimante sa se aplice fara repornirea serviciului."""
+    get_cfg = cfg_provider if callable(cfg_provider) else (lambda: cfg_provider)
+    log("Worker pornit. API: %s" % get_cfg()["api_base"], get_cfg())
     while not stop_event.is_set():
+        cfg = get_cfg()
         try:
             worked = process_once(cfg)
         except Exception as exc:  # noqa: BLE001
