@@ -1,6 +1,6 @@
 -- ============================================================================
 -- TableManager 2.1C - date de referinta (seed) pentru o instalare noua
--- Generat automat de db/tools/export_schema.php --seed, apoi sanitizat.
+-- Generat automat dintr-un script local de dezvoltare, apoi sanitizat.
 -- NU contine date reale: parolele, credențialele si datele firmei sunt demo.
 -- Se ruleaza dupa db/schema.sql, pe o baza de date goala.
 -- ============================================================================

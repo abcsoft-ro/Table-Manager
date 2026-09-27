@@ -87,7 +87,6 @@ astfel incat oricine poate reconstrui o baza functionala:
 
 - `db/schema.sql` — tabelele, indecsii, constrangerile, cheile straine si procedurile stocate.
 - `db/seed.sql` — date de referinta minime plus un meniu demo (fara date reale).
-- `db/tools/export_schema.php` — regenereaza scripturile direct din baza de date.
 
 Pasii sunt: rulati `db/schema.sql`, apoi `db/seed.sql`, apoi configurati `api/db.local.php`.
 Instructiuni complete: [db/README.md](db/README.md).
@@ -112,6 +111,5 @@ print-service/          serviciu Python de printare ESC/POS
 db/                     reconstructia bazei de date
   schema.sql            structura tabelelor + proceduri stocate
   seed.sql              date de referinta + meniu demo (fara date reale)
-  tools/export_schema.php  regenerarea scripturilor din baza de date
 sync.sh                 commit + push catre GitHub (doar cand exista modificari)
 ```

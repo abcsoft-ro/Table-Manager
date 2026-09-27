@@ -7,13 +7,11 @@ necesar pentru a o reconstrui de la zero.
 |---|---|
 | `schema.sql` | structura tabelelor, indecși, constrângeri, chei străine și procedurile stocate |
 | `seed.sql` | datele de referință minime + un meniu demo (fără date reale) |
-| `tools/export_schema.php` | regenerează `schema.sql` (și `seed.sql`) direct din baza de date |
 
 ## Cerințe
 
 - Microsoft SQL Server.
 - Un client SQL (SQL Server Management Studio, Azure Data Studio sau `sqlcmd`).
-- Pentru regenerare: PHP CLI cu extensia `sqlsrv` (același PHP ca al aplicației, ex. `C:\PHP\php.exe`).
 
 ## Reconstrucție în 3 pași
 
@@ -70,15 +68,3 @@ parole sau credențiale.
 - `tblConectare` și cheile sensibile din `tblSet` (`ConsumerKey`, `ConsumerSecret`,
   `SiteUrlApi`, căile locale) sunt golite / puse pe valori demo.
 - `tblGrp` și `tblProd` conțin un meniu demo (8 grupe, 18 produse), nu meniul real.
-
-## Regenerarea scripturilor
-
-După ce schema bazei se schimbă, regenerați scripturile (nu le editați manual):
-
-```bat
-C:\PHP\php.exe db\tools\export_schema.php          :: scrie db\schema.sql
-C:\PHP\php.exe db\tools\export_schema.php --seed   :: scrie si db\seed.sql
-```
-
-Generatorul citește credențialele din `api/db.local.php`, exportă doar tabelele folosite
-de aplicație, aplică sanitizarea datelor demo și scrie fișierele în acest director.

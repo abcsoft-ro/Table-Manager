@@ -1,6 +1,6 @@
 -- ============================================================================
 -- TableManager 2.1C - schema bazei de date
--- Generat automat de db/tools/export_schema.php (nu editati manual).
+-- Generat automat dintr-un script local de dezvoltare (nu editati manual).
 -- Contine doar tabelele si procedurile folosite de aplicatie.
 -- ============================================================================
 
