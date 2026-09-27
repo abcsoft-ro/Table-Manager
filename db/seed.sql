@@ -101,12 +101,11 @@ INSERT INTO dbo.[tblSet] ([Setting], [Value], [Descriere], [Grup]) VALUES
 (N'SerieIF', N'000000', NULL, N'casa'),
 (N'Server', N'1', NULL, N'ODBC'),
 (N'SiteUrlApi', N'', NULL, N'web'),
-(N'Start', N'frmmese2', NULL, N'General'),
 (N'Storno_parola', N'0', NULL, N'General'),
 (N'TipAfisaj', N'2', NULL, N'Afiseaj'),
 (N'TiparescNota', N'1', NULL, N'Nota'),
 (N'TipPromotie', N'0', NULL, N'General'),
-(N'TipVanz', N'0', NULL, N'General'),
+(N'TipVanz', N'0', N'Tipul de vanzare: 0 = Restaurant (ecran de mese, comanda la sectie, nota de plata); 1 = FastFood (fara ecran de mese, comanda nu pleaca la sectie, doar bon fiscal).', N'General'),
 (N'TransferMasa', N'1', NULL, N'General'),
 (N'TSC', N'0', NULL, N'General'),
 (N'ValPunct', N'0', NULL, N'General');

@@ -7,9 +7,26 @@
  */
 require_once __DIR__ . '/db.php';
 
+/**
+ * Descrierea canonica a setarii TipVanz. O scriem in tblSet la nevoie, ca sa
+ * fie afisata corect in ecranul Setari si pe instalatiile existente.
+ */
+function ensureSetariMeta($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $desc = "Tipul de vanzare: 0 = Restaurant (ecran de mese, comanda la sectie, nota de plata); 1 = FastFood (fara ecran de mese, comanda nu pleaca la sectie, doar bon fiscal).";
+    @sqlsrv_query(
+        $conn,
+        "UPDATE tblSet SET Descriere = ? WHERE Setting = 'TipVanz' AND (Descriere IS NULL OR Descriere <> ?)",
+        [$desc, $desc]
+    );
+    $done = true;
+}
+
 $conn = getDBConnection();
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    ensureSetariMeta($conn);
     $rows = [];
     $stmt = sqlsrv_query($conn, "SELECT Setting, Value, Descriere, Grup FROM tblSet ORDER BY Grup, Setting");
     if ($stmt) {

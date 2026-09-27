@@ -370,6 +370,50 @@ body {
   font-weight: 900;
 }
 
+/* Mod FastFood: detaliile de plata afisate in locul liniei Total */
+.fastfood-receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 15px;
+  font-weight: bold;
+}
+
+.ff-receipt-title {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 900;
+  color: #004080;
+  letter-spacing: 1px;
+  margin-bottom: 2px;
+}
+
+.ff-receipt-line {
+  display: flex;
+  justify-content: space-between;
+}
+
+.ff-receipt-line span:first-child {
+  width: 130px;
+  text-align: right;
+  padding-right: 14px;
+}
+
+.ff-receipt-line span:last-child {
+  min-width: 90px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ff-receipt-line.ff-receipt-total {
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.ff-receipt-line.ff-receipt-rest {
+  color: #b00000;
+}
+
 /* Coloana centrala cu butoane Scroll */
 .nav-arrows-col {
   display: flex;

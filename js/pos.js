@@ -17,6 +17,10 @@ const POS_STATE = {
   // Mod logare din tblSet.Mod_logare: 1 = ramane logat toata sesiunea,
   // 0 = delogare automata la iesirea de pe masa.
   modLogare: 1,
+  // Tipul de vanzare din tblSet.TipVanz: "restaurant" (default) sau "fastfood".
+  // In FastFood nu se afiseaza ecranul de mese, comanda nu pleaca la sectie si
+  // nota de plata nu se tipareste (doar bonul fiscal).
+  tipVanz: "restaurant",
   reducereProcent: 0,
   tvaProcent: 9,
   selectedItemIndex: 0,
@@ -61,6 +65,11 @@ async function initApp() {
     // 3. Incarcam starea celor 80 de mese
     await loadTables();
     showToast("Conectat la baza de date Rual!");
+
+    // Mod FastFood: pornim direct in ecranul de marcare (fara selectie de mese).
+    if (isFastFood()) {
+      navigateToScreen("screen-marcare");
+    }
   } catch (err) {
     console.error("Eroare la initializare:", err);
     showToast("Eroare comunicare server: " + err.message);
@@ -80,10 +89,35 @@ async function loadMenu() {
   POS_STATE.messages = data.messages || [];
   POS_STATE.meniulZilei = (data.meniulZilei == 1) ? 1 : 0;
   POS_STATE.modLogare = (data.modLogare == 0) ? 0 : 1;
+  POS_STATE.tipVanz = (data.tipVanz === "fastfood") ? "fastfood" : "restaurant";
 
   renderMenuGrid();
   updateMeniulZileiButton();
+  applyTipVanzUI();
   updateTablesFooter(data.distrRand1, data.distrRand2);
+}
+
+// Modul FastFood: fara ecran de mese, fara Marcare/Transfer/Nota Proforma.
+function isFastFood() {
+  return POS_STATE.tipVanz === "fastfood";
+}
+
+// Aplica vizibilitatea butoanelor in functie de tipul de vanzare.
+function applyTipVanzUI() {
+  const fastfood = isFastFood();
+  const ids = ["btn-marcare", "btn-transfer", "btn-proforma"];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = fastfood ? "none" : "";
+  });
+  document.body.classList.toggle("fastfood-mode", fastfood);
+  // In FastFood nu se afiseaza niciodata ecranul de mese.
+  if (fastfood) {
+    const active = document.querySelector(".pos-screen.active");
+    if (active && active.id === "screen-mese") {
+      navigateToScreen("screen-marcare");
+    }
+  }
 }
 
 // Footer-ul ecranului mese: datele de contact din tblSet (DistrRand1/2)
@@ -402,12 +436,15 @@ function handleInapoiBtn() {
 
   // Parasim masa catre ecranul de mese: trimitem automat la sectie tot ce nu
   // a fost inca trimis (Preluat = 0) pe masa curenta.
+  // Mod FastFood: nu exista ecran de mese si nu se trimite nimic la sectie.
+  if (isFastFood()) return;
   leaveTableToTables();
 }
 
 let leavingTableInProgress = false;
 
 async function leaveTableToTables() {
+  if (isFastFood()) return;
   if (leavingTableInProgress) return;
   leavingTableInProgress = true;
   try {
@@ -453,6 +490,8 @@ async function loadOrder(nrMasa) {
     }
 
     renderOrderItems(data.subtotal || 0, data.total || 0);
+    // Un bon nou incepe: panoul revine la forma initiala (cu linia Total).
+    hideFastFoodReceipt();
   } catch (err) {
     console.error("Eroare la incarcare comanda:", err);
   }
@@ -902,6 +941,40 @@ function payNumpadBackspace() {
   input.value = v;
 }
 
+// Mod FastFood: afiseaza detaliile de plata in panoul alb din stanga, in locul
+// liniei Total, dupa inchiderea notei. Revine la normal la urmatorul loadOrder
+// (inceperea unui nou bon).
+function showFastFoodReceipt(payments, total, rest) {
+  const box = document.getElementById("fastfood-receipt");
+  const totalLine = document.getElementById("order-grand-total-line");
+  if (!box) return;
+
+  const parts = Object.entries(payments || {}).map(([id, val]) => {
+    const f = POS_STATE.paymentForms.find(x => x.FPID === parseInt(id, 10));
+    return { label: f ? f.Denumire : ("FP " + id), val: Number(val) || 0 };
+  });
+
+  let html = '<div class="ff-receipt-title">PLATA EFECTUATA</div>';
+  parts.forEach(p => {
+    html += `<div class="ff-receipt-line"><span>${escapeHtml(p.label)}</span><span>${p.val.toFixed(2)}</span></div>`;
+  });
+  html += `<div class="ff-receipt-line ff-receipt-total"><span>Total</span><span>${(Number(total) || 0).toFixed(2)}</span></div>`;
+  if (rest > 0) {
+    html += `<div class="ff-receipt-line ff-receipt-rest"><span>Rest</span><span>${Number(rest).toFixed(2)}</span></div>`;
+  }
+
+  box.innerHTML = html;
+  box.style.display = "";
+  if (totalLine) totalLine.style.display = "none";
+}
+
+function hideFastFoodReceipt() {
+  const box = document.getElementById("fastfood-receipt");
+  const totalLine = document.getElementById("order-grand-total-line");
+  if (box) { box.style.display = "none"; box.innerHTML = ""; }
+  if (totalLine) totalLine.style.display = "";
+}
+
 async function finalizePaymentTransaction() {
   const total = parseFloat(document.getElementById("val-total").innerText) || 0;
   if (total <= 0) {
@@ -952,6 +1025,17 @@ async function finalizePaymentTransaction() {
     const res = await resp.json();
     if (res.status !== "success") throw new Error(res.message);
 
+    // Mod FastFood: fara popup; detaliile de plata raman in panoul alb din
+    // stanga (in locul liniei Total) pana la inceperea unui nou bon.
+    if (isFastFood()) {
+      showToast("BON INCHIS CU SUCCES!");
+      returnToGroups();
+      await loadOrder(POS_STATE.masaCurenta);
+      showFastFoodReceipt(POS_STATE.payments, total, rest);
+      navigateToScreen("screen-marcare");
+      return;
+    }
+
     const detalii = Object.entries(POS_STATE.payments).map(([id, val]) => {
       const f = POS_STATE.paymentForms.find(x => x.FPID === parseInt(id, 10));
       return `${f ? f.Denumire : ("FP " + id)}: ${val.toFixed(2)} Lei`;
@@ -962,7 +1046,11 @@ async function finalizePaymentTransaction() {
       msg += `\nRest de dat: ${rest.toFixed(2)} Lei`;
     }
     if (res.print) {
-      msg += `\nTiparire: nota #${res.print.nota}, fiscal #${res.print.fiscal}`;
+      if (res.print.nota) {
+        msg += `\nTiparire: nota #${res.print.nota}, fiscal #${res.print.fiscal}`;
+      } else {
+        msg += `\nTiparire: fiscal #${res.print.fiscal}`;
+      }
     }
 
     appAlert(msg);
@@ -1295,6 +1383,11 @@ function makeProductGridBtn(p) {
 // 6. UTILITARE & NAVIGARE
 // --------------------------------------------------------------------------
 function navigateToScreen(screenId) {
+  // Mod FastFood: ecranul de mese nu este niciodata afisat.
+  if (isFastFood() && screenId === "screen-mese") {
+    screenId = "screen-marcare";
+  }
+
   const prev = document.querySelector(".pos-screen.active");
   const prevId = prev ? prev.id : null;
 
@@ -1541,7 +1634,7 @@ async function loadSetari() {
     const resp = await fetch("api/setari.php");
     const data = await resp.json();
     if (data.status !== "success") throw new Error(data.message || "Eroare");
-    setariRows = data.rows || [];
+    setariRows = (data.rows || []).filter(r => (r.Setting || "").trim() !== "Start");
     renderSetariTabs();
     renderSetariTab(setariActiveTab);
   } catch (err) {
@@ -1587,6 +1680,11 @@ function setariGroupsForTab(tabId) {
 }
 
 function setariField(row) {
+  // Tipul de vanzare se editeaza ca lista (Restaurant / FastFood), nu ca text.
+  if (row.Setting === "TipVanz") {
+    return setariTipVanzField(row);
+  }
+
   const div = document.createElement("div");
   div.className = "setari-field";
 
@@ -1620,6 +1718,41 @@ function setariField(row) {
   fieldRow.appendChild(kb);
 
   div.appendChild(fieldRow);
+
+  if (row.Descriere && String(row.Descriere).trim() !== "") {
+    const d = document.createElement("div");
+    d.className = "setari-desc";
+    d.textContent = row.Descriere;
+    div.appendChild(d);
+  }
+
+  return div;
+}
+
+// Combobox pentru tblSet.TipVanz: 0 = Restaurant, 1 = FastFood.
+function setariTipVanzField(row) {
+  const div = document.createElement("div");
+  div.className = "setari-field";
+
+  const label = document.createElement("label");
+  label.className = "setari-label";
+  label.textContent = row.Setting;
+  div.appendChild(label);
+
+  const select = document.createElement("select");
+  select.className = "tva-input setari-input";
+  select.id = "setari-inp-" + row.Setting;
+
+  const cur = (String(row.Value === null || row.Value === undefined ? "" : row.Value).trim() === "1") ? "1" : "0";
+  [["0", "Restaurant"], ["1", "FastFood"]].forEach(pair => {
+    const opt = document.createElement("option");
+    opt.value = pair[0];
+    opt.textContent = pair[1];
+    if (pair[0] === cur) opt.selected = true;
+    select.appendChild(opt);
+  });
+  select.onchange = () => { setariDirty[row.Setting] = select.value; };
+  div.appendChild(select);
 
   if (row.Descriere && String(row.Descriere).trim() !== "") {
     const d = document.createElement("div");
@@ -1676,6 +1809,13 @@ async function saveSetari() {
       const row = setariRows.find(r => r.Setting === k);
       if (row) row.Value = setariDirty[k];
     });
+
+    // Tipul de vanzare se aplica imediat (ascunde/afiseaza butoane, ecran mese).
+    if (keys.indexOf("TipVanz") !== -1) {
+      POS_STATE.tipVanz = (String(setariDirty["TipVanz"]).trim() === "1") ? "fastfood" : "restaurant";
+      applyTipVanzUI();
+    }
+
     setariDirty = {};
     showToast(res.message);
   } catch (err) {
@@ -4949,6 +5089,7 @@ async function printKitchen(docId) {
 }
 
 async function actionMarcare() {
+  if (isFastFood()) return;
   if (!POS_STATE.articole.length) {
     showToast("Nota este goala; nu exista ce marca");
     return;
@@ -4963,7 +5104,8 @@ async function actionMarcare() {
 
 // --------------------------------------------------------------------------
 // BUTON NOTA: deschide ecranul de inchidere nota.
-// Daca totalul este 0, inchide direct nota si revine la ecranul de mese.
+// Daca totalul este 0, inchide direct nota si revine la ecranul de mese
+// (in FastFood ramane pe ecranul de marcare).
 // --------------------------------------------------------------------------
 async function actionNota() {
   const total = parseFloat(document.getElementById("val-total").innerText) || 0;
@@ -4984,6 +5126,11 @@ async function actionNota() {
 
       showToast(res.message || "Nota a fost inchisa");
       await loadOrder(POS_STATE.masaCurenta);
+      if (isFastFood()) {
+        returnToGroups();
+        navigateToScreen("screen-marcare");
+        return;
+      }
       await loadTables();
       navigateToScreen("screen-mese");
     } catch (err) {
@@ -4995,8 +5142,11 @@ async function actionNota() {
   // Click pe Nota trimite automat si la imprimantele de sectie; reincarcam
   // nota ca liniile sa fie marcate ca trimise (qty blocat) si la revenirea
   // pe ecranul de marcare.
-  await printKitchen(POS_STATE.docId);
-  await loadOrder(POS_STATE.masaCurenta);
+  // Mod FastFood: nu se trimite nimic la sectie.
+  if (!isFastFood()) {
+    await printKitchen(POS_STATE.docId);
+    await loadOrder(POS_STATE.masaCurenta);
+  }
   navigateToScreen("screen-plata");
 }
 

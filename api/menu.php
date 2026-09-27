@@ -197,6 +197,18 @@ if ($stmtML) {
     $modLogare = ($ml && (int)trim($ml['Value']) === 0) ? 0 : 1;
 }
 
+// 4c. Tipul de vanzare (tblSet.TipVanz): 1 = FastFood, altfel Restaurant.
+//     In FastFood nu se afiseaza ecranul de mese, comanda nu pleaca la sectie
+//     si nu se tipareste nota de plata (doar bonul fiscal).
+$tipVanz = "restaurant";
+$stmtTV = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'TipVanz'");
+if ($stmtTV) {
+    $tv = sqlsrv_fetch_array($stmtTV, SQLSRV_FETCH_ASSOC);
+    if ($tv && (int)trim((string)$tv['Value']) === 1) {
+        $tipVanz = "fastfood";
+    }
+}
+
 // 5. Date de contact pentru footer-ul ecranului mese (tblSet cheie/valoare)
 $distrRand1 = '';
 $distrRand2 = '';
@@ -219,6 +231,7 @@ sendJsonResponse([
     "messages" => $messages,
     "meniulZilei" => $meniulZilei,
     "modLogare" => $modLogare,
+    "tipVanz" => $tipVanz,
     "distrRand1" => $distrRand1,
     "distrRand2" => $distrRand2
 ]);

@@ -90,10 +90,13 @@
               <span class="sum-val" id="val-tva">0.00</span>
             </div>
             <div class="summary-divider"></div>
-            <div class="summary-line grand-total">
+            <div class="summary-line grand-total" id="order-grand-total-line">
               <span class="sum-lbl">Total :</span>
               <span class="sum-val" id="val-total">0.00</span>
             </div>
+            <!-- Mod FastFood: detaliile de plata apar aici dupa inchiderea notei,
+                 in locul liniei Total, pana la inceperea unui nou bon. -->
+            <div class="fastfood-receipt" id="fastfood-receipt" style="display:none;"></div>
           </div>
 
         </div>
@@ -126,7 +129,7 @@
 
       <!-- Bara inferioara de actiuni -->
       <div class="bottom-actions-bar">
-        <button class="act-btn" onclick="actionMarcare()">Marcare</button>
+        <button class="act-btn" id="btn-marcare" onclick="actionMarcare()">Marcare</button>
         <button class="act-btn red-text" onclick="actionNota()">NOTA</button>
         <button class="act-btn" onclick="actionModPreparare()">Mod<br>Preparare</button>
         <button class="act-btn" onclick="actionDiscount()">Discount</button>
@@ -239,10 +242,10 @@
 
       <!-- Bara de jos pentru plata -->
       <div class="bottom-actions-bar">
-        <button class="act-btn" onclick="actionTransfer()">Transfer</button>
+        <button class="act-btn" id="btn-transfer" onclick="actionTransfer()">Transfer</button>
         <button class="act-btn" onclick="actionDiscount()">Discount</button>
         <button class="act-btn" onclick="actionCUI()">CUI</button>
-        <button class="act-btn" onclick="actionProforma()">Nota<br>Proforma</button>
+        <button class="act-btn" id="btn-proforma" onclick="actionProforma()">Nota<br>Proforma</button>
         <div class="act-spacer"></div>
         <button class="act-btn" onclick="navigateToScreen('screen-marcare')">Inapoi</button>
       </div>

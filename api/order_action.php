@@ -7,6 +7,25 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/print_common.php';
 
 /**
+ * Tipul de vanzare configurat in tblSet (TipVanz): "fastfood" cand valoarea
+ * este 1, altfel "restaurant". In modul FastFood comanda nu se mai trimite la
+ * sectie, iar la inchiderea notei se tipareste doar bonul fiscal (fara nota).
+ */
+function getTipVanz($conn) {
+    static $cache = null;
+    if ($cache !== null) { return $cache; }
+    $cache = "restaurant";
+    $stmt = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'TipVanz'");
+    if ($stmt) {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        if ($row && (int)trim((string)$row['Value']) === 1) {
+            $cache = "fastfood";
+        }
+    }
+    return $cache;
+}
+
+/**
  * Repartizeaza o suma (in centi) pe o lista de ponderi (in centi), folosind
  * metoda celui mai mare rest, astfel incat suma alocata sa fie exact $amount
  * si nicio alocare sa nu depaseasca ponderea corespunzatoare.
@@ -55,6 +74,11 @@ function printKitchen($conn, $docId) {
     $docId = (int)$docId;
     if ($docId <= 0) {
         return ["jobs" => 0, "lines" => 0, "error" => "DocID invalid"];
+    }
+
+    // Mod FastFood: comanda nu se trimite la sectie (nimic nu se marcheaza Preluat).
+    if (getTipVanz($conn) === "fastfood") {
+        return ["jobs" => 0, "lines" => 0, "error" => null];
     }
 
     ensurePrintQueueTable($conn);
@@ -392,11 +416,17 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title) {
  * commit. Intoarce array-ul cu JobID-uri sau false la eroare.
  */
 function enqueueBillPrintJobs($conn, $docId, $bon, $plati) {
+    $fastfood = (getTipVanz($conn) === "fastfood");
+
     $data = buildBillPrintData($conn, $docId, $bon, $plati, "NOTA DE PLATA");
     if ($data === false) { return false; }
 
-    $notaJob = enqueuePrintJob($conn, 'nota', $docId, null, $data['nota']);
-    if ($notaJob === false) { return false; }
+    // Mod FastFood: nota de plata nu se tipareste; ramane doar bonul fiscal.
+    $notaJob = null;
+    if (!$fastfood) {
+        $notaJob = enqueuePrintJob($conn, 'nota', $docId, null, $data['nota']);
+        if ($notaJob === false) { return false; }
+    }
 
     $fiscalLines = buildFiscalText($data['fiscalItems'], $data['plati']);
     $fiscalJob = enqueuePrintJob($conn, 'fiscal', $docId, null, [
@@ -1335,6 +1365,17 @@ switch ($action) {
         $docId = (int)($input['docId'] ?? 0);
         if ($docId <= 0) {
             sendJsonResponse(["status" => "error", "message" => "DocID invalid"], 400);
+        }
+
+        // Mod FastFood: nu se trimite nimic la sectie.
+        if (getTipVanz($conn) === "fastfood") {
+            sendJsonResponse([
+                "status" => "success",
+                "message" => "Mod FastFood: comanda nu se trimite la sectie",
+                "docId" => $docId,
+                "jobs" => 0,
+                "marcate" => 0
+            ]);
         }
 
         $result = printKitchen($conn, $docId);
