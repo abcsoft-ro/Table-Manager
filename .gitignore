@@ -1,0 +1,15 @@
+# Credentiale locale (NU se urca pe GitHub)
+github_api.txt
+api/db.local.php
+
+# print-service artefacte runtime
+print-service/__pycache__/
+print-service/logs/
+print-service/preview/
+print-service/spool/
+
+# fisiere temporare
+*.pyc
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,1805 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>TableManager 2.1C - Modern Web POS (MSSQL Rual)</title>
+  <link rel="stylesheet" href="css/pos.css?v=20260913i">
+  <script>
+    /* Scalare UI libera pe AMBELE axe, plecand de la canvasul minim 1024x768.
+       --pos-scale = factorul proportional (limitat de axa cu raportul cel mai mic);
+       --pos-stage-w/h = dimensiunile NESCALATE ale canvasului, marite peste baza
+       (1024x768) doar pe axele unde ecranul e mai "generos", ca surplusul sa fie
+       absorbit de zonele flexibile (grila grupe/produse, lista nota, grila mese).
+       Astfel canvasul scalat acopera exact fereastra -> fara benzi libere. */
+    (function () {
+      function fitStage() {
+        var w = window.innerWidth, h = window.innerHeight;
+        var s = Math.min(w / 1024, h / 768);
+        var stageW = Math.max(1024, Math.round(w / s));
+        var stageH = Math.max(768, Math.round(h / s));
+        var root = document.documentElement;
+        root.style.setProperty('--pos-scale', s);
+        root.style.setProperty('--pos-stage-w', stageW + 'px');
+        root.style.setProperty('--pos-stage-h', stageH + 'px');
+      }
+      window.addEventListener('resize', fitStage);
+      window.addEventListener('orientationchange', fitStage);
+      fitStage();
+    })();
+  </script>
+</head>
+<body>
+
+  <div id="pos-stage">
+
+  <div class="pos-viewport">
+    
+    <!-- Antet superior (doar ceasul) -->
+    <div class="pos-top-bar">
+      <span id="pos-clock-header">29-Jan-26 17:39</span>
+    </div>
+
+    <!-- ====================================================================
+         ECRAN 1: MARCARE (ecran_marcare.PNG)
+         ==================================================================== -->
+    <div id="screen-marcare" class="pos-screen">
+      <div class="marcare-body">
+        
+        <!-- Panoul stanga: Nota de Plata -->
+        <div class="order-panel">
+          
+          <div class="order-top-row-1">
+            <input type="text" id="scan-input" class="scan-input" placeholder="Scan / cod produs" autocomplete="off" onkeydown="onScanKeydown(event)">
+            <div class="table-indicator-box">
+              <span class="tbl-label">Masa</span>
+              <div class="tbl-value" id="current-table-btn" onclick="navigateToScreen('screen-mese')">1</div>
+            </div>
+          </div>
+
+          <div class="order-top-row-2">
+            <span class="order-title">NOTA DE PLATA</span>
+            <div class="cashier-badge" id="current-cashier-label">CASIER 1</div>
+          </div>
+
+          <!-- Tabelul de articole -->
+          <div class="order-items-wrapper">
+            <div class="order-grid-header">
+              <div>Denumire</div>
+              <div>Cant</div>
+              <div>Valoare</div>
+            </div>
+            
+            <div class="order-items-scroll" id="order-items-list">
+              <!-- Populata in timp real din tblNoteD -->
+            </div>
+          </div>
+
+          <!-- Totaluri Nota -->
+          <div class="order-summary-box">
+            <div class="summary-line">
+              <span class="sum-lbl">Subtotal :</span>
+              <span class="sum-val" id="val-subtotal">0.00</span>
+            </div>
+            <div class="summary-line">
+              <span class="sum-lbl"><u>R</u>educere :</span>
+              <span class="sum-val" id="val-reducere">0.00</span>
+            </div>
+            <div class="summary-line">
+              <span class="sum-lbl">Tva :</span>
+              <span class="sum-val" id="val-tva">0.00</span>
+            </div>
+            <div class="summary-divider"></div>
+            <div class="summary-line grand-total">
+              <span class="sum-lbl">Total :</span>
+              <span class="sum-val" id="val-total">0.00</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Săgeți de Scroll Up / Down -->
+        <div class="nav-arrows-col">
+          <button class="arrow-btn" id="btn-scroll-up" onclick="scrollOrder('up')">▲</button>
+          <button class="arrow-btn" id="btn-scroll-down" onclick="scrollOrder('down')">▼</button>
+        </div>
+
+        <!-- Panou Dreapta: Meniu Grila 5 coloane (Grupe sau Produse direct pe ecran) -->
+        <div class="menu-grid-panel">
+          
+          <!-- Bara de titlu grupa activa cand suntem in modul de produse -->
+          <div id="group-nav-header" style="display: none; justify-content: space-between; align-items: center; margin-bottom: 6px; padding: 0 2px;">
+            <button id="btn-group-back" class="act-btn" onclick="returnToGroups()" style="height: 38px; background: #ffff00; color: #000; font-weight: 900; font-size: 13px; border: 2px solid #000;">
+              ⬅ INAPOI LA GRUPE
+            </button>
+            <span id="active-group-title" style="color: #ffffff; font-size: 18px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">
+              BUCATARIE RUAL
+            </span>
+          </div>
+
+          <div class="menu-5x-grid" id="menu-5x-grid">
+            <!-- Incarcat dinamic: tblGrp (Mod Grupe) sau tblProd (Mod Produse) -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bara inferioara de actiuni -->
+      <div class="bottom-actions-bar">
+        <button class="act-btn" onclick="actionMarcare()">Marcare</button>
+        <button class="act-btn red-text" onclick="actionNota()">NOTA</button>
+        <button class="act-btn" onclick="actionModPreparare()">Mod<br>Preparare</button>
+        <button class="act-btn" onclick="actionDiscount()">Discount</button>
+        <button class="act-btn vd-btn" onclick="actionVoid()">VD</button>
+        <button class="act-btn" onclick="actionQty()">QTY</button>
+        
+        <div class="act-spacer"></div>
+
+        <button class="act-btn" onclick="openKeyboardModal('Parola')">Parola</button>
+        <button class="act-btn" onclick="openKeyboardModal('Cautare')">🔍 Cautare</button>
+        <button class="act-btn" id="btn-meniul-zilei" style="display:none;" onclick="actionMeniulZilei()">Meniul<br>Zilei</button>
+        <button class="act-btn" onclick="handleInapoiBtn()">Inapoi</button>
+      </div>
+    </div>
+
+
+    <!-- ====================================================================
+         ECRAN 2: INCHIDERE NOTA (Inchidere_nota.PNG)
+         ==================================================================== -->
+    <div id="screen-plata" class="pos-screen">
+      <div class="payment-screen-layout">
+        
+        <!-- Panoul stanga de plata -->
+        <div class="order-panel">
+          <div class="order-top-row-1">
+            <span class="order-datetime" id="pay-datetime">29-Jan-26 &nbsp;&nbsp; 17:39</span>
+            <div class="table-indicator-box">
+              <span class="tbl-label">Masa</span>
+              <div class="tbl-value" id="pay-tbl-num">1</div>
+            </div>
+          </div>
+          <div class="order-top-row-2">
+            <span class="order-title">NOTA DE PLATA</span>
+            <div class="cashier-badge" id="pay-cashier-label">CASIER 1</div>
+          </div>
+          <div class="order-items-wrapper">
+            <div class="order-grid-header">
+              <div>Denumire</div>
+              <div>Cant</div>
+              <div>Valoare</div>
+            </div>
+            <div class="order-items-scroll" id="pay-items-list"></div>
+          </div>
+          <div class="order-summary-box">
+            <div class="summary-line">
+              <span class="sum-lbl">Subtotal :</span>
+              <span class="sum-val" id="pay-subtotal">0.00</span>
+            </div>
+            <div class="summary-line">
+              <span class="sum-lbl"><u>R</u>educere % :</span>
+              <span class="sum-val" id="pay-reducere">0</span>
+            </div>
+            <div class="summary-line">
+              <span class="sum-lbl">Tva :</span>
+              <span class="sum-val" id="pay-tva">0.00</span>
+            </div>
+            <div class="summary-divider"></div>
+            <div class="summary-line grand-total">
+              <span class="sum-lbl">Total :</span>
+              <span class="sum-val" id="pay-total">0.00</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Săgeți de Scroll Up / Down -->
+        <div class="nav-arrows-col">
+          <button class="arrow-btn" onclick="scrollOrder('up')">▲</button>
+          <button class="arrow-btn" onclick="scrollOrder('down')">▼</button>
+        </div>
+
+        <!-- Panou Dreapta: Moduri de Plata & Tastatura Numerica Mare -->
+        <div class="payment-right-panel">
+          
+          <!-- Moduri de plata: incarcate dinamic din tblFP (Status = 1) -->
+          <div class="payment-methods-grid" id="pay-methods-grid"></div>
+
+          <!-- Centru: Afisaj CASH si Numpad mare -->
+          <div class="payment-calc-center">
+            <div class="payment-display-row">
+              <span class="payment-label-cash" id="lbl-active-pay-type">CASH</span>
+              <input type="text" class="payment-input-box" id="pay-amount-input" value="0.00" readonly>
+            </div>
+            <div class="pay-progress" id="pay-progress"></div>
+
+            <!-- Numpad-ul exact ca in screenshot -->
+            <div class="pos-numpad-container">
+              <button class="numpad-key" onclick="payNumpadKey('7')">7</button>
+              <button class="numpad-key" onclick="payNumpadKey('8')">8</button>
+              <button class="numpad-key" onclick="payNumpadKey('9')">9</button>
+              <button class="numpad-key key-c" onclick="payNumpadClear()">C</button>
+
+              <button class="numpad-key" onclick="payNumpadKey('4')">4</button>
+              <button class="numpad-key" onclick="payNumpadKey('5')">5</button>
+              <button class="numpad-key" onclick="payNumpadKey('6')">6</button>
+              <button class="numpad-key key-ok" onclick="finalizePaymentTransaction()">OK</button>
+
+              <button class="numpad-key" onclick="payNumpadKey('1')">1</button>
+              <button class="numpad-key" onclick="payNumpadKey('2')">2</button>
+              <button class="numpad-key" onclick="payNumpadKey('3')">3</button>
+
+              <button class="numpad-key key-zero" onclick="payNumpadKey('0')">0</button>
+              <button class="numpad-key" onclick="payNumpadKey('.')">.</button>
+              <button class="numpad-key" onclick="payNumpadBackspace()">⌫</button>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- Bara de jos pentru plata -->
+      <div class="bottom-actions-bar">
+        <button class="act-btn" onclick="actionTransfer()">Transfer</button>
+        <button class="act-btn" onclick="actionDiscount()">Discount</button>
+        <button class="act-btn" onclick="actionCUI()">CUI</button>
+        <button class="act-btn" onclick="actionProforma()">Nota<br>Proforma</button>
+        <div class="act-spacer"></div>
+        <button class="act-btn" onclick="navigateToScreen('screen-marcare')">Inapoi</button>
+      </div>
+    </div>
+
+
+    <!-- ====================================================================
+         ECRAN 3: SELECTIE MASA (ecran_autentificare_selectie_masa.PNG)
+         ==================================================================== -->
+    <div id="screen-mese" class="pos-screen active">
+      <div class="tables-screen-layout">
+        
+        <!-- Grila celor 80 de mese -->
+        <div class="tables-grid-80" id="tables-grid-container">
+          <!-- Incarcat dinamic din tblBonCurent si tblMese -->
+        </div>
+
+        <!-- Meniu Dreapta -->
+        <div class="tables-right-menu">
+          <button class="tables-menu-btn" onclick="showToast('Platforme livrare')">Platforme<br>livrare</button>
+          <button class="tables-menu-btn blue-text" onclick="showToast('Facturare')">Facturare.<br>.........</button>
+          <button class="tables-menu-btn red-text" onclick="showToast('Cash IN')">Cash IN</button>
+          <button class="tables-menu-btn blue-text" onclick="showToast('Cash OUT')">Cash OUT</button>
+          <button class="tables-menu-btn blue-text" id="btn-print-queue" onclick="openPrintQueue()">Coada<br>printare</button>
+          <button class="tables-menu-btn red-text" onclick="openKeyboardModal('Parola')">Parola</button>
+        </div>
+
+      </div>
+
+      <!-- Footer ecran mese cu sigla si date de contact (tblSet DistrRand1/2) -->
+      <div class="tables-footer-info">
+        <img src="img/abcicon.ico" alt="abc Soft" class="tables-footer-logo">
+        <div>
+          <b id="footer-distr1"></b> &nbsp;&nbsp; <span id="footer-distr2"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================================================
+         ECRAN PROGRAMARE POS (parola din tblParola.ParolaPrg)
+         ==================================================================== -->
+    <div id="screen-programare" class="pos-screen">
+      <div class="prog-header">
+        <span>PROGRAMARE POS</span>
+        <div style="display:flex; gap:8px;">
+          <!--button class="act-btn" onclick="toggleFloatingKeyboard()">⌨️ Tastatura</button-->
+          <button class="act-btn" onclick="closeProgramming()">Inapoi</button>
+        </div>
+      </div>
+      <div class="prog-grid" id="prog-grid">
+        <button class="prog-btn" onclick="progAction('Setari')">Setari</button>
+        <button class="prog-btn" onclick="progAction('Grupe')">Grupe</button>
+        <button class="prog-btn" onclick="progAction('Produse')">Produse</button>
+        <button class="prog-btn" onclick="progAction('Sectii')">Sectii</button>
+        <button class="prog-btn" onclick="progAction('Programare mese')">Programare mese</button>
+        <button class="prog-btn" onclick="progAction('Ospatari')">Ospatari</button>
+        <button class="prog-btn" onclick="progAction('Moduri preparare')">Moduri preparare</button>
+        <button class="prog-btn" onclick="progAction('Parole')">Parole</button>
+        <button class="prog-btn" onclick="progAction('Antet')">Antet</button>
+        <button class="prog-btn" onclick="progAction('Nota')">Nota</button>
+        <button class="prog-btn" onclick="progAction('Imprimante sectii')">Imprimante sectii</button>
+        <button class="prog-btn" onclick="progAction('Forme de plata')">Forme de plata</button>
+        <button class="prog-btn" onclick="progAction('Cote TVA')">Cote TVA</button>
+        <button class="prog-btn" onclick="progAction('Conectare server')">Conectare server</button>
+        <button class="prog-btn" onclick="progAction('Sincronizare produse')">Sincronizare produse</button>
+      </div>
+    </div>
+
+    <!-- ECRAN SETARI (tblSet): taburi General / Device-uri / Imprimante / Altele -->
+    <div id="screen-prog-setari" class="pos-screen">
+      <div class="prog-header">
+        <span>SETARI</span>
+        <div style="display:flex; gap:8px;">
+          <button class="act-btn" onclick="saveSetari()" style="background:#ffff00;">Salveaza</button>
+          <button class="act-btn" onclick="closeProgSetari()">Inapoi</button>
+        </div>
+      </div>
+      <div class="setari-tabs" id="setari-tabs"></div>
+      <div class="setari-content" id="setari-content"></div>
+    </div>
+
+    <!-- ECRAN ANTET (tblAntet, Seria '0001') -->
+    <div id="screen-prog-antet" class="pos-screen">
+      <div class="prog-header">
+        <span>ANTET</span>
+        <div style="display:flex; gap:8px;">
+          <button class="act-btn" onclick="saveAntet()" style="background:#ffff00;">Salveaza</button>
+          <button class="act-btn" onclick="closeProgAntet()">Inapoi</button>
+        </div>
+      </div>
+      <div class="setari-content" id="antet-content">
+        <div class="antet-grid">
+          <div class="tva-field">
+            <label>Nume</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-nume" class="tva-input" maxlength="40">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-nume')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>Denumire2</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-den2" class="tva-input" maxlength="40">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-den2')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>Adresa</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-adresa" class="tva-input" maxlength="40">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-adresa')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>Oras</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-oras" class="tva-input" maxlength="50">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-oras')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>CodPostal</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-codpostal" class="tva-input" maxlength="10">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-codpostal')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>PersContact</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-perscontact" class="tva-input" maxlength="100">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-perscontact')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>email</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-email" class="tva-input" maxlength="50">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-email')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>website</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-website" class="tva-input" maxlength="50">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-website')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>telefon</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-telefon" class="tva-input" maxlength="50">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-telefon')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>CodFisca</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-codfisc" class="tva-input" maxlength="40">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-codfisc')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>RegCom</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-regcom" class="tva-input" maxlength="22">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-regcom')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>Judet</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-judet" class="tva-input" maxlength="22">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-judet')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>Cont</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-cont" class="tva-input" maxlength="22">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-cont')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>Banca</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-banca" class="tva-input" maxlength="40">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-banca')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>PlatitorTVA</label>
+            <button class="act-btn" id="antet-platitor-toggle" onclick="toggleAntetPlatitor()" style="width:100%;">Nu</button>
+          </div>
+          <div class="tva-field">
+            <label>Cale Date logo</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-calelogo" class="tva-input" maxlength="255">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-calelogo')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>QRCodeText</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-qrcode" class="tva-input" maxlength="255">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('antet-qrcode')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>SizeModeLogo</label>
+            <div class="tva-field-row">
+              <input type="text" id="antet-sizemode" class="tva-input">
+              <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('antet-sizemode', 'SIZEMODELOGO')">123</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ECRAN NOTA (tblAntet, liniile H1-H3 / F1-F2) -->
+    <div id="screen-prog-nota" class="pos-screen">
+      <div class="prog-header">
+        <span>NOTA</span>
+        <div style="display:flex; gap:8px;">
+          <button class="act-btn" onclick="saveNota()" style="background:#ffff00;">Salveaza</button>
+          <button class="act-btn" onclick="closeProgNota()">Inapoi</button>
+        </div>
+      </div>
+      <div class="setari-content" id="nota-content"></div>
+    </div>
+
+    <!-- ECRAN CONECTARE SERVER (tblConectare, un singur rand) -->
+    <div id="screen-prog-conectare" class="pos-screen">
+      <div class="prog-header">
+        <span>CONECTARE SERVER</span>
+        <div style="display:flex; gap:8px;">
+          <button class="act-btn" onclick="testConectare()">Testeaza conexiunea</button>
+          <button class="act-btn" onclick="saveConectare()" style="background:#ffff00;">Salveaza</button>
+          <button class="act-btn" onclick="closeProgConectare()">Inapoi</button>
+        </div>
+      </div>
+      <div class="setari-content">
+        <div class="antet-grid">
+          <div class="tva-field">
+            <label>ServerIP</label>
+            <div class="tva-field-row">
+              <input type="text" id="con-serverip" class="tva-input" maxlength="50">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('con-serverip')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>ServerName</label>
+            <div class="tva-field-row">
+              <input type="text" id="con-servername" class="tva-input" maxlength="50">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('con-servername')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>DataBaseName</label>
+            <div class="tva-field-row">
+              <input type="text" id="con-dbname" class="tva-input" maxlength="50">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('con-dbname')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>UserName</label>
+            <div class="tva-field-row">
+              <input type="text" id="con-user" class="tva-input" maxlength="50">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('con-user')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>Password</label>
+            <div class="tva-field-row">
+              <input type="text" id="con-pass" class="tva-input" maxlength="50">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('con-pass')">⌨️</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>TC (Trusted Connection)</label>
+            <select id="con-tc" class="tva-input">
+              <option value="0">Nu</option>
+              <option value="1">Da</option>
+            </select>
+          </div>
+          <div class="tva-field" style="grid-column: 1 / -1;">
+            <label>ODBC_connect_string</label>
+            <div class="tva-field-row">
+              <input type="text" id="con-odbc" class="tva-input" maxlength="255">
+              <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('con-odbc')">⌨️</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ECRAN PAROLE (tblParola, un singur rand) -->
+    <div id="screen-prog-parole" class="pos-screen">
+      <div class="prog-header">
+        <span>PAROLE</span>
+        <div style="display:flex; gap:8px;">
+          <button class="act-btn" onclick="saveParole()" style="background:#ffff00;">Salveaza</button>
+          <button class="act-btn" onclick="closeProgParole()">Inapoi</button>
+        </div>
+      </div>
+      <div class="setari-content">
+        <div style="font-size:13px; color:#555; margin-bottom:10px;">
+          Parolele sunt numerice. Lasati gol un camp daca nu doriti ca parola respectiva sa fie ceruta.
+        </div>
+        <div class="antet-grid">
+          <div class="tva-field">
+            <label>Parola programare</label>
+            <div class="tva-field-row">
+              <input type="text" id="par-programare" class="tva-input" maxlength="20">
+              <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('par-programare', 'PAROLA PROGRAMARE')">123</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>Parola rapoarte</label>
+            <div class="tva-field-row">
+              <input type="text" id="par-rapoarte" class="tva-input" maxlength="20">
+              <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('par-rapoarte', 'PAROLA RAPOARTE')">123</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>Parola stornare</label>
+            <div class="tva-field-row">
+              <input type="text" id="par-stornare" class="tva-input" maxlength="20">
+              <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('par-stornare', 'PAROLA STORNARE')">123</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>Parola discount</label>
+            <div class="tva-field-row">
+              <input type="text" id="par-discount" class="tva-input" maxlength="20">
+              <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('par-discount', 'PAROLA DISCOUNT')">123</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>Parola inchidere aplicatie</label>
+            <div class="tva-field-row">
+              <input type="text" id="par-exit" class="tva-input" maxlength="20">
+              <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('par-exit', 'PAROLA INCHIDERE')">123</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ECRAN RAPOARTE (taburi X / Z, accesat cu parola de rapoarte) -->
+    <div id="screen-rapoarte" class="pos-screen">
+      <div class="prog-header">
+        <span>RAPOARTE</span>
+        <div style="display:flex; gap:8px;">
+          <button class="act-btn" onclick="closeReports()">Inapoi</button>
+        </div>
+      </div>
+      <div class="setari-tabs" id="rapoarte-tabs"></div>
+      <div class="setari-content">
+        <div class="rapoarte-grid" id="rapoarte-grid"></div>
+      </div>
+    </div>
+
+    <!-- ECRAN PROGRAMARE PRODUSE (tblProd): grila live 5x10 pe grupa + inspector -->
+    <div id="screen-prog-produse" class="pos-screen">
+      <div class="prog-header">
+        <span>PROGRAMARE PRODUSE</span>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <span style="font-size:14px; color:#fff; font-weight:bold;">Grupa:</span>
+          <select id="prod-grup-select" class="prod-combo" onchange="onProdGrupChange()"></select>
+          <button class="act-btn" onclick="reloadProduse(true)">Reload</button>
+          <button class="act-btn" onclick="closeProgProduse()">Inapoi</button>
+        </div>
+      </div>
+      <div class="mese-prog-layout">
+        <!-- Grila live 5x10 (produsele grupei selectate) -->
+        <div class="mese-map-wrap">
+          <div class="menu-5x-grid" id="produse-prog-grid"></div>
+          <div class="mese-map-hint">Selecteaza un produs de pe grila pentru a-l edita. Sloturile punctate sunt pozitii libere.</div>
+        </div>
+
+        <!-- Inspector -->
+        <div class="mese-inspector" id="prod-inspector">
+          <div class="mese-insp-head">
+            <span id="prod-insp-title">PRODUS</span>
+            <span id="prod-dirty-badge" style="display:none; color:#b00000;">* nesalvat</span>
+          </div>
+
+          <div id="prod-empty-msg" class="mese-empty-msg" style="display:none;">
+            Alege o grupa mai sus, apoi selecteaza un produs sau o pozitie libera.
+          </div>
+
+          <div id="prod-form">
+            <div class="tva-field">
+              <label>ProdID (editabil la adaugare)</label>
+              <div class="tva-field-row">
+                <input type="text" id="prod-key-input" class="tva-input" value="">
+                <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('prod-key-input', 'PRODID')">123</button>
+              </div>
+            </div>
+
+            <div class="tva-field">
+              <label>BarCod</label>
+              <div class="tva-field-row">
+                <input type="text" id="prod-barcod-input" class="tva-input" value="" maxlength="15">
+                <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('prod-barcod-input')">⌨️</button>
+              </div>
+            </div>
+
+            <div class="tva-field">
+              <label>Denumire</label>
+              <div class="tva-field-row">
+                <input type="text" id="prod-den-input" class="tva-input" value="" maxlength="32">
+                <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('prod-den-input')">⌨️</button>
+              </div>
+            </div>
+
+            <div class="tva-field">
+              <label>Grupa (NrGrp)</label>
+              <select id="prod-grup-field" class="prod-combo" onchange="markProdDirtyFromField()"></select>
+            </div>
+
+            <div class="mese-toggle-row">
+              <div class="tva-field">
+                <label>UM</label>
+                <div class="tva-field-row">
+                  <input type="text" id="prod-um-input" class="tva-input" value="" maxlength="3">
+                  <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('prod-um-input')">⌨️</button>
+                </div>
+              </div>
+              <div class="tva-field">
+                <label>KP</label>
+                <div class="tva-field-row">
+                  <input type="text" id="prod-kp-input" class="tva-input" value="">
+                  <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('prod-kp-input', 'KP')">123</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="prod-line-2">
+              <div class="tva-field prod-line-2-2">
+                <label>Sectie</label>
+                <select id="prod-sectie-select" class="prod-combo" onchange="markProdDirtyFromField()"></select>
+              </div>
+              <div class="tva-field prod-line-2-1">
+                <label>Cota TVA</label>
+                <select id="prod-tva-select" class="prod-combo" onchange="markProdDirtyFromField()"></select>
+              </div>
+            </div>
+
+            <div class="tva-field">
+              <label>Pret (PV)</label>
+              <div class="tva-field-row">
+                <input type="text" id="prod-pv-input" class="tva-input" value="">
+                <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('prod-pv-input', 'PRET (PV)')">123</button>
+              </div>
+            </div>
+
+            <div class="mese-toggle-row">
+              <div class="tva-field">
+                <label>Poz (1-50)</label>
+                <div class="tva-field-row">
+                  <input type="text" id="prod-poz-input" class="tva-input" value="">
+                  <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('prod-poz-input', 'POZ')">123</button>
+                </div>
+              </div>
+              <div class="tva-field">
+                <label>FontSize</label>
+                <div class="tva-field-row">
+                  <input type="text" id="prod-size-input" class="tva-input" value="">
+                  <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('prod-size-input', 'FONTSIZE')">123</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="tva-field">
+              <label>Culoare fundal</label>
+              <div class="mese-swatches" id="prod-bg-swatches"></div>
+              <div class="tva-field-row">
+                <input type="color" id="prod-bg-custom" class="mese-color-input" value="#ffffff">
+                <span class="mese-color-extra">Culoare proprie</span>
+              </div>
+            </div>
+
+            <div class="tva-field">
+              <label>Culoare text</label>
+              <div class="mese-swatches" id="prod-fg-swatches"></div>
+              <div class="tva-field-row">
+                <input type="color" id="prod-fg-custom" class="mese-color-input" value="#000000">
+                <span class="mese-color-extra">Culoare proprie</span>
+              </div>
+            </div>
+
+            <div class="tva-field">
+              <label>FontType</label>
+              <div class="tva-field-row">
+                <input type="text" id="prod-font-input" class="tva-input" value="" placeholder="ex: Arial">
+                <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('prod-font-input')">⌨️</button>
+              </div>
+            </div>
+
+            <div class="tva-field">
+              <label>Imagine</label>
+              <div class="tva-field-row">
+                <input type="text" id="prod-imagine-input" class="tva-input" value="">
+                <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('prod-imagine-input')">⌨️</button>
+              </div>
+            </div>
+
+            <div class="mese-toggle-row">
+              <div class="tva-field">
+                <label>IRP</label>
+                <div class="tva-field-row">
+                  <input type="text" id="prod-irp-input" class="tva-input" value="">
+                  <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('prod-irp-input', 'IRP')">123</button>
+                </div>
+              </div>
+              <div class="tva-field">
+                <label>IIVCN</label>
+                <div class="tva-field-row">
+                  <input type="text" id="prod-iivcn-input" class="tva-input" value="">
+                  <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('prod-iivcn-input', 'IIVCN')">123</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="mese-toggle-row">
+              <div class="tva-field">
+                <label>Bold</label>
+                <button class="act-btn" id="prod-bold-toggle" onclick="toggleProdBold()" style="width:100%;">Nu</button>
+              </div>
+              <div class="tva-field">
+                <label>Meniul Zilei (MZ)</label>
+                <button class="act-btn" id="prod-mz-toggle" onclick="toggleProdMz()" style="width:100%;">Nu</button>
+              </div>
+            </div>
+
+            <div class="tva-actions">
+              <button class="act-btn" id="prod-save-btn" style="background:#ffff00;">Salveaza</button>
+              <button class="act-btn" id="prod-del-btn" onclick="deleteProdusSelected()">Sterge</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ECRAN PROGRAMARE GRUPE (tblGrp): grila live 5x10 + inspector -->
+    <div id="screen-prog-grupe" class="pos-screen">
+      <div class="prog-header">
+        <span>PROGRAMARE GRUPE</span>
+        <div style="display:flex; gap:8px;">
+          <button class="act-btn" onclick="reloadGrupe(true)">Reload</button>
+          <button class="act-btn" onclick="closeProgGrupe()">Inapoi</button>
+        </div>
+      </div>
+      <div class="mese-prog-layout">
+        <!-- Grila live 5x10 (Poz 1..50), ca in meniu -->
+        <div class="mese-map-wrap">
+          <div class="menu-5x-grid" id="grupe-prog-grid"></div>
+          <div class="mese-map-hint">Selecteaza o grupa de pe grila pentru a o edita. Sloturile punctate sunt pozitii libere.</div>
+        </div>
+
+        <!-- Inspector -->
+        <div class="mese-inspector" id="grup-inspector">
+          <div class="mese-insp-head">
+            <span id="grup-insp-title">GRUPA</span>
+            <span id="grup-dirty-badge" style="display:none; color:#b00000;">* nesalvat</span>
+          </div>
+
+          <div id="grup-empty-msg" class="mese-empty-msg" style="display:none;">
+            Atinge o grupa sau o pozitie libera de pe grila pentru a o edita.
+          </div>
+
+          <div id="grup-form">
+            <div class="tva-field">
+              <label>NrGrp (editabil la adaugare)</label>
+              <div class="tva-field-row">
+                <input type="text" id="grup-key-input" class="tva-input" value="">
+                <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('grup-key-input', 'NRGRP')">123</button>
+              </div>
+            </div>
+
+            <div class="tva-field">
+              <label>Denumire</label>
+              <div class="tva-field-row">
+                <input type="text" id="grup-den-input" class="tva-input" value="" maxlength="50">
+                <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('grup-den-input')">⌨️</button>
+              </div>
+            </div>
+
+            <div class="mese-toggle-row">
+              <div class="tva-field">
+                <label>Poz (1-50)</label>
+                <div class="tva-field-row">
+                  <input type="text" id="grup-poz-input" class="tva-input" value="">
+                  <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('grup-poz-input', 'POZ')">123</button>
+                </div>
+              </div>
+              <div class="tva-field">
+                <label>FontSize</label>
+                <div class="tva-field-row">
+                  <input type="text" id="grup-size-input" class="tva-input" value="">
+                  <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('grup-size-input', 'FONTSIZE')">123</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="tva-field">
+              <label>Culoare fundal</label>
+              <div class="mese-swatches" id="grup-bg-swatches"></div>
+              <div class="tva-field-row">
+                <input type="color" id="grup-bg-custom" class="mese-color-input" value="#ffffff">
+                <span class="mese-color-extra">Culoare proprie</span>
+              </div>
+            </div>
+
+            <div class="tva-field">
+              <label>Culoare text</label>
+              <div class="mese-swatches" id="grup-fg-swatches"></div>
+              <div class="tva-field-row">
+                <input type="color" id="grup-fg-custom" class="mese-color-input" value="#000000">
+                <span class="mese-color-extra">Culoare proprie</span>
+              </div>
+            </div>
+
+            <div class="tva-field">
+              <label>FontType</label>
+              <div class="tva-field-row">
+                <input type="text" id="grup-font-input" class="tva-input" value="" placeholder="ex: Arial">
+                <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('grup-font-input')">⌨️</button>
+              </div>
+            </div>
+
+            <div class="tva-field">
+              <label>Bold</label>
+              <button class="act-btn" id="grup-bold-toggle" onclick="toggleGrupBold()" style="width:100%;">Nu</button>
+            </div>
+
+            <div class="tva-actions">
+              <button class="act-btn" id="grup-save-btn" style="background:#ffff00;">Salveaza</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ECRAN PROGRAMARE MESE (tblMese): harta live + inspector -->
+    <div id="screen-prog-mese" class="pos-screen">
+      <div class="prog-header">
+        <span>PROGRAMARE MESE</span>
+        <div style="display:flex; gap:8px;">
+          <button class="act-btn" onclick="reloadMese(true)">Reload</button>
+          <button class="act-btn" onclick="closeProgMese()">Inapoi</button>
+        </div>
+      </div>
+      <div class="mese-prog-layout">
+        <!-- Harta live 10x8 -->
+        <div class="mese-map-wrap">
+          <div class="tables-grid-80" id="mese-prog-grid"></div>
+          <div class="mese-map-hint">Selecteaza o masa de pe harta pentru a o edita. Celulele punctate sunt pozitii libere.</div>
+        </div>
+
+        <!-- Inspector -->
+        <div class="mese-inspector" id="mese-inspector">
+          <div class="mese-insp-head">
+            <span id="mese-insp-title">MASA</span>
+            <span id="mese-dirty-badge" style="display:none; color:#b00000;">* nesalvat</span>
+          </div>
+
+          <div id="mese-empty-msg" class="mese-empty-msg" style="display:none;">
+            Poziție liberă. Apasa <b>Adauga masa</b> pentru a crea o masa aici.
+          </div>
+
+          <div id="mese-form">
+            <!-- Previzualizare -->
+            <div class="mese-prev-row">
+              <div class="mese-prev-tile" id="mese-preview"><span>?</span></div>
+              <div class="mese-prev-info">
+                <div><span class="lab">NrMasa</span></div>
+                <div class="mese-nr-readonly" id="mese-nr-display">-</div>
+              </div>
+            </div>
+
+            <!-- BackColor -->
+            <div class="tva-field">
+              <label>Culoare fundal</label>
+              <div class="mese-swatches" id="mese-bg-swatches"></div>
+              <div class="tva-field-row">
+                <input type="color" id="mese-bg-custom" class="mese-color-input" value="#ffffff">
+                <span class="mese-color-extra">Culoare proprie</span>
+              </div>
+            </div>
+
+            <!-- ForeColor -->
+            <div class="tva-field">
+              <label>Culoare text</label>
+              <div class="mese-swatches" id="mese-fg-swatches"></div>
+              <div class="tva-field-row">
+                <input type="color" id="mese-fg-custom" class="mese-color-input" value="#000000">
+                <span class="mese-color-extra">Culoare proprie</span>
+              </div>
+            </div>
+
+            <!-- Bold / Afisez -->
+            <div class="mese-toggle-row">
+              <div class="tva-field">
+                <label>Bold</label>
+                <button class="act-btn" id="mese-bold-toggle" onclick="toggleMeseBold()" style="width:100%;">Nu</button>
+              </div>
+              <div class="tva-field">
+                <label>Afisez</label>
+                <button class="act-btn" id="mese-afisez-toggle" onclick="toggleMeseAfisez()" style="width:100%;">Da</button>
+              </div>
+            </div>
+
+            <!-- Obs -->
+            <div class="tva-field">
+              <label>Observatii (max 10)</label>
+              <div class="tva-field-row">
+                <input type="text" id="mese-obs-input" class="tva-input" value="" maxlength="10">
+                <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('mese-obs-input')">⌨️</button>
+              </div>
+            </div>
+
+            <!-- Salveaza: doar in sectiunea de editare a mesei -->
+            <div class="tva-actions">
+              <button class="act-btn" id="mese-save-btn" style="background:#ffff00;">Salveaza</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ====================================================================
+       MODAL TASTATURA TACTILA / AUTENTIFICARE (ecran_autentificare_selectie_masa2.PNG)
+       ==================================================================== -->
+  <div class="modal-keyboard-overlay" id="modal-keyboard">
+    <div class="keyboard-dialog">
+      <div class="keyboard-dialog-header">
+        <span id="kb-title">AUTENTIFICARE</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeKeyboardModal()">Inchide</button>
+      </div>
+      
+      <div class="keyboard-body">
+        <div style="color: #666; font-size: 13px;">web: www.abc-soft.ro</div>
+        <div id="kb-subtitle" style="font-size: 20px; font-weight: bold; color: #333;">Introduceti parola</div>
+        
+        <input type="password" id="virtual-keyboard-input" class="keyboard-input-display" readonly>
+
+        <div class="keyboard-keys-container">
+          <!-- Sectiunea QWERTY -->
+          <div id="vk-rows" class="qwerty-section"></div>
+
+          <!-- Sectiunea Numpad din tastatura tactila -->
+          <div class="numpad-section">
+            <button class="numpad-key" onclick="vkeyInput('7')">7</button>
+            <button class="numpad-key" onclick="vkeyInput('8')">8</button>
+            <button class="numpad-key" onclick="vkeyInput('9')">9</button>
+            <button class="numpad-key key-c" onclick="vkeyClear()">C</button>
+
+            <button class="numpad-key" onclick="vkeyInput('4')">4</button>
+            <button class="numpad-key" onclick="vkeyInput('5')">5</button>
+            <button class="numpad-key" onclick="vkeyInput('6')">6</button>
+            <button class="numpad-key key-ok" onclick="vkeyValidate()">OK</button>
+
+            <button class="numpad-key" onclick="vkeyInput('1')">1</button>
+            <button class="numpad-key" onclick="vkeyInput('2')">2</button>
+            <button class="numpad-key" onclick="vkeyInput('3')">3</button>
+
+            <button class="numpad-key key-zero" style="grid-column: span 3;" onclick="vkeyInput('0')">0</button>
+          </div>
+        </div>
+
+        <div style="font-size: 11px; color: #b00;">validare = OK + OK</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal TASTATURA VIRTUALA FLOTANTA (scrie in campul cu focus) -->
+  <div class="modal-keyboard-overlay" id="modal-fkb">
+    <div class="keyboard-dialog fkb-dialog" id="fkb-dialog">
+      <div class="keyboard-dialog-header">
+        <span>TASTATURA VIRTUALA</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeFloatingKeyboard()">Ascunde</button>
+      </div>
+      <div class="keyboard-body">
+        <div style="font-size: 12px; color: #333;">Se scrie in campul care are focusul (folosita cand nu exista tastatura fizica)</div>
+
+        <div id="fkb-rows" class="keyboard-keys-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal COTE TVA: lista cotelor -->
+  <div class="modal-keyboard-overlay" id="modal-tva">
+    <div class="transfer-dialog">
+      <div class="keyboard-dialog-header">
+        <span>COTE TVA</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeTVAModal()">Inchide</button>
+      </div>
+      <div class="transfer-body">
+        <div class="transfer-subtitle">Atinge o cota pentru editare/stergere</div>
+        <div class="tva-list-header">
+          <span>Nr_TVA</span>
+          <span>Cota</span>
+        </div>
+        <div class="tva-list" id="tva-list"></div>
+        <div class="tva-actions">
+          <button class="act-btn" style="background:#ffff00;" onclick="openTVAInsert()">Adauga</button>
+          <button class="act-btn" id="btn-tva-edit" onclick="openTVAEdit()">Editeaza</button>
+          <button class="act-btn" id="btn-tva-del" onclick="deleteTVA()">Sterge</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal COTE TVA: formular de editare (insert/update) cu tastatura numerica -->
+  <div class="modal-keyboard-overlay" id="modal-tva-edit">
+    <div class="transfer-dialog">
+      <div class="keyboard-dialog-header">
+        <span id="tva-edit-title">COTA TVA</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeTVAEdit()">Inapoi</button>
+      </div>
+      <div class="transfer-body">
+        <div class="tva-field">
+          <label>Nr_TVA</label>
+          <input type="text" id="tva-key-input" class="tva-input" value="">
+        </div>
+        <div class="tva-field">
+          <label>Cota (%)</label>
+          <input type="text" id="tva-val-input" class="tva-input" value="">
+        </div>
+
+        <div class="qty-numpad">
+          <button class="qty-key" onclick="tvaNumKey('7')">7</button>
+          <button class="qty-key" onclick="tvaNumKey('8')">8</button>
+          <button class="qty-key" onclick="tvaNumKey('9')">9</button>
+          <button class="qty-key qty-fn" onclick="tvaBackspace()">⌫</button>
+          <button class="qty-key" onclick="tvaNumKey('4')">4</button>
+          <button class="qty-key" onclick="tvaNumKey('5')">5</button>
+          <button class="qty-key" onclick="tvaNumKey('6')">6</button>
+          <button class="qty-key qty-fn" onclick="tvaClear()">C</button>
+          <button class="qty-key" onclick="tvaNumKey('1')">1</button>
+          <button class="qty-key" onclick="tvaNumKey('2')">2</button>
+          <button class="qty-key" onclick="tvaNumKey('3')">3</button>
+          <button class="qty-key qty-fn" onclick="tvaNumKey('.')">.</button>
+          <button class="qty-key qty-zero" onclick="tvaNumKey('0')">0</button>
+          <button class="qty-key qty-ok" onclick="saveTVA()">OK</button>
+        </div>
+
+        <div class="tva-actions">
+          <button class="act-btn" onclick="saveTVA()" style="background:#ffff00;">Salveaza</button>
+          <button class="act-btn" onclick="closeTVAEdit()">Anuleaza</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal MODURI PREPARARE: lista modurilor -->
+  <div class="modal-keyboard-overlay" id="modal-mesaje">
+    <div class="transfer-dialog">
+      <div class="keyboard-dialog-header">
+        <span>MODURI PREPARARE</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeMesajeModal()">Inchide</button>
+      </div>
+      <div class="transfer-body">
+        <div class="transfer-subtitle">Atinge un mod pentru editare/stergere</div>
+        <div class="tva-list-header">
+          <span>NrMesaj</span>
+          <span>Mesaj</span>
+        </div>
+        <div class="tva-list" id="mesaje-list"></div>
+        <div class="tva-actions">
+          <button class="act-btn" style="background:#ffff00;" onclick="openMesajeInsert()">Adauga</button>
+          <button class="act-btn" id="btn-mesaje-edit" onclick="openMesajeEdit()">Editeaza</button>
+          <button class="act-btn" id="btn-mesaje-del" onclick="deleteMesaje()">Sterge</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal MODURI PREPARARE: formular insert/update cu tastatura virtuala/fizica -->
+  <div class="modal-keyboard-overlay" id="modal-mesaje-edit">
+    <div class="transfer-dialog">
+      <div class="keyboard-dialog-header">
+        <span id="mesaje-edit-title">MOD PREPARARE</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeMesajeEdit()">Inapoi</button>
+      </div>
+      <div class="transfer-body">
+        <div class="tva-field">
+          <label>NrMesaj</label>
+          <div class="tva-field-row">
+            <input type="text" id="mesaje-key-input" class="tva-input" value="">
+            <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('mesaje-key-input', 'NRMESAJ')">123</button>
+          </div>
+        </div>
+        <div class="tva-field">
+          <label>Mesaj</label>
+          <div class="tva-field-row">
+            <input type="text" id="mesaje-val-input" class="tva-input" value="">
+            <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('mesaje-val-input')">⌨️</button>
+          </div>
+        </div>
+
+        <div class="tva-actions">
+          <button class="act-btn" onclick="saveMesaje()" style="background:#ffff00;">Salveaza</button>
+          <button class="act-btn" onclick="closeMesajeEdit()">Anuleaza</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal DISCOUNT: aplicare discount pe produs sau pe nota intreaga -->
+  <div class="modal-keyboard-overlay" id="modal-discount">
+    <div class="discount-dialog">
+      <div class="keyboard-dialog-header">
+        <span>APLICARE DISCOUNT</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeDiscountModal()">Inchide</button>
+      </div>
+      <div class="discount-body">
+        <!-- 1. Nivel de aplicare -->
+        <div class="disc-section">
+          <div class="disc-section-title">NIVEL DE APLICARE</div>
+          <div class="disc-scope">
+            <button class="disc-scope-btn on" id="disc-scope-line" onclick="discSetScope('line')">
+              <span class="disc-scope-title">APLICA PE PRODUS</span>
+              <span class="disc-scope-sub" id="disc-line-label">...</span>
+            </button>
+            <button class="disc-scope-btn" id="disc-scope-bill" onclick="discSetScope('bill')">
+              <span class="disc-scope-title">APLICA PE SUBTOTAL</span>
+              <span class="disc-scope-sub" id="disc-bill-label">...</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. Tip discount -->
+        <div class="disc-mode-row">
+          <span class="disc-section-title">TIP DISCOUNT</span>
+          <div class="disc-mode">
+            <button class="disc-mode-btn on" id="disc-mode-percent" onclick="discSetMode('percent')">Procent (%)</button>
+            <button class="disc-mode-btn" id="disc-mode-valoric" onclick="discSetMode('valoric')">Valoare (LEI)</button>
+          </div>
+        </div>
+
+        <!-- 3. Valoare / numpad / presets -->
+        <div class="disc-main">
+          <div class="disc-left">
+            <div class="disc-section-title">VALOARE DISCOUNT</div>
+            <div class="disc-value-box">
+              <span id="disc-value">0</span>
+              <span id="disc-value-suffix">%</span>
+            </div>
+
+            <div class="disc-section-title" style="margin-top:14px;">CALCUL ESTIMAT</div>
+            <div class="disc-est">
+              <div class="disc-est-row">
+                <span>Valoare initiala:</span>
+                <span id="disc-est-base">0.00 Lei</span>
+              </div>
+              <div class="disc-est-row">
+                <span>Discount aplicat:</span>
+                <span id="disc-est-red">-0.00 Lei</span>
+              </div>
+              <div class="disc-est-row disc-est-total">
+                <span>Total nou:</span>
+                <span id="disc-est-new">0.00 Lei</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="disc-right">
+            <div class="disc-section-title">PRESETS RAPIDE</div>
+            <div class="disc-presets" id="disc-presets"></div>
+
+            <div class="disc-section-title" style="margin-top:14px;">NUMPAD</div>
+            <div class="disc-numpad">
+              <button class="disc-numpad-key" onclick="discNumpad('7')">7</button>
+              <button class="disc-numpad-key" onclick="discNumpad('8')">8</button>
+              <button class="disc-numpad-key" onclick="discNumpad('9')">9</button>
+              <button class="disc-numpad-key" onclick="discNumpad('4')">4</button>
+              <button class="disc-numpad-key" onclick="discNumpad('5')">5</button>
+              <button class="disc-numpad-key" onclick="discNumpad('6')">6</button>
+              <button class="disc-numpad-key" onclick="discNumpad('1')">1</button>
+              <button class="disc-numpad-key" onclick="discNumpad('2')">2</button>
+              <button class="disc-numpad-key" onclick="discNumpad('3')">3</button>
+              <button class="disc-numpad-key disc-numpad-fn" onclick="discNumpad('C')">C</button>
+              <button class="disc-numpad-key" onclick="discNumpad('0')">0</button>
+              <button class="disc-numpad-key" onclick="discNumpad('.')">.</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Motiv -->
+        <div class="disc-motiv">
+          <label for="disc-motiv-select">MOTIV / OBSERVATII (optional)</label>
+          <select id="disc-motiv-select" class="disc-motiv-select">
+            <option value="">— selectati motivul —</option>
+            <option value="Protocol">Protocol</option>
+            <option value="Inlocuire preparat">Inlocuire preparat</option>
+            <option value="Membru fidelitate">Membru fidelitate</option>
+            <option value="Angajat">Angajat</option>
+            <option value="Card fidelitate">Card fidelitate</option>
+            <option value="Altele">Altele</option>
+          </select>
+        </div>
+
+        <!-- 5. Actiuni -->
+        <div class="disc-actions">
+          <button class="disc-btn-cancel" onclick="closeDiscountModal()">ANULEAZA</button>
+          <button class="disc-btn-apply" id="btn-disc-apply" onclick="discApply()">APLICA DISCOUNT</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal VD: anulare/stornare articol selectat -->
+  <div class="modal-keyboard-overlay" id="modal-void">
+    <div class="discount-dialog">
+      <div class="keyboard-dialog-header">
+        <span>ANULARE ARTICOL (VD)</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeVoidModal()">Inchide</button>
+      </div>
+      <div class="discount-body">
+        <!-- Articol selectat -->
+        <div class="disc-section">
+          <div class="disc-section-title">ARTICOL SELECTAT</div>
+          <div class="void-prod-name" id="void-prod-name">—</div>
+          <div class="void-info">
+            <div>Comandat: <b id="void-cant-linie">0</b></div>
+            <div>Deja anulat: <b id="void-deja">0</b></div>
+            <div>Disponibil: <b id="void-ramas">0</b></div>
+          </div>
+        </div>
+
+        <!-- Cantitate + numpad -->
+        <div class="disc-main" id="void-qty-box">
+          <div class="disc-left">
+            <div class="disc-section-title">CANTITATE DE ANULAT</div>
+            <div class="disc-value-box">
+              <span id="void-value">1</span>
+              <span id="void-value-suffix">buc</span>
+            </div>
+            <div class="void-warn" id="void-warn"></div>
+          </div>
+
+          <div class="disc-right">
+            <div class="disc-section-title">NUMPAD</div>
+            <div class="disc-numpad">
+              <button class="disc-numpad-key" onclick="voidNumpad('7')">7</button>
+              <button class="disc-numpad-key" onclick="voidNumpad('8')">8</button>
+              <button class="disc-numpad-key" onclick="voidNumpad('9')">9</button>
+              <button class="disc-numpad-key" onclick="voidNumpad('4')">4</button>
+              <button class="disc-numpad-key" onclick="voidNumpad('5')">5</button>
+              <button class="disc-numpad-key" onclick="voidNumpad('6')">6</button>
+              <button class="disc-numpad-key" onclick="voidNumpad('1')">1</button>
+              <button class="disc-numpad-key" onclick="voidNumpad('2')">2</button>
+              <button class="disc-numpad-key" onclick="voidNumpad('3')">3</button>
+              <button class="disc-numpad-key disc-numpad-fn" onclick="voidNumpad('C')">C</button>
+              <button class="disc-numpad-key" onclick="voidNumpad('0')">0</button>
+              <button class="disc-numpad-key" onclick="voidNumpad('.')">.</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Motiv + parola (doar pentru linii deja trimise) -->
+        <div class="disc-motiv" id="void-motiv-box">
+          <label for="void-motiv-select">MOTIV ANULARE</label>
+          <select id="void-motiv-select" class="disc-motiv-select">
+            <option value="">— selectati motivul —</option>
+            <option value="Retur client">Retur client</option>
+            <option value="Greseala ospatar">Greseala ospatar</option>
+            <option value="Lipsa stoc">Lipsa stoc</option>
+            <option value="Comanda gresita">Comanda gresita</option>
+            <option value="Altele">Altele</option>
+          </select>
+        </div>
+        <div class="disc-motiv" id="void-parola-box">
+          <label for="void-parola">PAROLA STORNARE</label>
+          <input type="password" id="void-parola" class="disc-motiv-select" autocomplete="off" />
+          <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('void-parola')">⌨️</button>
+        </div>
+
+        <!-- Actiuni -->
+        <div class="disc-actions">
+          <button class="disc-btn-cancel" onclick="closeVoidModal()">ANULEAZA</button>
+          <button class="disc-btn-apply" id="btn-void-apply" onclick="voidApply()">CONFIRMA ANULARE</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal OSPATARI: lista ospatarilor -->
+  <div class="modal-keyboard-overlay" id="modal-osp">
+    <div class="transfer-dialog">
+      <div class="keyboard-dialog-header">
+        <span>OSPATARI</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeOspModal()">Inchide</button>
+      </div>
+      <div class="transfer-body">
+        <div class="transfer-subtitle">Atinge un ospatar pentru editare/stergere</div>
+        <div class="osp-head">
+          <span>NrOsp</span>
+          <span>Nume</span>
+          <span>Expl</span>
+        </div>
+        <div class="osp-list" id="osp-list"></div>
+        <div class="tva-actions">
+          <button class="act-btn" style="background:#ffff00;" onclick="openOspInsert()">Adauga</button>
+          <button class="act-btn" id="btn-osp-edit" onclick="openOspEdit()">Editeaza</button>
+          <button class="act-btn" id="btn-osp-del" onclick="deleteOsp()">Sterge</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal OSPATARI: formular insert/update -->
+  <div class="modal-keyboard-overlay" id="modal-osp-edit">
+    <div class="transfer-dialog">
+      <div class="keyboard-dialog-header">
+        <span id="osp-edit-title">OSPATAR</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeOspEdit()">Inapoi</button>
+      </div>
+      <div class="transfer-body">
+        <div class="tva-field">
+          <label>NrOsp (max 2 caractere)</label>
+          <div class="tva-field-row">
+            <input type="text" id="osp-key-input" class="tva-input" value="">
+            <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('osp-key-input', 'NROSP')">123</button>
+          </div>
+        </div>
+        <div class="tva-field">
+          <label>Nume</label>
+          <div class="tva-field-row">
+            <input type="text" id="osp-nume-input" class="tva-input" value="">
+            <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('osp-nume-input')">⌨️</button>
+          </div>
+        </div>
+        <div class="tva-field">
+          <label>Expl (explicatie)</label>
+          <div class="tva-field-row">
+            <input type="text" id="osp-expl-input" class="tva-input" value="">
+            <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('osp-expl-input')">⌨️</button>
+          </div>
+        </div>
+        <div class="tva-field">
+          <label>Parola</label>
+          <div class="tva-field-row">
+            <input type="text" id="osp-parola-input" class="tva-input" value="">
+            <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('osp-parola-input')">⌨️</button>
+          </div>
+        </div>
+
+        <div class="tva-field">
+          <label>Blocat</label>
+          <button class="act-btn" id="osp-blocat-toggle" onclick="toggleOspBlocat()" style="width:100%;">Nu</button>
+        </div>
+
+        <div class="tva-actions">
+          <button class="act-btn" onclick="saveOsp()" style="background:#ffff00;">Salveaza</button>
+          <button class="act-btn" onclick="closeOspEdit()">Anuleaza</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal SECTII: lista sectiilor -->
+  <div class="modal-keyboard-overlay" id="modal-sect">
+    <div class="transfer-dialog">
+      <div class="keyboard-dialog-header">
+        <span>SECTII</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeSectModal()">Inchide</button>
+      </div>
+      <div class="transfer-body">
+        <div class="transfer-subtitle">Atinge o sectie pentru editare/stergere</div>
+        <div class="sect-head">
+          <span>Sectie</span>
+          <span>Denumire</span>
+        </div>
+        <div class="sect-list" id="sect-list"></div>
+        <div class="tva-actions">
+          <button class="act-btn" style="background:#ffff00;" onclick="openSectInsert()">Adauga</button>
+          <button class="act-btn" id="btn-sect-edit" onclick="openSectEdit()">Editeaza</button>
+          <button class="act-btn" id="btn-sect-del" onclick="deleteSect()">Sterge</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal SECTII: formular insert/update -->
+  <div class="modal-keyboard-overlay" id="modal-sect-edit">
+    <div class="transfer-dialog">
+      <div class="keyboard-dialog-header">
+        <span id="sect-edit-title">SECTIE</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeSectEdit()">Inapoi</button>
+      </div>
+      <div class="transfer-body">
+        <div class="tva-field">
+          <label>Sectie</label>
+          <div class="tva-field-row">
+            <input type="text" id="sect-key-input" class="tva-input" value="">
+            <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('sect-key-input', 'SECTIE')">123</button>
+          </div>
+        </div>
+        <div class="tva-field">
+          <label>Denumire (max 10 caractere)</label>
+          <div class="tva-field-row">
+            <input type="text" id="sect-den-input" class="tva-input" value="">
+            <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('sect-den-input')">⌨️</button>
+          </div>
+        </div>
+        <div class="tva-actions">
+          <button class="act-btn" onclick="saveSect()" style="background:#ffff00;">Salveaza</button>
+          <button class="act-btn" onclick="closeSectEdit()">Anuleaza</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal IMPRIMANTE SECTII: lista imprimantelor -->
+  <div class="modal-keyboard-overlay" id="modal-kp">
+    <div class="transfer-dialog">
+      <div class="keyboard-dialog-header">
+        <span>IMPRIMANTE SECTII</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeKpModal()">Inchide</button>
+      </div>
+      <div class="transfer-body">
+        <div class="transfer-subtitle">Atinge o imprimanta pentru editare/stergere</div>
+        <div class="kp-head">
+          <span>NrLogic</span>
+          <span>Nume</span>
+          <span>DenumirePrinter</span>
+          <span>Stare</span>
+        </div>
+        <div class="kp-list" id="kp-list"></div>
+        <div class="tva-actions">
+          <button class="act-btn" style="background:#ffff00;" onclick="openKpInsert()">Adauga</button>
+          <button class="act-btn" id="btn-kp-edit" onclick="openKpEdit()">Editeaza</button>
+          <button class="act-btn" id="btn-kp-del" onclick="deleteKp()">Sterge</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal IMPRIMANTE SECTII: formular insert/update (campuri generate dinamic) -->
+  <div class="modal-keyboard-overlay" id="modal-kp-edit">
+    <div class="transfer-dialog">
+      <div class="keyboard-dialog-header">
+        <span id="kp-edit-title">IMPRIMANTA</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeKpEdit()">Inapoi</button>
+      </div>
+      <div class="transfer-body kp-edit-body">
+        <div id="kp-fields"></div>
+        <div class="tva-field">
+          <label>Stare (activa)</label>
+          <button class="act-btn" id="kp-stare-toggle" onclick="toggleKpStare()" style="width:100%;">Nu</button>
+        </div>
+        <div class="tva-actions">
+          <button class="act-btn" onclick="saveKp()" style="background:#ffff00;">Salveaza</button>
+          <button class="act-btn" onclick="closeKpEdit()">Anuleaza</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal FORME DE PLATA: lista formelor -->
+  <div class="modal-keyboard-overlay" id="modal-fp">
+    <div class="transfer-dialog">
+      <div class="keyboard-dialog-header">
+        <span>FORME DE PLATA</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeFpModal()">Inchide</button>
+      </div>
+      <div class="transfer-body">
+        <div class="transfer-subtitle">Atinge o forma de plata pentru editare/stergere</div>
+        <div class="kp-head fp-head">
+          <span>FPID</span>
+          <span>Denumire</span>
+          <span>Poz</span>
+          <span>Status</span>
+        </div>
+        <div class="kp-list fp-list" id="fp-list"></div>
+        <div class="tva-actions">
+          <button class="act-btn" style="background:#ffff00;" onclick="openFpInsert()">Adauga</button>
+          <button class="act-btn" id="btn-fp-edit" onclick="openFpEdit()">Editeaza</button>
+          <button class="act-btn" id="btn-fp-del" onclick="deleteFp()">Sterge</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal FORME DE PLATA: formular insert/update -->
+  <div class="modal-keyboard-overlay" id="modal-fp-edit">
+    <div class="transfer-dialog">
+      <div class="keyboard-dialog-header">
+        <span id="fp-edit-title">FORMA DE PLATA</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeFpEdit()">Inapoi</button>
+      </div>
+      <div class="transfer-body">
+        <div class="tva-field">
+          <label>FPID</label>
+          <div class="tva-field-row">
+            <input type="text" id="fp-key-input" class="tva-input" value="">
+            <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('fp-key-input', 'FPID')">123</button>
+          </div>
+        </div>
+        <div class="tva-field">
+          <label>Denumire (max 10 caractere)</label>
+          <div class="tva-field-row">
+            <input type="text" id="fp-den-input" class="tva-input" value="">
+            <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('fp-den-input')">⌨️</button>
+          </div>
+        </div>
+        <div class="tva-field">
+          <label>Poz (ordine afisare, 1 = implicit)</label>
+          <div class="tva-field-row">
+            <input type="text" id="fp-poz-input" class="tva-input" value="">
+            <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('fp-poz-input', 'POZ')">123</button>
+          </div>
+        </div>
+        <div class="tva-field">
+          <label>Status (activ)</label>
+          <button class="act-btn" id="fp-status-toggle" onclick="toggleFpStatus()" style="width:100%;">Nu</button>
+        </div>
+        <div class="tva-actions">
+          <button class="act-btn" onclick="saveFp()" style="background:#ffff00;">Salveaza</button>
+          <button class="act-btn" onclick="closeFpEdit()">Anuleaza</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal CANTITATE: tastatura numerica pentru a modifica cantitatea unui produs -->
+  <div class="modal-keyboard-overlay" id="modal-qty">    <div class="keyboard-dialog qty-dialog">
+      <div class="keyboard-dialog-header">
+        <span>CANTITATE</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeQtyModal()">Inchide</button>
+      </div>
+      <div class="keyboard-body">
+        <div id="qty-product-name" style="color: #333; font-size: 15px; font-weight: bold; text-align: center; max-width: 280px;">Produs</div>
+        <input type="text" id="qty-input-display" class="keyboard-input-display" readonly value="1">
+
+        <div class="qty-numpad">
+          <button class="qty-key" onclick="qtyKey('7')">7</button>
+          <button class="qty-key" onclick="qtyKey('8')">8</button>
+          <button class="qty-key" onclick="qtyKey('9')">9</button>
+          <button class="qty-key qty-fn" onclick="qtyBackspace()">⌫</button>
+
+          <button class="qty-key" onclick="qtyKey('4')">4</button>
+          <button class="qty-key" onclick="qtyKey('5')">5</button>
+          <button class="qty-key" onclick="qtyKey('6')">6</button>
+          <button class="qty-key qty-fn" onclick="qtyClear()">C</button>
+
+          <button class="qty-key" onclick="qtyKey('1')">1</button>
+          <button class="qty-key" onclick="qtyKey('2')">2</button>
+          <button class="qty-key" onclick="qtyKey('3')">3</button>
+          <button class="qty-key qty-fn" onclick="qtyKey('.')">.</button>
+
+          <button class="qty-key qty-zero" onclick="qtyKey('0')">0</button>
+          <button class="qty-key qty-ok" onclick="confirmQty()">OK</button>
+        </div>
+
+        <div style="font-size: 11px; color: #b00;">maxim o zecimala (ex: 0.2)</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal TASTATURA NUMERICA generica: scrie intr-un input tinta -->
+  <div class="modal-keyboard-overlay" id="modal-num">
+    <div class="keyboard-dialog qty-dialog">
+      <div class="keyboard-dialog-header">
+        <span id="num-title">TASTATURA NUMERICA</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeNumericKeyboard()">Inchide</button>
+      </div>
+      <div class="keyboard-body">
+        <input type="text" id="num-display" class="keyboard-input-display" readonly value="">
+        <div class="qty-numpad">
+          <button class="qty-key" onclick="numpadKey('7')">7</button>
+          <button class="qty-key" onclick="numpadKey('8')">8</button>
+          <button class="qty-key" onclick="numpadKey('9')">9</button>
+          <button class="qty-key qty-fn" onclick="numpadBackspace()">⌫</button>
+          <button class="qty-key" onclick="numpadKey('4')">4</button>
+          <button class="qty-key" onclick="numpadKey('5')">5</button>
+          <button class="qty-key" onclick="numpadKey('6')">6</button>
+          <button class="qty-key qty-fn" onclick="numpadClear()">C</button>
+          <button class="qty-key" onclick="numpadKey('1')">1</button>
+          <button class="qty-key" onclick="numpadKey('2')">2</button>
+          <button class="qty-key" onclick="numpadKey('3')">3</button>
+          <button class="qty-key qty-fn" onclick="numpadKey('.')">.</button>
+          <button class="qty-key qty-zero" onclick="numpadKey('0')">0</button>
+          <button class="qty-key qty-ok" onclick="numpadOk()">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal CONFIRMARE generica (in-app, fara dialog nativ) -->
+  <div class="modal-keyboard-overlay" id="modal-confirm">
+    <div class="transfer-dialog" style="max-width: 440px;">
+      <div class="keyboard-dialog-header">
+        <span>CONFIRMARE</span>
+      </div>
+      <div class="transfer-body">
+        <div id="confirm-message" style="font-size:15px; color:#222; margin:8px 0 18px 0; line-height:1.4;"></div>
+        <div class="tva-actions">
+          <button class="act-btn" id="confirm-yes" style="background:#ffff00;">Da</button>
+          <button class="act-btn" id="confirm-no">Nu</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal MESAJ generica (in-app, fara dialog nativ) -->
+  <div class="modal-keyboard-overlay" id="modal-alert">
+    <div class="transfer-dialog" style="max-width: 480px;">
+      <div class="keyboard-dialog-header">
+        <span>ATENTIE</span>
+      </div>
+      <div class="transfer-body">
+        <div id="alert-message" style="font-size:15px; color:#222; margin:8px 0 18px 0; line-height:1.4; white-space: pre-line;"></div>
+        <div class="tva-actions">
+          <button class="act-btn" id="alert-ok" style="background:#ffff00;">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal TRANSFER PRODUSE (selectie produse + masa destinatie prin numar) -->
+  <div class="modal-keyboard-overlay" id="modal-transfer">
+    <div class="transfer-dialog">
+      <div class="keyboard-dialog-header">
+        <span id="transfer-dialog-title">TRANSFER PRODUSE</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeTransferModal()">Inchide</button>
+      </div>
+
+      <!-- Pasul 1: selecteaza produsele din nota curenta -->
+      <div id="transfer-step-products">
+        <div class="transfer-body">
+          <div class="transfer-subtitle">Masa sursa: <b id="transfer-source-table">1</b> — atinge produsele de mutat</div>
+          <div class="transfer-list" id="transfer-products-list"></div>
+          <div class="transfer-list-footer">
+            <button class="act-btn" onclick="selectAllTransfer()">Toate</button>
+            <button class="act-btn" onclick="clearTransfer()">Nimic</button>
+            <div class="act-spacer"></div>
+            <button class="act-btn" id="btn-transfer-next" style="background:#ffff00;" onclick="goTransferToMasa()">Continua</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pasul 2: masa destinatie, selectata dupa numar -->
+      <div id="transfer-step-masa" style="display: none;">
+        <div class="transfer-body">
+          <div class="transfer-subtitle" id="transfer-masa-subtitle">Masa destinatie (numar 1–80)</div>
+          <input type="text" id="transfer-masa-input" class="keyboard-input-display" readonly value="">
+          <div class="transfer-numpad">
+            <button class="transfer-key" onclick="transferMasaKey('1')">1</button>
+            <button class="transfer-key" onclick="transferMasaKey('2')">2</button>
+            <button class="transfer-key" onclick="transferMasaKey('3')">3</button>
+            <button class="transfer-key" onclick="transferMasaKey('4')">4</button>
+            <button class="transfer-key" onclick="transferMasaKey('5')">5</button>
+            <button class="transfer-key" onclick="transferMasaKey('6')">6</button>
+            <button class="transfer-key" onclick="transferMasaKey('7')">7</button>
+            <button class="transfer-key" onclick="transferMasaKey('8')">8</button>
+            <button class="transfer-key" onclick="transferMasaKey('9')">9</button>
+            <button class="transfer-key transfer-key-clear" onclick="transferMasaClear()">C</button>
+            <button class="transfer-key" onclick="transferMasaKey('0')">0</button>
+            <button class="transfer-key transfer-key-clear" onclick="transferMasaBackspace()">⌫</button>
+            <button class="transfer-key transfer-key-ok" onclick="execTransfer()">OK</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Modal COADA DE TIPARIRE (joburi pending/failed/done) -->
+  <div class="modal-keyboard-overlay" id="modal-print-queue">
+    <div class="transfer-dialog" style="width: 720px;">
+      <div class="keyboard-dialog-header">
+        <span>COADA DE TIPARIRE</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closePrintQueue()">Inchide</button>
+      </div>
+      <div class="transfer-body">
+        <div class="transfer-subtitle">Joburi de tiparire: in asteptare, esuate sau finalizate</div>
+        <div class="printq-wrap">
+          <table class="printq-table">
+            <colgroup>
+              <col style="width: 52px;">
+              <col style="width: 150px;">
+              <col style="width: 90px;">
+              <col style="width: 46px;">
+              <col style="width: 80px;">
+              <col style="width: 162px;">
+              <col>
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="printq-num">JobID</th>
+                <th>Tip</th>
+                <th>Ref</th>
+                <th class="printq-num">Kp</th>
+                <th>Stare</th>
+                <th>Creat</th>
+                <th>Incercari</th>
+              </tr>
+            </thead>
+            <tbody id="printq-list"></tbody>
+          </table>
+        </div>
+        <div class="tva-actions">
+          <button class="act-btn" onclick="refreshPrintQueue()">Reincarca</button>
+          <button class="act-btn" id="btn-printq-preview" onclick="previewPrintJob()" disabled>Preview</button>
+          <button class="act-btn" id="btn-printq-retry" onclick="retryPrintJob()" disabled>Retry</button>
+          <button class="act-btn" id="btn-printq-del" onclick="deletePrintJob()" disabled>Sterge</button>
+          <button class="act-btn" onclick="clearDonePrintJobs()">Goleste done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal PREVIEW BON (emulator ESC/POS) -->
+  <div class="modal-keyboard-overlay" id="modal-print-preview">
+    <div class="transfer-dialog" style="max-width: 780px;">
+      <div class="keyboard-dialog-header">
+        <span>PREVIEW BON</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closePrintPreview()">Inchide</button>
+      </div>
+      <div class="transfer-body" style="padding: 0;">
+        <iframe id="print-preview-frame" src="" style="width: 100%; height: 560px; border: 0; background: #3a3a3a;"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal RAPORT (X / Z) -->
+  <div class="modal-keyboard-overlay" id="modal-raport">
+    <div class="transfer-dialog" style="width: 900px;">
+      <div class="keyboard-dialog-header">
+        <span id="raport-title">RAPORT</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeReportModal()">Inchide</button>
+      </div>
+      <div class="transfer-body" style="align-items: stretch;">
+        <div id="raport-content" class="raport-content"></div>
+        <div class="tva-actions">
+          <button class="act-btn" onclick="printCurrentReport()">Tipareste</button>
+          <button class="act-btn" onclick="closeReportModal()">Inchide</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="pos-toast" id="pos-toast">Notificare</div>
+
+  </div><!-- /#pos-stage -->
+
+  <!-- Script aplicatie -->
+  <script src="js/pos.js?v=20260913i"></script>
+</body>
+</html>

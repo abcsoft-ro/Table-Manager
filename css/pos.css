@@ -1,0 +1,2516 @@
+/* ==========================================================================
+   TableManager Modern POS - CSS
+   Reproducere fidela ecran_marcare.PNG + Inchidere_nota.PNG + Mese
+   Optimizat Touchscreen (butoane mari, contrast ridicat, fara lag)
+   ========================================================================== */
+
+:root {
+  --bg-app: #008000;          /* Verdele specific TableManager */
+  --bg-order: #ffffff;
+  --bg-blue-panel: #232d84;   /* Albastru inchis original */
+  --bg-header-gray: #a8a8a8;
+  
+  --btn-default: #ffffff;
+  --btn-default-text: #000000;
+  --btn-cyan: #7ce7fa;        /* WR1, WR2, WR3 */
+  --btn-action-red: #d40000;
+  --btn-selected-yellow: #ffff00;
+  
+  --font-family: Arial, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+html, body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--bg-app);
+  font-family: var(--font-family);
+  color: #000000;
+}
+
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Stage: canvas minim 1024x768, scalat proportional.
+   Dimensiunile nescalate vin din JS (--pos-stage-w/h) si pot depasi baza pe
+   ecrane mai mari; surplusul e absorbit de zonele flexibile (grila, lista nota,
+   grila mese), astfel incat canvasul scalat acopera exact fereastra. */
+#pos-stage {
+  position: relative;
+  width: var(--pos-stage-w, 1024px);
+  height: var(--pos-stage-h, 768px);
+  flex: 0 0 auto;
+  transform-origin: center center;
+  transform: scale(var(--pos-scale, 1));
+  overflow: hidden;
+  background-color: var(--bg-app);
+  box-shadow: 0 0 20px rgba(0, 0, 0, 0.4);
+}
+
+/* Container aplicatie (umple intregul stage, latime+inaltime variabile) */
+.pos-viewport {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px 10px 10px;
+  background-color: var(--bg-app);
+}
+
+/* Antetul superior */
+.pos-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 6px;
+  padding: 0 4px;
+}
+
+/* Containerele de vizualizare (Ecrane) */
+.pos-screen {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pos-screen.active {
+  display: flex;
+}
+
+/* ==========================================================================
+   ECRAN 1: MARCARE (ecran_marcare.PNG)
+   ========================================================================== */
+.marcare-body {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  min-height: 0;
+}
+
+/* Panoul din stanga: Nota de plata (latime fixa, nu se largeste pe ecrane late) */
+.order-panel {
+  width: 410px;
+  flex: 0 0 410px;
+  background: var(--bg-order);
+  border: 1px solid #1a1a1a;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  position: relative;
+}
+
+.order-top-row-1 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.order-datetime {
+  font-weight: bold;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+}
+
+/* Camp scanare cod de bare / ProdID (ecran marcare) */
+.scan-input {
+  background: #ffff0026;
+  color: #000;
+  border: 2px solid #000;
+  border-radius: 3px;
+  font-size: 15px;
+  font-weight: bold;
+  padding: 5px 10px;
+  width: 210px;
+  outline: none;
+}
+
+.scan-input::placeholder {
+  color: #555;
+  font-weight: normal;
+}
+
+.scan-input:focus {
+  box-shadow: 0 0 0 2px #ffffff inset;
+}
+
+.table-indicator-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.table-indicator-box .tbl-label {
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.table-indicator-box .tbl-value {
+  border: 1px solid #666;
+  padding: 1px 32px;
+  color: #e60000;
+  font-size: 22px;
+  font-weight: 900;
+  background: #fff;
+  cursor: pointer;
+}
+
+.order-top-row-2 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.order-title {
+  font-size: 21px;
+  font-weight: 900;
+  letter-spacing: 1px;
+}
+
+.cashier-badge {
+  border: 1px solid #666;
+  padding: 2px 14px;
+  color: #e60000;
+  font-size: 18px;
+  font-weight: 900;
+  letter-spacing: 1px;
+}
+
+/* Tabel articole */
+.order-items-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  border-top: 1px solid #444;
+  margin-top: 6px;
+  overflow: hidden;
+}
+
+.order-grid-header {
+  display: grid;
+  grid-template-columns: 1fr 68px 76px;
+  background: var(--bg-header-gray);
+  color: #fff;
+  font-size: 13px;
+  font-weight: bold;
+  padding: 4px 0;
+  border-bottom: 1px solid #777;
+}
+
+.order-grid-header div {
+  text-align: center;
+}
+.order-grid-header div:first-child {
+  text-align: left;
+  padding-left: 8px;
+}
+
+.order-items-scroll {
+  flex: 1;
+  overflow-y: auto;
+  background: #fff;
+}
+
+.order-row {
+  display: grid;
+  grid-template-columns: 1fr 68px 76px;
+  align-items: center;
+  padding: 3px 0;
+  font-size: 15px;
+  font-weight: bold;
+  border-bottom: 1px solid #f0f0f0;
+  cursor: pointer;
+}
+
+.order-row:hover {
+  background: #f8f8f8;
+}
+
+.order-row.selected {
+  background: #f0f7ff;
+}
+
+.order-row-name {
+  padding-left: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.order-row-qty {
+  text-align: center;
+  padding: 1px 0;
+  cursor: pointer;
+}
+
+.order-row.selected .order-row-qty,
+.order-row-qty.active {
+  background: var(--btn-selected-yellow);
+}
+
+/* Cantitate blocata: produs deja trimis la sectie */
+.order-row-qty.qty-locked {
+  cursor: not-allowed;
+  color: #999;
+}
+
+.order-row-val {
+  text-align: right;
+  padding-right: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Linie de storno/anulare: produs cu cantitate si valoare negative */
+.order-row.storno-row .order-row-name,
+.order-row.storno-row .order-row-qty,
+.order-row.storno-row .order-row-val {
+  color: #cc0000;
+  font-weight: bold;
+}
+
+.order-row.storno-row .order-row-qty {
+  cursor: default;
+}
+
+/* Rand de mod de preparare: apare sub produsul caruia i se adreseaza */
+.order-mod-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 1px 6px 1px 16px;
+  font-size: 13px;
+  font-style: italic;
+  color: #333;
+  background: #fff7cc;
+  border-bottom: 1px dotted #ddd;
+}
+
+.order-mod-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mod-del-btn {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border: 1px solid #999;
+  border-radius: 3px;
+  background: #fff;
+  color: #c00000;
+  font-weight: 900;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mod-del-btn:active {
+  background: #eee;
+}
+
+/* Totaluri in stanga jos */
+.order-summary-box {
+  border-top: 2px solid #222;
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 15px;
+  font-weight: bold;
+}
+
+.summary-line {
+  display: flex;
+  justify-content: space-between;
+}
+
+.summary-line .sum-lbl {
+  width: 130px;
+  text-align: right;
+  padding-right: 14px;
+}
+
+.summary-line .sum-val {
+  min-width: 90px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-divider {
+  height: 2px;
+  background: #000;
+  margin: 3px 0;
+}
+
+.summary-line.grand-total {
+  font-size: 20px;
+  font-weight: 900;
+}
+
+/* Coloana centrala cu butoane Scroll */
+.nav-arrows-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 44px;
+  flex: 0 0 44px;
+  padding: 2px 0 25px 0;
+}
+
+.arrow-btn {
+  width: 44px;
+  height: 54px;
+  background: #eaeaea;
+  border: 2px solid #555;
+  border-radius: 4px;
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+}
+
+.arrow-btn:active {
+  background: #ccc;
+  transform: translateY(1px);
+}
+
+/* Panoul din dreapta: Meniul cu categorii */
+.menu-grid-panel {
+  flex: 1;
+  min-width: 0;
+  background-color: var(--bg-blue-panel);
+  border: 2px solid #ffffff;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.menu-5x-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: repeat(10, minmax(44px, 1fr));
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.grid-pos-btn {
+  background: var(--btn-default);
+  color: var(--btn-default-text);
+  border: 1px solid #111;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: bold;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.1;
+  padding: 2px;
+  min-width: 0;
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: 1px 1px 2px rgba(0,0,0,0.25);
+}
+
+/* Butoanele care afiseaza produse (in grupa si rezultatele cautarii) */
+.grid-prod-btn {
+  font-size: 12px;
+  padding: 2px;
+  line-height: 1.15;
+  white-space: normal;
+  text-transform: none;
+  word-break: break-word;
+}
+
+.grid-pos-btn:hover {
+  background: #f0f0f0;
+}
+
+.grid-pos-btn:active {
+  transform: scale(0.97);
+}
+
+.grid-pos-btn.btn-cyan {
+  background: var(--btn-cyan);
+  color: #000;
+}
+
+.grid-pos-btn.empty {
+  visibility: hidden;
+}
+
+/* Bara inferioara de actiuni */
+.bottom-actions-bar {
+  height: 66px;
+  background-color: var(--bg-blue-panel);
+  border: 2px solid #ffffff;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 6px;
+}
+
+.act-btn {
+  height: 50px;
+  min-width: 88px;
+  padding: 0 12px;
+  background: #fff;
+  color: #000;
+  border: 1px solid #222;
+  border-radius: 3px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.15;
+  box-shadow: 1px 1px 2px rgba(0,0,0,0.25);
+}
+
+/* In bara de jos butoanele sunt mai compacte, ca sa incapa pe 1024px latime */
+.bottom-actions-bar .act-btn {
+  min-width: 76px;
+  padding: 0 8px;
+  font-size: 13px;
+}
+
+.bottom-actions-bar .act-btn.red-text,
+.bottom-actions-bar .act-btn.vd-btn {
+  font-size: 14px;
+}
+
+.act-btn:active {
+  background: #ddd;
+}
+
+.act-btn.red-text {
+  color: var(--btn-action-red);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.act-btn.vd-btn {
+  background: #cc0000;
+  color: #fff;
+  border-color: #7a0000;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.act-btn.vd-btn:active {
+  background: #a00000;
+}
+
+.act-spacer {
+  flex: 1;
+}
+
+/* ==========================================================================
+   ECRAN 2: INCHIDERE NOTA (Inchidere_nota.PNG)
+   ========================================================================== */
+.payment-screen-layout {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  min-height: 0;
+}
+
+.payment-right-panel {
+  flex: 1;
+  background-color: var(--bg-blue-panel);
+  border: 2px solid #ffffff;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.payment-methods-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pay-btn {
+  height: 56px;
+  background: #ffff00;
+  border: 1px solid #111;
+  border-radius: 3px;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+}
+
+.pay-btn.green-text {
+  color: #008000;
+}
+
+.pay-btn.red-text {
+  color: #d40000;
+}
+
+.pay-btn.black-text {
+  color: #000000;
+}
+
+.pay-btn.selected {
+  outline: 3px solid #ffffff;
+}
+
+.payment-calc-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.payment-display-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.payment-label-cash {
+  color: #ffffff;
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: 1px;
+}
+
+.payment-input-box {
+  background: #ffffff;
+  border: 2px solid #444;
+  width: 220px;
+  height: 48px;
+  font-size: 28px;
+  font-weight: 900;
+  text-align: right;
+  padding: 2px 12px;
+  color: #000;
+}
+
+.pay-progress {
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  min-height: 20px;
+  letter-spacing: 0.5px;
+}
+
+/* Tastatura Numerica Mare (Numpad) */
+.pos-numpad-container {
+  display: grid;
+  grid-template-columns: repeat(3, 76px) 76px;
+  grid-template-rows: repeat(4, 66px);
+  gap: 8px;
+}
+
+.numpad-key {
+  background: #eaeaea;
+  border: 1px solid #666;
+  border-radius: 3px;
+  font-size: 26px;
+  font-weight: 900;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+}
+
+.numpad-key:active {
+  background: #ccc;
+  transform: translateY(1px);
+}
+
+.numpad-key.key-c {
+  color: #000;
+}
+
+.numpad-key.key-ok {
+  grid-row: span 2;
+  background: #ffffff;
+  color: #000;
+  font-size: 24px;
+}
+
+.numpad-key.key-zero {
+  grid-column: span 2;
+}
+
+/* ==========================================================================
+   ECRAN 3: HARTA MESE (ecran_autentificare_selectie_masa.PNG)
+   ========================================================================== */
+.tables-screen-layout {
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  min-height: 0;
+}
+
+.tables-grid-80 {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  grid-template-rows: repeat(8, 1fr);
+  gap: 6px;
+  padding: 6px;
+}
+
+.table-cell-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #ffffff;
+  border-radius: 3px;
+  cursor: pointer;
+  box-shadow: 1px 1px 2px rgba(0,0,0,0.4);
+  font-size: 15px;
+  font-weight: 900;
+  transition: transform 0.1s;
+}
+
+.table-cell-btn:active {
+  transform: scale(0.96);
+}
+
+/* Culori benzi mese */
+.table-cell-btn.band-black {
+  background: #000000;
+  color: #ff0000;
+}
+
+.table-cell-btn.band-blue {
+  background: #0000ff;
+  color: #ff0000;
+}
+
+.table-cell-btn.band-green {
+  background: #00e800;
+  color: #ff0000;
+}
+
+.table-cell-btn.band-white {
+  background: #f0f0f0;
+  color: #000000;
+}
+
+.table-cell-btn.table-occupied {
+  background: #ffff00 !important;
+  color: #c00000 !important;
+}
+
+.tables-right-menu {
+  width: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.tables-menu-btn {
+  height: 52px;
+  background: #ffffff;
+  border: 1px solid #222;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 1px 1px 3px rgba(0,0,0,0.3);
+}
+
+.tables-menu-btn.red-text {
+  color: #d40000;
+}
+
+.tables-menu-btn.blue-text {
+  color: #0000d4;
+}
+
+.tables-footer-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: #ffffff;
+  font-size: 13px;
+  padding: 4px 6px;
+}
+
+.tables-footer-logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+/* ==========================================================================
+   ECRAN PROGRAMARE POS
+   ========================================================================== */
+#screen-programare {
+  background-color: var(--bg-blue-panel);
+  border: 2px solid #ffffff;
+  padding: 10px;
+}
+
+.prog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  padding: 4px 6px 12px 6px;
+}
+
+.prog-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: minmax(64px, 1fr);
+  gap: 10px;
+}
+
+.prog-btn {
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #222;
+  border-radius: 4px;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  box-shadow: 1px 1px 3px rgba(0,0,0,0.3);
+}
+
+.prog-btn:active {
+  background: #dddddd;
+}
+
+/* ==========================================================================
+   ECRAN SETARI (tblSet)
+   ========================================================================== */
+#screen-prog-setari,
+#screen-prog-antet,
+#screen-prog-nota,
+#screen-prog-conectare,
+#screen-prog-parole,
+#screen-rapoarte {
+  background-color: var(--bg-blue-panel);
+  border: 2px solid #ffffff;
+  padding: 10px;
+}
+
+.rapoarte-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 90px;
+  gap: 10px;
+}
+
+.rapoarte-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #ffffff;
+  border: 1px solid #222;
+  border-radius: 4px;
+  padding: 0 16px;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 1px 1px 3px rgba(0,0,0,0.3);
+}
+
+.rapoarte-check input {
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+}
+
+.rapoarte-z-btn {
+  grid-column: 1 / -1;
+  background: #ffff00;
+}
+
+.setari-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 0 6px 10px 6px;
+}
+
+.setari-tab {
+  background: #ffffff;
+  color: #000;
+  border: 1px solid #222;
+  border-radius: 4px;
+  padding: 8px 20px;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.setari-tab.active {
+  background: #ffff00;
+}
+
+.setari-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #888;
+  border-radius: 3px;
+  padding: 14px 16px;
+}
+
+.antet-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px 24px;
+}
+
+.nota-record {
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  padding: 10px 12px 12px 12px;
+  margin-bottom: 12px;
+  background: #f7f7f7;
+}
+
+.nota-record-title {
+  font-size: 15px;
+  font-weight: 900;
+  color: #004080;
+  margin-bottom: 8px;
+}
+
+.nota-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr 150px 90px;
+  gap: 10px;
+  align-items: end;
+}
+
+.setari-group-title {
+  font-size: 16px;
+  font-weight: 900;
+  color: #004080;
+  border-bottom: 2px solid #004080;
+  margin: 16px 0 10px 0;
+  padding-bottom: 4px;
+}
+
+.setari-group-title:first-child {
+  margin-top: 0;
+}
+
+.setari-field {
+  margin-bottom: 12px;
+}
+
+.setari-label {
+  display: block;
+  font-size: 13px;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 3px;
+}
+
+.setari-field-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.setari-input {
+  flex: 1;
+  width: auto;
+}
+
+.setari-desc {
+  font-size: 11px;
+  color: #777;
+  margin-top: 2px;
+}
+
+.setari-empty {
+  color: #888;
+  font-size: 14px;
+  padding: 10px;
+}
+
+/* ==========================================================================
+   MODAL TASTATURA VIRTUALE / AUTENTIFICARE (ecran_autentificare_selectie_masa2.PNG)
+   ========================================================================== */
+.modal-keyboard-overlay {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-keyboard-overlay.active {
+  display: flex;
+}
+
+/* Confirmarea / alerta trebuie sa fie deasupra oricarui alt modal (ex. coada printare). */
+#modal-confirm,
+#modal-alert {
+  z-index: 3000;
+}
+
+.keyboard-dialog {
+  background: #cccccc;
+  border: 2px solid #555;
+  width: 820px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+}
+
+.keyboard-dialog-header {
+  background: #ffffff;
+  padding: 6px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  font-weight: bold;
+  border-bottom: 2px solid #1105aa;
+}
+
+.keyboard-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.keyboard-input-display {
+  background: #fff;
+  border: 1px solid #555;
+  width: 240px;
+  height: 38px;
+  font-size: 22px;
+  font-weight: bold;
+  text-align: center;
+  letter-spacing: 2px;
+}
+
+.keyboard-keys-container {
+  display: flex;
+  gap: 20px;
+  width: 100%;
+}
+
+.qwerty-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.qwerty-row {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.qkey {
+  height: 48px;
+  min-width: 44px;
+  padding: 0 10px;
+  background: #ffffff;
+  border: 1px solid #777;
+  font-size: 18px;
+  font-weight: bold;
+  cursor: pointer;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qkey:active {
+  background: #bbb;
+}
+
+.qkey.key-space {
+  flex: 1;
+}
+
+.qkey.key-enter {
+  color: #c00000;
+  font-weight: 900;
+  min-width: 100px;
+}
+
+.qkey.fkb-shift-on,
+.qkey.fkb-caps-on {
+  background: #ffff00;
+  border-color: #c9a800;
+  box-shadow: inset 0 0 0 2px #c9a800;
+}
+
+.numpad-section {
+  width: 220px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr) 52px;
+  grid-template-rows: repeat(4, 48px);
+  gap: 6px;
+}
+
+.numpad-section .numpad-key {
+  font-size: 20px;
+}
+
+/* Toast Message */
+.pos-toast {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.9);
+  color: #ffffff;
+  padding: 12px 28px;
+  border-radius: 30px;
+  font-size: 16px;
+  font-weight: bold;
+  z-index: 2000;
+  display: none;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+  border: 1px solid #fff;
+}
+
+/* ==========================================================================
+   MODAL CANTITATE (editare cantitate produs cu tastatura numerica)
+   ========================================================================== */
+.qty-dialog {
+  width: 360px;
+}
+
+.qty-numpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr) 60px;
+  gap: 6px;
+  width: 100%;
+}
+
+.qty-key {
+  height: 46px;
+  background: #ffffff;
+  border: 1px solid #666;
+  border-radius: 3px;
+  font-size: 22px;
+  font-weight: 900;
+  color: #000;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+}
+
+.qty-key:active {
+  background: #ccc;
+}
+
+.qty-key.qty-fn {
+  background: #eaeaea;
+}
+
+.qty-key.qty-zero {
+  grid-column: 1 / 4;
+  background: #ffffff;
+}
+
+.qty-key.qty-ok {
+  grid-column: 4;
+  grid-row: 4;
+  background: #ffff00;
+}
+
+/* ==========================================================================
+   MODAL TRANSFER PRODUSE
+   ========================================================================== */
+.transfer-dialog {
+  width: 480px;
+  background: #cccccc;
+  border: 2px solid #555;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+}
+
+.transfer-body {
+  padding: 16px 18px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.transfer-subtitle {
+  font-size: 15px;
+  font-weight: bold;
+  color: #222;
+  text-align: center;
+}
+
+.transfer-list {
+  width: 100%;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #888;
+  border-radius: 3px;
+}
+
+.transfer-product-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 15px;
+  font-weight: bold;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+  user-select: none;
+}
+
+.transfer-product-row:last-child {
+  border-bottom: none;
+}
+
+.transfer-product-row.selected {
+  background: #ffff00;
+}
+
+.transfer-product-row .tpr-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.transfer-product-row .tpr-qty {
+  color: #555;
+  font-weight: normal;
+  margin-right: 6px;
+}
+
+.transfer-product-row .tpr-check {
+  width: 22px;
+  height: 22px;
+  border: 1px solid #777;
+  border-radius: 3px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 900;
+  color: #c00000;
+}
+
+.transfer-product-row.selected .tpr-check {
+  border-color: #000;
+  background: #fff;
+}
+
+.transfer-list-footer {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.transfer-numpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  width: 100%;
+  max-width: 300px;
+}
+
+.transfer-key {
+  height: 50px;
+  background: #fff;
+  border: 1px solid #666;
+  border-radius: 3px;
+  font-size: 22px;
+  font-weight: 900;
+  color: #000;
+  cursor: pointer;
+  box-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+}
+
+.transfer-key:active {
+  background: #ccc;
+}
+
+.transfer-key.transfer-key-clear {
+  background: #eaeaea;
+}
+
+.transfer-key.transfer-key-ok {
+  grid-column: 1 / 4;
+  background: #ffff00;
+}
+
+/* ==========================================================================
+   MODAL COTE TVA
+   ========================================================================== */
+.tva-list {
+  width: 100%;
+  max-height: 300px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #888;
+  border-radius: 3px;
+}
+
+.tva-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 15px;
+  font-weight: bold;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+}
+
+.tva-row:last-child {
+  border-bottom: none;
+}
+
+.tva-row.selected {
+  background: #ffff00;
+}
+
+.tva-row .tva-val {
+  color: #333;
+  font-weight: bold;
+}
+
+.tva-actions {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.tva-field {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.tva-field label {
+  font-size: 13px;
+  font-weight: bold;
+  color: #222;
+}
+
+.tva-input {
+  width: 100%;
+  height: 42px;
+  border: 1px solid #888;
+  border-radius: 3px;
+  font-size: 20px;
+  font-weight: bold;
+  padding: 0 10px;
+  text-align: center;
+}
+
+.tva-input[readonly] {
+  background: #e8e8e8;
+  color: #666;
+}
+
+select.tva-input {
+  text-align: left;
+  font-size: 16px;
+  padding: 0 8px;
+}
+
+.tva-list-header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--bg-header-gray);
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  border-radius: 3px 3px 0 0;
+  border-bottom: 1px solid #666;
+}
+
+.tva-list {
+  border-radius: 0 0 3px 3px;
+}
+
+/* ==========================================================================
+   MODAL MODURI PREPARARE
+   ========================================================================== */
+.tva-field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.tva-field-row .tva-input {
+  flex: 1;
+}
+
+.fkb-mini {
+  flex: 0 0 auto;
+  height: 42px;
+  min-width: 52px;
+  padding: 0 10px;
+}
+
+.tva-row .row-mesaj {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#modal-fkb {
+  z-index: 1200;
+  background: transparent;
+  align-items: flex-start;
+  justify-content: flex-start;
+  pointer-events: none;
+}
+
+#modal-fkb.active {
+  display: block;
+}
+
+#modal-fkb .fkb-dialog {
+  pointer-events: auto;
+  position: absolute;
+  left: 150px;
+  top: 60px;
+  width: 820px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+  user-select: none;
+}
+
+#modal-fkb .fkb-dialog .keyboard-dialog-header {
+  cursor: move;
+  touch-action: none;
+}
+
+/* ==========================================================================
+   MODAL OSPATARI
+   ========================================================================== */
+.osp-head,
+.osp-row {
+  display: grid;
+  grid-template-columns: 70px 1fr 1fr;
+  align-items: center;
+  width: 100%;
+}
+
+.osp-head {
+  padding: 6px 10px;
+  background: var(--bg-header-gray);
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  border-radius: 3px 3px 0 0;
+  border-bottom: 1px solid #666;
+}
+
+.osp-list {
+  width: 100%;
+  max-height: 280px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #888;
+  border-top: none;
+  border-radius: 0 0 3px 3px;
+}
+
+.osp-row {
+  padding: 8px 10px;
+  font-size: 14px;
+  font-weight: bold;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+}
+
+.osp-row:last-child {
+  border-bottom: none;
+}
+
+.osp-row.selected {
+  background: #ffff00;
+}
+
+.osp-row .osp-cell-mid,
+.osp-row .osp-cell-r {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.osp-row .osp-blocked {
+  color: #c00000;
+}
+
+/* ==========================================================================
+   MODAL SECTII (tblSectii)
+   ========================================================================== */
+.sect-head,
+.sect-row {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  align-items: center;
+  width: 100%;
+}
+
+.sect-head {
+  padding: 6px 10px;
+  background: var(--bg-header-gray);
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  border-radius: 3px 3px 0 0;
+  border-bottom: 1px solid #666;
+}
+
+.sect-list {
+  width: 100%;
+  max-height: 280px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #888;
+  border-top: none;
+  border-radius: 0 0 3px 3px;
+}
+
+.sect-row {
+  padding: 8px 10px;
+  font-size: 14px;
+  font-weight: bold;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+}
+
+.sect-row:last-child {
+  border-bottom: none;
+}
+
+.sect-row.selected {
+  background: #ffff00;
+}
+
+.sect-row .sect-cell {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sect-row .sect-prot {
+  color: #c00000;
+  font-weight: bold;
+}
+
+/* ==========================================================================
+   MODAL IMPRIMANTE SECTII (tblKP)
+   ========================================================================== */
+.kp-head,
+.kp-row {
+  display: grid;
+  grid-template-columns: 70px 1.2fr 1.4fr 70px;
+  align-items: center;
+  width: 100%;
+}
+
+.kp-head {
+  padding: 6px 10px;
+  background: var(--bg-header-gray);
+  color: #fff;
+  font-size: 13px;
+  font-weight: bold;
+  border-radius: 3px 3px 0 0;
+  border-bottom: 1px solid #666;
+}
+
+.kp-list {
+  width: 100%;
+  max-height: 270px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #888;
+  border-top: none;
+  border-radius: 0 0 3px 3px;
+}
+
+.kp-row {
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: bold;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+}
+
+.kp-row:last-child {
+  border-bottom: none;
+}
+
+.kp-row.selected {
+  background: #ffff00;
+}
+
+.kp-row .kp-cell {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kp-row.inactive {
+  color: #888;
+}
+
+.kp-row .kp-on {
+  color: #008000;
+}
+
+.kp-row .kp-off {
+  color: #c00000;
+}
+
+.kp-edit-body {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+/* Stare centrat in lista imprimantelor */
+.kp-head > span:last-child,
+.kp-row > .kp-on,
+.kp-row > .kp-off {
+  text-align: center;
+}
+
+/* Coada de tiparire (tabel cu coloane fixe: header si randurile se aliniaza) */
+.printq-wrap {
+  width: 100%;
+  max-height: 270px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #888;
+  border-top: none;
+  border-radius: 0 0 3px 3px;
+}
+
+.printq-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.printq-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 10px;
+  background: var(--bg-header-gray);
+  color: #fff;
+  font-size: 13px;
+  font-weight: bold;
+  text-align: left;
+  border-bottom: 1px solid #666;
+}
+
+.printq-table td {
+  padding: 6px 6px;
+  font-size: 13px;
+  font-weight: bold;
+  border-bottom: 1px solid #eee;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.printq-table tbody tr {
+  cursor: pointer;
+}
+
+.printq-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.printq-table tbody tr.selected td {
+  background: #ffff00;
+}
+
+.printq-table tbody tr.inactive td {
+  color: #888;
+}
+
+.printq-table .printq-num {
+  text-align: center;
+}
+
+.printq-table td.kp-on { color: #008000; }
+.printq-table td.kp-off { color: #c00000; }
+
+/* Raport (afisare in modal) */
+.raport-content {
+  width: 100%;
+  max-height: 520px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #888;
+  border-radius: 3px;
+  padding: 10px 12px;
+}
+
+.raport-meta {
+  font-size: 12px;
+  color: #555;
+  margin-bottom: 8px;
+}
+
+.raport-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.raport-table th,
+.raport-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+}
+
+.raport-table th {
+  background: var(--bg-header-gray);
+  color: #fff;
+  position: sticky;
+  top: 0;
+}
+
+.raport-table td.num,
+.raport-table th.num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.raport-table tr.raport-sect td {
+  background: #d9d9d9;
+  color: #000;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.raport-table tr.raport-sub td {
+  font-weight: bold;
+  background: #f3f3f3;
+}
+
+.raport-table tr.raport-total td {
+  font-weight: bold;
+  background: #ffffcc;
+  border-top: 2px solid #888;
+}
+
+/* ==========================================================================
+   MODAL FORME DE PLATA (tblFP)
+   ========================================================================== */
+.fp-head,
+.fp-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 60px 80px;
+  align-items: center;
+  width: 100%;
+}
+
+.fp-head {
+  padding: 6px 10px;
+  background: var(--bg-header-gray);
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  border-radius: 3px 3px 0 0;
+  border-bottom: 1px solid #666;
+}
+
+.fp-list {
+  width: 100%;
+  max-height: 300px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #888;
+  border-top: none;
+  border-radius: 0 0 3px 3px;
+}
+
+.fp-row {
+  padding: 9px 10px;
+  font-size: 14px;
+  font-weight: bold;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+}
+
+.fp-row:last-child {
+  border-bottom: none;
+}
+
+.fp-row.selected {
+  background: #ffff00;
+}
+
+.fp-row .fp-name {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fp-row > span:last-child {
+  text-align: center;
+}
+
+.fp-on { color: #008000; }
+.fp-off { color: #c00000; }
+
+/* ==========================================================================
+   ECRAN PROGRAMARE MESE (harta live + inspector)
+   ========================================================================== */
+.mese-prog-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+}
+
+.mese-map-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0,0,0,0.25);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.mese-map-wrap .tables-grid-80 {
+  flex: 1;
+}
+
+.mese-map-hint {
+  color: #ffffff;
+  font-size: 12px;
+  padding: 6px 2px 0 2px;
+}
+
+/* Celulele hartii din editor */
+#mese-prog-grid .table-cell-btn {
+  border: 1px solid #ffffff;
+}
+
+#mese-prog-grid .table-cell-btn.mese-selected {
+  outline: 3px solid #ffff00;
+  outline-offset: -3px;
+  border-color: #000;
+}
+
+#mese-prog-grid .table-cell-btn.mese-empty {
+  background: repeating-linear-gradient(45deg, #ffffff 0 6px, #dddddd 6px 12px);
+  color: #888888;
+  font-size: 20px;
+  font-weight: normal;
+}
+
+#mese-prog-grid .table-cell-btn.mese-hidden {
+  opacity: 0.35;
+  filter: grayscale(1);
+  text-decoration: line-through;
+}
+
+#mese-prog-grid .table-cell-btn .mese-dirty-mark {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  color: #c00000;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+/* Inspector */
+.mese-inspector {
+  width: 360px;
+  flex-shrink: 0;
+  background: #e6e6e6;
+  border: 1px solid #555;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 10px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+}
+
+.mese-insp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-blue-panel);
+  color: #ffffff;
+  font-weight: 900;
+  font-size: 16px;
+  letter-spacing: 1px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+}
+
+.mese-empty-msg {
+  background: #ffffff;
+  border: 1px dashed #999;
+  border-radius: 4px;
+  padding: 10px;
+  font-size: 13px;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.mese-prev-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.mese-prev-tile {
+  width: 92px;
+  height: 92px;
+  border-radius: 4px;
+  border: 2px solid #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  font-weight: bold;
+}
+
+.mese-prev-info .lab {
+  font-size: 11px;
+  color: #666;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+.mese-nr-readonly {
+  font-size: 26px;
+  font-weight: 900;
+  color: #111;
+}
+
+.mese-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.mese-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 3px;
+  border: 2px solid #555;
+  cursor: pointer;
+  position: relative;
+  box-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+}
+
+.mese-swatch:hover { border-color: #000; }
+.mese-swatch.sel { outline: 3px solid #ffff00; }
+.mese-swatch.auto-swatch {
+  background: repeating-linear-gradient(45deg, #ffffff 0 4px, #cccccc 4px 8px);
+  font-size: 13px;
+  font-weight: 900;
+  color: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mese-color-input {
+  width: 44px;
+  height: 34px;
+  padding: 0;
+  border: 2px solid #555;
+  border-radius: 3px;
+  cursor: pointer;
+  background: #fff;
+}
+
+.mese-color-extra {
+  font-size: 12px;
+  color: #555;
+  font-weight: bold;
+}
+
+.mese-toggle-row {
+  display: flex;
+  gap: 10px;
+}
+
+.mese-toggle-row .tva-field {
+  flex: 1;
+}
+
+#mese-prog-grid .table-cell-btn {
+  position: relative;
+}
+
+/* Afisez = 0: atenuare celula (valabil si pe ecranul real de mese) */
+.table-cell-btn.mese-hidden {
+  opacity: 0.35;
+  filter: grayscale(1);
+  text-decoration: line-through;
+}
+
+/* Masa cu Afisez=0 pe ecranul de selectie: slot gol, ne-selectabil */
+.table-cell-btn.table-hidden-slot {
+  background: #dddddd;
+  color: #888888;
+  border: 1px dashed #999999;
+  cursor: default;
+  box-shadow: none;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+/* Slot fara masa (Afisez=0 sau fara rand in tblMese): transparent, se vede verdele,
+   dar pastreaza pozitia in grila 10x8 */
+#tables-grid-container .table-cell-btn.table-empty-slot {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  pointer-events: none;
+  cursor: default;
+}
+
+/* ==========================================================================
+   ECRAN PROGRAMARE GRUPE (grila live 5x10 + inspector)
+   ========================================================================== */
+#grupe-prog-grid.menu-5x-grid {
+  flex: 1;
+}
+
+#grupe-prog-grid .grid-pos-btn {
+  font-weight: normal;
+}
+
+#grupe-prog-grid .grid-pos-btn.grup-selected {
+  outline: 3px solid #ffff00;
+  outline-offset: -3px;
+  border-color: #000;
+}
+
+#grupe-prog-grid .grid-pos-btn.grup-empty {
+  background: repeating-linear-gradient(45deg, #ffffff 0 6px, #dddddd 6px 12px);
+  color: #888888;
+  font-weight: normal;
+  font-size: 18px;
+}
+
+#grupe-prog-grid .grid-pos-btn.grup-new {
+  border-style: dashed;
+}
+
+/* ==========================================================================
+   ECRAN PROGRAMARE PRODUSE (grila live 5x10 pe grupa + inspector)
+   ========================================================================== */
+#produse-prog-grid.menu-5x-grid {
+  flex: 1;
+}
+
+#produse-prog-grid .grid-pos-btn {
+  font-weight: normal;
+}
+
+#produse-prog-grid .grid-pos-btn.prod-selected {
+  outline: 3px solid #ffff00;
+  outline-offset: -3px;
+  border-color: #000;
+}
+
+#produse-prog-grid .grid-pos-btn.prod-empty {
+  background: repeating-linear-gradient(45deg, #ffffff 0 6px, #dddddd 6px 12px);
+  color: #888888;
+  font-weight: normal;
+  font-size: 18px;
+}
+
+#produse-prog-grid .grid-pos-btn.prod-new {
+  border-style: dashed;
+}
+
+/* Combobox-uri (sectii, TVA, grupe) din editor */
+.prod-combo {
+  font-size: 14px;
+  font-weight: bold;
+  padding: 5px 6px;
+  border: 1px solid #555;
+  border-radius: 3px;
+  min-height: 32px;
+  max-width: 230px;
+  background: #fff;
+}
+
+.mese-inspector select.prod-combo {
+  width: 100%;
+}
+
+.mese-inspector .mese-insp-head select.prod-combo {
+  width: auto;
+}
+
+.prog-header select.prod-combo {
+  background: #fff;
+}
+
+/* Sectie (2/3) + Cota TVA (1/3) pe aceeasi linie, in inspectorul de produse */
+.prod-line-2 {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.prod-line-2 .tva-field.prod-line-2-2 { flex: 2; }
+.prod-line-2 .tva-field.prod-line-2-1 { flex: 1; }
+
+/* Numerotare discreta a sloturilor libere (pozitia in coltul celulei) */
+#produse-prog-grid .grid-pos-btn { position: relative; }
+
+#produse-prog-grid .prod-slot-nr {
+  position: absolute;
+  top: 1px;
+  left: 3px;
+  font-size: 9px;
+  font-weight: normal;
+  color: #999;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* Numerotare sloturi libere si in grila grupelor */
+#grupe-prog-grid .grid-pos-btn { position: relative; }
+
+#grupe-prog-grid .prod-slot-nr {
+  position: absolute;
+  top: 1px;
+  left: 3px;
+  font-size: 9px;
+  font-weight: normal;
+  color: #999;
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   MODAL DISCOUNT
+   ========================================================================== */
+.discount-dialog {
+  width: 880px;
+  max-width: 96vw;
+  background: #eef1f5;
+  border: 2px solid #444;
+  border-radius: 6px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  display: flex;
+  flex-direction: column;
+}
+
+.discount-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.discount-section-title {
+  font-size: 13px;
+  font-weight: bold;
+  color: #333;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 6px;
+}
+
+.disc-scope {
+  display: flex;
+  gap: 10px;
+}
+
+.disc-scope-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 10px;
+  border: 2px solid #aaa;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.disc-scope-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.disc-scope-btn.on {
+  border-color: #1105aa;
+  background: #dde1ff;
+}
+
+.disc-scope-btn .disc-scope-title {
+  font-size: 14px;
+  font-weight: 900;
+  color: #1105aa;
+}
+
+.disc-scope-btn .disc-scope-sub {
+  font-size: 13px;
+  color: #444;
+}
+
+.disc-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.disc-mode-row .disc-section-title {
+  margin-bottom: 0;
+}
+
+.disc-mode {
+  display: flex;
+  gap: 8px;
+}
+
+.disc-mode-btn {
+  padding: 8px 18px;
+  border: 2px solid #aaa;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 15px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.disc-mode-btn.on {
+  border-color: #1105aa;
+  background: #1105aa;
+  color: #fff;
+}
+
+.disc-main {
+  display: flex;
+  gap: 18px;
+}
+
+.disc-left {
+  flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
+}
+
+.disc-value-box {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 2px solid #555;
+  border-radius: 6px;
+}
+
+.disc-value-box #disc-value {
+  font-size: 34px;
+  font-weight: 900;
+  color: #000;
+  min-width: 120px;
+}
+
+.disc-value-box #disc-value-suffix {
+  font-size: 18px;
+  font-weight: bold;
+  color: #555;
+}
+
+/* Modal VD (anulare articol) */
+.disc-value-box #void-value {
+  font-size: 34px;
+  font-weight: 900;
+  color: #000;
+  min-width: 120px;
+}
+
+.disc-value-box #void-value-suffix {
+  font-size: 18px;
+  font-weight: bold;
+  color: #555;
+}
+
+.void-prod-name {
+  font-size: 18px;
+  font-weight: 900;
+  color: #000;
+  margin-bottom: 8px;
+}
+
+.void-info {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  color: #333;
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.void-info b {
+  color: #000;
+}
+
+.void-warn {
+  margin-top: 8px;
+  min-height: 18px;
+  font-size: 13px;
+  font-weight: bold;
+  color: #cc0000;
+}
+
+.disc-est {
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.disc-est-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  padding: 3px 0;
+  color: #333;
+}
+
+.disc-est-row span:last-child {
+  font-weight: bold;
+}
+
+.disc-est-total {
+  border-top: 2px solid #444;
+  margin-top: 4px;
+  padding-top: 7px;
+  font-size: 16px;
+}
+
+.disc-est-total span:last-child {
+  color: #008000;
+}
+
+.disc-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.disc-presets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.disc-preset-btn {
+  padding: 9px 4px;
+  font-size: 15px;
+  font-weight: bold;
+  border: 1px solid #999;
+  border-radius: 5px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.disc-preset-btn:active {
+  background: #ddd;
+}
+
+.disc-numpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.disc-numpad-key {
+  height: 46px;
+  font-size: 20px;
+  font-weight: bold;
+  background: #fff;
+  border: 1px solid #999;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.disc-numpad-key:active {
+  background: #ccc;
+}
+
+.disc-numpad-fn {
+  color: #c00000;
+}
+
+.disc-motiv {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.disc-motiv label {
+  font-size: 13px;
+  font-weight: bold;
+  color: #333;
+  white-space: nowrap;
+}
+
+.disc-motiv-select {
+  flex: 1;
+  height: 38px;
+  font-size: 15px;
+  padding: 0 8px;
+  border: 1px solid #999;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.disc-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.disc-btn-cancel,
+.disc-btn-apply {
+  padding: 12px 26px;
+  font-size: 16px;
+  font-weight: bold;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+}
+
+.disc-btn-cancel {
+  background: #e0e0e0;
+  color: #000;
+  border: 1px solid #999;
+}
+
+.disc-btn-apply {
+  background: #008000;
+  color: #fff;
+  box-shadow: 0 3px 8px rgba(0,128,0,0.4);
+}
+
+.disc-btn-apply:disabled {
+  background: #9bbb9b;
+  cursor: not-allowed;
+}
+
+.order-row .disc-badge {
+  color: #008000;
+  font-weight: 900;
+  margin-left: 4px;
+}
