@@ -2,6 +2,9 @@
 github_api.txt
 api/db.local.php
 
+# Documentatie interna de dezvoltare (ramane doar local)
+AGENTS.md
+
 # print-service artefacte runtime
 print-service/__pycache__/
 print-service/logs/
