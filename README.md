@@ -18,11 +18,18 @@ regandit pentru fiabilitate, intretinere simpla si lipsa dependentelor grele.
 - **Stornare (VD)** — anulare linii trimise, cu parola de manager si motiv; cantitatile nu pot fi depasite.
 - **Transfer produse** intre mese.
 - **Plata** — split pe mai multe forme de plata (numerar, card etc.), cu rest afisat.
-- **Printare** — bon de comanda pe sectii, nota de plata, nota proforma si text fiscal, printr-o coada durabila.
+- **Printare** — bon de comanda pe sectii (cu numerotare proprie a bonurilor de sectie),
+  nota de plata, nota proforma si text fiscal, printr-o coada durabila; destinatiile fizice
+  ale fiecarei sectii se configureaza din aplicatie, cu test de tiparire.
+- **Modul mobil** — pagina dedicata pentru tableta/telefon (`mobile.html`) pentru marcarea
+  meselor, independenta de POS-ul desktop, dar folosind aceleasi API-uri.
 - **Rapoarte X** — PLU, Grupe, Sectii, Casieri, General, pe bonurile inchise din sesiunea curenta.
 - **Inchidere Z** — arhivare si golire atomica a zilei, cu raport General Z plus rapoartele selectate.
+- **Setari operationale** — cantitate maxima pe linie, numar de zecimale la cantitate,
+  permitere/respingere discount (cu parola optionala), contorul bonurilor de sectie.
 - **Programare** — setari, grupe, produse, mese, ospatari, moduri preparare, parole, TVA,
-  imprimante, forme de plata, antet, nota, conectare server si sincronizare produse.
+  imprimante sectii (destinatie fizica pe tip de tinta si test de tiparire), forme de plata,
+  antet, nota, conectare server si sincronizare produse.
 
 ## Tehnologii si avantajele lor
 
@@ -31,7 +38,8 @@ Avantaje: apel direct de proceduri stocate, tranzactii ACID nativ pentru operati
 critice (inchidere bon, marcare, raport Z), zero layer de abstractizare care sa ascunda
 comportamentul bazei de date, cod usor de citit si de intretinut.
 
-**JavaScript si CSS pur (fara framework, fara build step)** — tot frontendul este in `js/pos.js`.
+**JavaScript si CSS pur (fara framework, fara build step)** — frontendul desktop este in
+`js/pos.js`, iar cel mobil in `js/mobile.js`.
 Avantaje: nicio dependenta externa, niciun toolchain de compilat, deploy = editi fisierul si
 reincarcati pagina; aplicatia porneste instant si nu se strica la un update de pachete.
 
@@ -44,8 +52,14 @@ si il livreaza. Avantaje: printarea nu blocheaza vanzarea, iar daca imprimanta e
 ramane `pending` si este reincercat cu backoff pana revine — nimic nu se pierde.
 
 **Serviciu de printare Python + ESC/POS** — `print-service/` randeaza bonurile si le trimite
-nativ catre imprimante (Windows raw sau retea :9100). Avantaj: decuplare totala fata de procesul
-de vanzare si suport pentru imprimante termice reale, cu un emulator inclus pentru testare.
+nativ catre imprimante (Windows raw sau retea :9100). Serviciul isi detine fisierul de configurare
+`config.json` (il valideaza, il scrie atomic si il reincarca la cald, fara repornire), iar POS-ul
+il editeaza printr-un proxy. Avantaj: decuplare totala fata de procesul de vanzare si suport pentru
+imprimante termice reale, cu un emulator inclus pentru testare.
+
+**Modul mobil separat (`mobile.html`)** — un al doilea client, pentru tableta/telefon, care
+reutilizeaza exact aceleasi API-uri PHP (fara backend duplicat). Avantaj: ospatarii pot marca de pe
+terminal propriu, fara sa atinga POS-ul desktop si fara cod sau rute suplimentare pe server.
 
 **Securitate** — interogari cu parametri (prepared statements), parole POS pentru programare,
 rapoarte, stornare, discount si iesire, autentificare pe fiecare ospatar cu blocare, iar
@@ -78,7 +92,9 @@ injectia SQL.
    baza de date, utilizatorul si parola.
 4. (Optional) Porniti serviciul de printare: `print-service/start-print-service.bat`.
    Adaugati un shortcut in `shell:startup` pentru pornire automata. Serviciul asculta
-   doar pe `127.0.0.1:8756`.
+   doar pe `127.0.0.1:8756`. Destinatiile fizice (sectii si tintele globale Nota/Rapoarte/
+   Fiscal) se configureaza din **Setari → Imprimante sectii**, cu butoane de test; modificarile
+   se aplica instant (hot-reload), fara repornirea serviciului.
 
 ## Reconstructie baza de date
 
@@ -94,9 +110,12 @@ Instructiuni complete: [db/README.md](db/README.md).
 ## Structura proiectului
 
 ```
-index.html              interfata (screens, modale, canvas scalat)
-js/pos.js               toata logica de frontend (stare globala POS_STATE)
-css/pos.css             stilurile aplicatiei
+index.html              POS-ul desktop (screens, modale, canvas scalat)
+js/pos.js               toata logica POS-ului desktop (stare globala POS_STATE)
+css/pos.css             stilurile POS-ului desktop
+mobile.html             clientul mobil/tableta (marcare mese)
+js/mobile.js            logica modulului mobil (stare globala MOBILE_STATE)
+css/mobile.css          stilurile modulului mobil
 api/                    endpoints PHP (JSON)
   db.php                conexiunea MSSQL (+ db.local.php local, ignorat)
   order_action.php      dispatcher: add_product, close_bill, void_line, apply_discount etc.
@@ -104,10 +123,11 @@ api/                    endpoints PHP (JSON)
   rapoarte.php          rapoarte X, inchidere Z, printare rapoarte
   print_queue.php       API-ul cozii durabile de printare
   print_common.php      helperi comuni (ensurePrintQueueTable, enqueuePrintJob)
+  print_config.php      proxy catre serviciul de printare (citire/salvare config, test)
   ...                   editori de configurare (produse, grupe, mese, tva, kp, fp, etc.)
   sql/z_procedure.sql   procedura stocata de inchidere Z
 print-service/          serviciu Python de printare ESC/POS
-  server.py, worker.py, escpos.py, emulator.py, targets.py, config.json
+  server.py, worker.py, escpos.py, emulator.py, targets.py, config.py, config.json
 db/                     reconstructia bazei de date
   schema.sql            structura tabelelor + proceduri stocate
   seed.sql              date de referinta + meniu demo (fara date reale)
