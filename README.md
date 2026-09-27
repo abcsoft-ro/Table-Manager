@@ -97,13 +97,3 @@ print-service/          serviciu Python de printare ESC/POS
   server.py, worker.py, escpos.py, emulator.py, targets.py, config.json
 sync.sh                 commit + push catre GitHub (doar cand exista modificari)
 ```
-
-## Sincronizare cu GitHub
-
-```
-./sync.sh
-```
-
-Scriptul face `git add -A`, creeaza un commit cu timestamp **doar daca exista modificari**
-si face push pe branch-ul `main`. Tokenul este citit din `github_api.txt` (fisier local,
-ignorat de git).
