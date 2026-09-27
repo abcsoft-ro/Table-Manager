@@ -1,7 +1,7 @@
 <?php
 return [
     'Server'   => 'SERVER-NAME',
-    'Database' => 'Rual',
+    'Database' => 'Restaurant',
     'UID'      => 'sa',
     'PWD'      => 'parola',
 ];

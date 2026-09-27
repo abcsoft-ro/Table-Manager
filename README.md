@@ -71,12 +71,26 @@ injectia SQL.
 ## Instalare si configurare
 
 1. Copiati proiectul in directorul servit de Apache (ex. `htdocs/rual`).
-2. Configurati conexiunea la baza de date:
+2. Reconstruiti baza de date ruland `db/schema.sql` apoi `db/seed.sql`
+   (detalii in [db/README.md](db/README.md)).
+3. Configurati conexiunea la baza de date:
    copiati `api/db.local.example.php` in `api/db.local.php` si completati serverul,
    baza de date, utilizatorul si parola.
-3. (Optional) Porniti serviciul de printare: `print-service/start-print-service.bat`.
+4. (Optional) Porniti serviciul de printare: `print-service/start-print-service.bat`.
    Adaugati un shortcut in `shell:startup` pentru pornire automata. Serviciul asculta
    doar pe `127.0.0.1:8756`.
+
+## Reconstructie baza de date
+
+Structura bazei de date si datele de referinta sunt publicate in directorul `db/`,
+astfel incat oricine poate reconstrui o baza functionala:
+
+- `db/schema.sql` — tabelele, indecsii, constrangerile, cheile straine si procedurile stocate.
+- `db/seed.sql` — date de referinta minime plus un meniu demo (fara date reale).
+- `db/tools/export_schema.php` — regenereaza scripturile direct din baza de date.
+
+Pasii sunt: rulati `db/schema.sql`, apoi `db/seed.sql`, apoi configurati `api/db.local.php`.
+Instructiuni complete: [db/README.md](db/README.md).
 
 ## Structura proiectului
 
@@ -95,5 +109,9 @@ api/                    endpoints PHP (JSON)
   sql/z_procedure.sql   procedura stocata de inchidere Z
 print-service/          serviciu Python de printare ESC/POS
   server.py, worker.py, escpos.py, emulator.py, targets.py, config.json
+db/                     reconstructia bazei de date
+  schema.sql            structura tabelelor + proceduri stocate
+  seed.sql              date de referinta + meniu demo (fara date reale)
+  tools/export_schema.php  regenerarea scripturilor din baza de date
 sync.sh                 commit + push catre GitHub (doar cand exista modificari)
 ```
