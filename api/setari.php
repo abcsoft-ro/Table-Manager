@@ -23,6 +23,29 @@ function setariOpenBills($conn) {
 }
 
 /**
+ * Creeaza setarea (Setting, Value, Descriere, Grup) daca lipseste si ii
+ * actualizeaza Descrierea daca s-a schimbat. Folosit pentru setarile noi, ca
+ * sa apara si pe instalatiile existente, nu doar pe cele noi.
+ */
+function ensureSetariValue($conn, $setting, $default, $desc, $grup) {
+    $stmt = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = ?", [$setting]);
+    $row = $stmt ? sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC) : null;
+    if (!$row) {
+        @sqlsrv_query(
+            $conn,
+            "INSERT INTO tblSet (Setting, Value, Descriere, Grup) VALUES (?, ?, ?, ?)",
+            [$setting, $default, $desc, $grup]
+        );
+    } else {
+        @sqlsrv_query(
+            $conn,
+            "UPDATE tblSet SET Descriere = ? WHERE Setting = ? AND (Descriere IS NULL OR Descriere <> ?)",
+            [$desc, $setting, $desc]
+        );
+    }
+}
+
+/**
  * Descrierea canonica a setarii TipVanz. O scriem in tblSet la nevoie, ca sa
  * fie afisata corect in ecranul Setari si pe instalatiile existente.
  */
@@ -93,11 +116,49 @@ function ensureSetariMeta($conn) {
         );
     }
 
+    // Casa de marcat fiscala: tipul casei + caile fisierelor de comenzi/raspuns.
+    ensureSetariValue($conn, 'TipCasaMarcat', 'Datecs',
+        "Tipul casei de marcat fiscale: Datecs, FiscalNet sau Tremol.", 'Casa');
+    ensureSetariValue($conn, 'CaleFisierComenziECR', 'C:\\POS\\fiscal\\bonuri',
+        "Folderul in care se scriu fisierele de comenzi catre casa de marcat fiscala.", 'Casa');
+    ensureSetariValue($conn, 'CaleFisierRaspunsECR', 'C:\\POS\\fiscal\\raspuns',
+        "Folderul in care casa de marcat fiscala scrie fisierele de raspuns.", 'Casa');
+
+    // Afisaj client: activare + driver + folder comenzi.
+    ensureSetariValue($conn, 'AfiseajClient', '1',
+        "Afisaj client activ: 1 = DA, 0 = NU.", 'Afiseaj');
+    ensureSetariValue($conn, 'CaleDriverAfiseajClient', '',
+        "Calea catre driverul/executabilul afisajului client.", 'Afiseaj');
+    ensureSetariValue($conn, 'CaleFisierComenziAfiseajClient', '',
+        "Folderul in care se scriu fisierele de comenzi catre afisajul client.", 'Afiseaj');
+
+    // Cantar electronic: activare + driver + folder raspuns.
+    ensureSetariValue($conn, 'Cantar', '0',
+        "Cantar electronic activ: 1 = DA, 0 = NU.", 'Cantar');
+    ensureSetariValue($conn, 'CaleDriverCantar', '',
+        "Calea catre driverul/executabilul cantarului electronic.", 'Cantar');
+    ensureSetariValue($conn, 'CaleFisierRaspunsCantar', '',
+        "Folderul in care cantarul electronic scrie fisierele de raspuns.", 'Cantar');
+
+    // POS bancar: activare + driver + folder comenzi.
+    ensureSetariValue($conn, 'PoSbanca', '0',
+        "POS bancar activ: 1 = DA, 0 = NU.", 'PoSbanca');
+    ensureSetariValue($conn, 'CaleDriverPoSbanca', '',
+        "Calea catre driverul/executabilul POS-ului bancar.", 'PoSbanca');
+    ensureSetariValue($conn, 'CaleFisierComenziPoSbanca', '',
+        "Folderul in care se scriu fisierele de comenzi catre POS-ul bancar.", 'PoSbanca');
+
     // Chei legacy, fara efect in aplicatie: se sterg din tblSet daca exista
     // (nu mai apar nici in ecranul Setari).
     @sqlsrv_query(
         $conn,
-        "DELETE FROM tblSet WHERE Setting IN ('NrBonCmd', 'ParolaDiscount', 'Storno_parola', 'Retea')"
+        "DELETE FROM tblSet WHERE Setting IN ('NrBonCmd', 'ParolaDiscount', 'Storno_parola', 'Retea', 'Rapoarte_parola',
+            'ProceduraExport', 'ProgramPartidVara', 'RaportZCombinat', 'RapPeriodic', 'TipPromotie', 'TSC', 'ValPunct',
+            'DiscountEvidentiat', 'EC', 'FP', 'ModulTMO', 'ExportServer',
+            'AccesNotaProforma', 'CumulezNota', 'CumulezSectie', 'FormatNota', 'ImprimantaComenzi', 'ImprimantaDefault',
+            'PrinterBonCmd', 'PrinterNote', 'PrinterSectie', 'TiparescNota',
+            'BaudRate', 'CaleDriverECR', 'CaleFComenzi', 'CaleFLog', 'ImpFisc', 'PortCom', 'ResidentModeActiva', 'SerieIF',
+            'TipAfisaj')"
     );
 
     $done = true;

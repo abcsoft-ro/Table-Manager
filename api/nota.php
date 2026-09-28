@@ -1,6 +1,7 @@
 <?php
 /**
- * API: Nota (tblAntet) - liniile de header/footer H1-H3 si F1-F2
+ * API: Nota (tblAntet) - liniile de header/footer H1-H3 si F1-F2, plus
+ * footer-ul suplimentar pentru proforma P1-P2 (valabil doar la proforma).
  * GET  -> lista liniilor
  * POST -> actiune: update (batch, in tranzactie)
  */
@@ -8,13 +9,30 @@ require_once __DIR__ . '/db.php';
 
 $conn = getDBConnection();
 
-$SERII = ['H1', 'H2', 'H3', 'F1', 'F2'];
+$SERII = ['H1', 'H2', 'H3', 'F1', 'F2', 'P1', 'P2'];
+
+/**
+ * Creeaza liniile de footer suplimentare, valabile doar pentru nota proforma
+ * (P1, P2), daca nu exista deja in tblAntet.
+ */
+function ensureProformaFooter($conn) {
+    foreach (['P1', 'P2'] as $s) {
+        @sqlsrv_query(
+            $conn,
+            "IF NOT EXISTS (SELECT 1 FROM tblAntet WHERE Seria = ?)
+                 INSERT INTO tblAntet (Seria, Nume, NumeFont, Size, Bold) VALUES (?, '', 'A', 0, 0)",
+            [$s, $s]
+        );
+    }
+}
+
+ensureProformaFooter($conn);
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $rows = [];
     $sql = "SELECT Seria, Nume, NumeFont, Size, Bold
             FROM tblAntet
-            WHERE Seria IN ('H1','H2','H3','F1','F2')";
+            WHERE Seria IN ('H1','H2','H3','F1','F2','P1','P2')";
     $stmt = sqlsrv_query($conn, $sql);
     if (!$stmt) {
         sendJsonResponse(["status" => "error", "message" => "Eroare citire nota: " . sqlsrv_errors()[0]['message']], 500);

@@ -31,8 +31,10 @@ const POS_STATE = {
   // verificata in sesiunea curenta de discount.
   parolaDiscount: 0,
   discountParola: "",
+  // Daca stornarea liniilor trimise cere parola/motiv (tblParola.ParolaStornare
+  // setata). Cand e 0, popup-ul de stornare nu le mai afiseaza.
+  parolaStornare: 0,
   reducereProcent: 0,
-  tvaProcent: 9,
   selectedItemIndex: 0,
   // Forme de plata (tblFP) si platile inregistrate pe ecranul de inchidere:
   // paymentForms = [{FPID, Denumire, Status}], payments = { FPID: valoare }
@@ -105,6 +107,7 @@ async function loadMenu() {
   POS_STATE.nrZecCant = (nz >= 0 && nz <= 2) ? nz : 1;
   POS_STATE.red = (data.red === 0 || data.red === "0") ? 0 : 1;
   POS_STATE.parolaDiscount = (data.parolaDiscount == 1) ? 1 : 0;
+  POS_STATE.parolaStornare = (data.parolaStornare == 1) ? 1 : 0;
 
   renderMenuGrid();
   updateMeniulZileiButton();
@@ -1575,8 +1578,7 @@ async function doSyncProducts() {
 // --------------------------------------------------------------------------
 const SETARI_TABS = [
   { id: "general",    label: "General",    groups: ["General"] },
-  { id: "device",     label: "Device-uri", groups: ["Casa", "Cantar", "Afiseaj"] },
-  { id: "imprimante", label: "Imprimante", groups: ["Nota", "KP"] },
+  { id: "device",     label: "Device-uri", groups: ["Casa", "Afiseaj", "Cantar", "PoSbanca"] },
   { id: "altele",     label: "Altele",     groups: null } // null = toate cele neincluse mai sus
 ];
 
@@ -1703,13 +1705,38 @@ function renderSetariTabs() {
   });
 }
 
+// Ordinea explicita a setarilor in cadrul unui grup (dupa tblSet.Setting).
+// Cele care nu apar in lista raman dupa ele, in ordinea primita de la server.
+const SETARI_ORDINE = {
+  "casa": ["TipCasaMarcat", "CaleFisierComenziECR", "CaleFisierRaspunsECR"],
+  "afiseaj": ["AfiseajClient", "PortComAfiseaj", "BaudRateAfisaj", "CaleDriverAfiseajClient", "CaleFisierComenziAfiseajClient"],
+  "cantar": ["Cantar", "CaleDriverCantar", "CaleFisierRaspunsCantar", "Delay_cantar"],
+  "posbanca": ["PoSbanca", "CaleDriverPoSbanca", "CaleFisierComenziPoSbanca"]
+};
+
+// Etichete prietenoase pentru grupuri (altfel se afiseaza numele brut din tblSet.Grup).
+const SETARI_GRUP_LABELS = { "casa": "Casa Marcat", "posbanca": "POS Banca" };
+
+function setariSortRows(grup, rows) {
+  const ord = SETARI_ORDINE[setariNorm(grup)];
+  if (!ord || ord.length === 0) return rows;
+  const idx = r => {
+    const i = ord.findIndex(k => setariNorm(k) === setariNorm(r.Setting));
+    return i === -1 ? ord.length : i;
+  };
+  return rows.slice().sort((a, b) => idx(a) - idx(b));
+}
+
 // Grupurile (din tblSet.Grup) afisate in tabul curent
 function setariGroupsForTab(tabId) {
   const tab = SETARI_TABS.find(t => t.id === tabId);
 
   if (tab && tab.groups) {
     return tab.groups
-      .map(g => ({ label: g, rows: setariRows.filter(r => setariNorm(r.Grup) === setariNorm(g)) }))
+      .map(g => ({
+        label: SETARI_GRUP_LABELS[setariNorm(g)] || g,
+        rows: setariSortRows(g, setariRows.filter(r => setariNorm(r.Grup) === setariNorm(g)))
+      }))
       .filter(grp => grp.rows.length > 0);
   }
 
@@ -1731,6 +1758,30 @@ function setariField(row) {
   // Discountul permis/interzis: lista DA / NU.
   if (row.Setting === "RED") {
     return setariRedField(row);
+  }
+  // Transferul de produse permis/interzis: lista DA / NU.
+  if (row.Setting === "TransferMasa") {
+    return setariTransferMasaField(row);
+  }
+  // Tipul casei de marcat fiscale: lista Datecs / FiscalNet / Tremol.
+  if (row.Setting === "TipCasaMarcat") {
+    return setariTipCasaMarcatField(row);
+  }
+  // Afisajul client activ/inactiv: lista DA / NU.
+  if (row.Setting === "AfiseajClient") {
+    return setariAfiseajClientField(row);
+  }
+  // Cantarul electronic activ/inactiv: lista DA / NU.
+  if (row.Setting === "Cantar") {
+    return setariCantarField(row);
+  }
+  // Meniul zilei activ/inactiv: lista DA / NU.
+  if (row.Setting === "MeniulZilei") {
+    return setariMeniulZileiField(row);
+  }
+  // POS bancar activ/inactiv: lista DA / NU.
+  if (row.Setting === "PoSbanca") {
+    return setariPoSbancaField(row);
   }
 
   const div = document.createElement("div");
@@ -1891,6 +1942,135 @@ function setariRedField(row) {
     const d = document.createElement("div");
     d.className = "setari-desc";
     d.textContent = row.Descriere;
+    div.appendChild(d);
+  }
+
+  return div;
+}
+
+// Combobox pentru tblSet.TransferMasa: 1 = DA (transfer permis), 0 = NU.
+function setariTransferMasaField(row) {
+  const div = document.createElement("div");
+  div.className = "setari-field";
+
+  const label = document.createElement("label");
+  label.className = "setari-label";
+  label.textContent = row.Setting;
+  div.appendChild(label);
+
+  const select = document.createElement("select");
+  select.className = "tva-input setari-input";
+  select.id = "setari-inp-" + row.Setting;
+
+  const cur = String(row.Value === null || row.Value === undefined ? "" : row.Value).trim();
+  [["1", "DA"], ["0", "NU"]].forEach(pair => {
+    const opt = document.createElement("option");
+    opt.value = pair[0];
+    opt.textContent = pair[1];
+    if (pair[0] === (cur === "0" ? "0" : "1")) opt.selected = true;
+    select.appendChild(opt);
+  });
+  select.onchange = () => { setariDirty[row.Setting] = select.value; };
+  div.appendChild(select);
+
+  if (row.Descriere && String(row.Descriere).trim() !== "") {
+    const d = document.createElement("div");
+    d.className = "setari-desc";
+    d.textContent = row.Descriere;
+    div.appendChild(d);
+  }
+
+  return div;
+}
+
+// Combobox pentru tblSet.TipCasaMarcat: modelul casei de marcat fiscale.
+function setariTipCasaMarcatField(row) {
+  const div = document.createElement("div");
+  div.className = "setari-field";
+
+  const label = document.createElement("label");
+  label.className = "setari-label";
+  label.textContent = row.Setting;
+  div.appendChild(label);
+
+  const select = document.createElement("select");
+  select.className = "tva-input setari-input";
+  select.id = "setari-inp-" + row.Setting;
+
+  const opts = ["Datecs", "FiscalNet", "Tremol"];
+  const cur = String(row.Value === null || row.Value === undefined ? "" : row.Value).trim();
+  opts.forEach(val => {
+    const opt = document.createElement("option");
+    opt.value = val;
+    opt.textContent = val;
+    if (val === (opts.includes(cur) ? cur : "Datecs")) opt.selected = true;
+    select.appendChild(opt);
+  });
+  select.onchange = () => { setariDirty[row.Setting] = select.value; };
+  div.appendChild(select);
+
+  if (row.Descriere && String(row.Descriere).trim() !== "") {
+    const d = document.createElement("div");
+    d.className = "setari-desc";
+    d.textContent = row.Descriere;
+    div.appendChild(d);
+  }
+
+  return div;
+}
+
+// Combobox pentru tblSet.AfiseajClient: 1 = DA (afisaj activ), 0 = NU.
+function setariAfiseajClientField(row) {
+  return setariDaNuField(row.Setting, row.Value, row.Descriere, false);
+}
+
+// Combobox pentru tblSet.Cantar: 1 = DA (cantar activ), 0 = NU.
+function setariCantarField(row) {
+  return setariDaNuField(row.Setting, row.Value, row.Descriere, true);
+}
+
+// Combobox pentru tblSet.MeniulZilei: 1 = DA (meniul zilei activ), 0 = NU.
+function setariMeniulZileiField(row) {
+  return setariDaNuField(row.Setting, row.Value, row.Descriere, false);
+}
+
+// Combobox pentru tblSet.PoSbanca: 1 = DA (POS bancar activ), 0 = NU.
+function setariPoSbancaField(row) {
+  return setariDaNuField(row.Setting, row.Value, row.Descriere, false);
+}
+
+// Construieste un combobox generic DA / NU. defaultToNu = true cand valoarea
+// lipsa/legacy trebuie interpretata ca NU (ex. Cantar avea valoarea "None").
+function setariDaNuField(setting, value, descriere, defaultToNu) {
+  const div = document.createElement("div");
+  div.className = "setari-field";
+
+  const label = document.createElement("label");
+  label.className = "setari-label";
+  label.textContent = setting;
+  div.appendChild(label);
+
+  const select = document.createElement("select");
+  select.className = "tva-input setari-input";
+  select.id = "setari-inp-" + setting;
+
+  const cur = String(value === null || value === undefined ? "" : value).trim();
+  const fallback = defaultToNu ? "0" : "1";
+  const selected = (cur === "0") ? "0" : ((cur === "1") ? "1" : fallback);
+  [["1", "DA"], ["0", "NU"]].forEach(pair => {
+    const opt = document.createElement("option");
+    opt.value = pair[0];
+    opt.textContent = pair[1];
+    if (pair[0] === selected) opt.selected = true;
+    select.appendChild(opt);
+  });
+  select.onchange = () => { setariDirty[setting] = select.value; };
+  div.appendChild(select);
+
+  if (descriere && String(descriere).trim() !== "") {
+    const d = document.createElement("div");
+    d.className = "setari-desc";
+    d.textContent = descriere;
     div.appendChild(d);
   }
 
@@ -3196,7 +3376,9 @@ const NOTA_LABELS = {
   H2: "Header 2",
   H3: "Header 3",
   F1: "Footer 1",
-  F2: "Footer 2"
+  F2: "Footer 2",
+  P1: "Footer Proforma 1 (doar proforma)",
+  P2: "Footer Proforma 2 (doar proforma)"
 };
 
 // Fonturi ESC/POS (comanda ESC M n). Valoarea salvata in tblAntet.NumeFont
@@ -6529,6 +6711,14 @@ function actionVoid() {
   document.getElementById("void-parola").value = "";
   document.getElementById("btn-void-apply").innerText = "CONFIRMA STORNO";
 
+  // Daca ParolaStornare nu este setata, nu cerem nici parola, nici motiv:
+  // ascundem complet cele doua campuri din popup.
+  const needStornoCreds = POS_STATE.parolaStornare === 1;
+  const motivBox = document.getElementById("void-motiv-box");
+  const parolaBox = document.getElementById("void-parola-box");
+  if (motivBox) motivBox.style.display = needStornoCreds ? "" : "none";
+  if (parolaBox) parolaBox.style.display = needStornoCreds ? "" : "none";
+
   voidRefresh();
   document.getElementById("modal-void").classList.add("active");
 }
@@ -6628,26 +6818,31 @@ function voidApply() {
 
   const motivEl = document.getElementById("void-motiv-select");
   const parolaEl = document.getElementById("void-parola");
-  const motiv = motivEl ? motivEl.value : "";
-  const parola = parolaEl ? parolaEl.value : "";
 
-  if (!motiv) {
-    showToast("Selectati motivul anularii");
-    return;
-  }
-  if (!parola) {
-    showToast("Introduceti parola de stornare");
-    return;
-  }
-
-  voidSend({
+  const payload = {
     action: "void_line",
     nrMasa: POS_STATE.masaCurenta,
     ecrId: voidTarget.ecrId,
-    cantitate: v,
-    motiv: motiv,
-    parola: parola
-  });
+    cantitate: v
+  };
+
+  // Motivul + parola se cer doar daca ParolaStornare este setata.
+  if (POS_STATE.parolaStornare === 1) {
+    const motiv = motivEl ? motivEl.value : "";
+    const parola = parolaEl ? parolaEl.value : "";
+    if (!motiv) {
+      showToast("Selectati motivul anularii");
+      return;
+    }
+    if (!parola) {
+      showToast("Introduceti parola de stornare");
+      return;
+    }
+    payload.motiv = motiv;
+    payload.parola = parola;
+  }
+
+  voidSend(payload);
 }
 
 async function actionProforma() {

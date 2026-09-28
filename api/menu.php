@@ -254,6 +254,15 @@ if ($stmtPD) {
     if ($pd && trim((string)($pd['ParolaDiscount'] ?? '')) !== '') { $parolaDiscount = 1; }
 }
 
+// 4h. Parola de stornare (tblParola.ParolaStornare): 1 daca este setata (deci
+//     anularea liniilor trimise cere parola si motiv), 0 daca nu. Valoarea NU se trimite.
+$parolaStornare = 0;
+$stmtPS = sqlsrv_query($conn, "SELECT TOP 1 ParolaStornare FROM tblParola");
+if ($stmtPS) {
+    $ps = sqlsrv_fetch_array($stmtPS, SQLSRV_FETCH_ASSOC);
+    if ($ps && trim((string)($ps['ParolaStornare'] ?? '')) !== '') { $parolaStornare = 1; }
+}
+
 // 5. Date de contact pentru footer-ul ecranului mese (tblSet cheie/valoare)
 $distrRand1 = '';
 $distrRand2 = '';
@@ -281,6 +290,7 @@ sendJsonResponse([
     "nrZecCant" => $nrZecCant,
     "red" => $red,
     "parolaDiscount" => $parolaDiscount,
+    "parolaStornare" => $parolaStornare,
     "distrRand1" => $distrRand1,
     "distrRand2" => $distrRand2
 ]);

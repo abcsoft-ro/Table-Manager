@@ -47,36 +47,29 @@ INSERT INTO dbo.[tblKP] ([NrLogic], [Serie], [Stare], [Nume], [MagID], [CaleTSC]
 (2, N'06', 1, N'BUCATARIE', 2, NULL, N'80rapCmdSectie', N'Imprimanta demo');
 GO
 
------------------------------------------------------------- tblSet (59 randuri)
+------------------------------------------------------------ tblSet (37 randuri)
 DELETE FROM dbo.[tblSet];
 GO
 INSERT INTO dbo.[tblSet] ([Setting], [Value], [Descriere], [Grup]) VALUES
-(N'AccesNotaProforma', N'1', NULL, N'Nota'),
-(N'BaudRate', N'9600', NULL, N'Casa'),
+(N'AfiseajClient', N'1', N'Afisaj client activ: 1 = DA, 0 = NU.', N'Afiseaj'),
 (N'BaudRateAfisaj', N'9600', NULL, N'Afiseaj'),
-(N'CaleDriverECR', N'C:\POS\Fprint.exe', NULL, N'Casa'),
-(N'CaleFComenzi', N'C:\POS\fiscal\bonuri', NULL, N'Casa'),
-(N'CaleFLog', N'C:\POS\fiscal\raspuns', NULL, N'Casa'),
-(N'Cantar', N'None', NULL, N'Cantar'),
+(N'CaleDriverAfiseajClient', N'', N'Calea catre driverul/executabilul afisajului client.', N'Afiseaj'),
+(N'CaleDriverCantar', N'', N'Calea catre driverul/executabilul cantarului electronic.', N'Cantar'),
+(N'CaleDriverPoSbanca', N'', N'Calea catre driverul/executabilul POS-ului bancar.', N'PoSbanca'),
+(N'CaleFisierComenziAfiseajClient', N'', N'Folderul in care se scriu fisierele de comenzi catre afisajul client.', N'Afiseaj'),
+(N'CaleFisierComenziECR', N'C:\POS\fiscal\bonuri', N'Folderul in care se scriu fisierele de comenzi catre casa de marcat fiscala.', N'Casa'),
+(N'CaleFisierComenziPoSbanca', N'', N'Folderul in care se scriu fisierele de comenzi catre POS-ul bancar.', N'PoSbanca'),
+(N'CaleFisierRaspunsCantar', N'', N'Folderul in care cantarul electronic scrie fisierele de raspuns.', N'Cantar'),
+(N'CaleFisierRaspunsECR', N'C:\POS\fiscal\raspuns', N'Folderul in care casa de marcat fiscala scrie fisierele de raspuns.', N'Casa'),
+(N'Cantar', N'0', N'Cantar electronic activ: 1 = DA, 0 = NU.', N'Cantar'),
 (N'ConsumerKey', N'', NULL, N'web'),
 (N'ConsumerSecret', N'', NULL, N'web'),
-(N'CumulezNota', N'0', NULL, N'Nota'),
-(N'CumulezSectie', N'0', NULL, N'Nota'),
 (N'Delay_cantar', N'650', NULL, N'Cantar'),
-(N'DiscountEvidentiat', N'1', NULL, N'General'),
 (N'DistrRand1', N'demo.local', N'Linia 1 de contact (dupa sigla) in footer-ul ecranului Mese', N'General'),
 (N'DistrRand2', N'Suport demo', N'Linia 2 de contact (dupa sigla) in footer-ul ecranului Mese', N'General'),
-(N'EC', N'1', NULL, N'General'),
-(N'ExportServer', N'1', NULL, N'General'),
-(N'FormatNota', N'Imprimanta 80 mm', NULL, N'Nota'),
-(N'FP', N'1', NULL, N'General'),
-(N'ImpFisc', N'Datecs2018', NULL, N'casa'),
-(N'ImprimantaComenzi', N'1', NULL, N'KP'),
-(N'ImprimantaDefault', N'1', NULL, N'Nota'),
 (N'MagID', N'11', N'ID Magazie (gestiune) import grupe, produse, preturi server', N'General'),
 (N'MeniulZilei', N'1', N'1-Meniul zilei activ 0-Meniul zilei inactiv', N'General'),
 (N'Mod_logare', N'1', N'Modul de logare a ospatarilor: 1 = ospatarul ramane logat pe toata durata sesiunii; 0 = delogare automata la iesirea de pe masa (reautentificare obligatorie).', N'General'),
-(N'ModulTMO', N'1', NULL, N'General'),
 (N'NrBon', N'1000', NULL, N'General'),
 (N'NrBonCmd', N'54982', NULL, N'General'),
 (N'NrLogic', N'1', NULL, N'General'),
@@ -85,30 +78,16 @@ INSERT INTO dbo.[tblSet] ([Setting], [Value], [Descriere], [Grup]) VALUES
 (N'OraSfarsitPromo', NULL, NULL, N'General'),
 (N'OraStartPromo', NULL, NULL, N'General'),
 (N'ParolaDiscount', N'1', NULL, N'General'),
-(N'PortCom', N'1', NULL, N'Casa'),
 (N'PortComAfiseaj', N'5', NULL, N'Afiseaj'),
-(N'PrinterBonCmd', N'1', NULL, N'KP'),
-(N'PrinterNote', N'1', NULL, N'Nota'),
-(N'PrinterSectie', N'EpsonTM', NULL, N'KP'),
-(N'ProceduraExport', N'1', NULL, N'General'),
-(N'ProgramPartidVara', N'1', NULL, N'General'),
-(N'Rapoarte_parola', N'1', NULL, N'General'),
-(N'RaportZCombinat', N'0', NULL, N'General'),
-(N'RapPeriodic', N'1', NULL, N'General'),
+(N'PoSbanca', N'0', N'POS bancar activ: 1 = DA, 0 = NU.', N'PoSbanca'),
 (N'RED', N'1', NULL, N'General'),
-(N'ResidentModeActiva', N'0', NULL, N'casa'),
 (N'Retea', N'0', NULL, N'General'),
-(N'SerieIF', N'000000', NULL, N'casa'),
 (N'Server', N'1', NULL, N'ODBC'),
 (N'SiteUrlApi', N'', NULL, N'web'),
 (N'Storno_parola', N'0', NULL, N'General'),
-(N'TipAfisaj', N'2', NULL, N'Afiseaj'),
-(N'TiparescNota', N'1', NULL, N'Nota'),
-(N'TipPromotie', N'0', NULL, N'General'),
+(N'TipCasaMarcat', N'Datecs', N'Tipul casei de marcat fiscale: Datecs, FiscalNet sau Tremol.', N'Casa'),
 (N'TipVanz', N'0', N'Tipul de vanzare: 0 = Restaurant (ecran de mese, comanda la sectie, nota de plata); 1 = FastFood (fara ecran de mese, comanda nu pleaca la sectie, doar bon fiscal).', N'General'),
-(N'TransferMasa', N'1', NULL, N'General'),
-(N'TSC', N'0', NULL, N'General'),
-(N'ValPunct', N'0', NULL, N'General');
+(N'TransferMasa', N'1', NULL, N'General');
 GO
 
 ------------------------------------------------------------ tblParola (1 randuri)
@@ -129,7 +108,7 @@ INSERT INTO dbo.[tblOsp] ([NrOsp], [Nume], [Expl], [Parola], [Blocat]) VALUES
 (N'8', N'Ospatar 8', N'Casier', N'1', 0);
 GO
 
------------------------------------------------------------- tblAntet (6 randuri)
+------------------------------------------------------------ tblAntet (8 randuri)
 DELETE FROM dbo.[tblAntet];
 GO
 INSERT INTO dbo.[tblAntet] ([Nume], [Adresa], [Seria], [NumeFont], [Size], [CodFiscF], [RegCom], [Judet], [Cont], [Banca], [Denumire2], [Bold], [VersiuneDB], [PlatitorTVA], [CaleDateLogo], [QRCodeText], [SizeModeLogo], [Oras], [CodPostal], [PersContact], [email], [website], [telefon]) VALUES
@@ -138,7 +117,9 @@ INSERT INTO dbo.[tblAntet] ([Nume], [Adresa], [Seria], [NumeFont], [Size], [CodF
 (N'Va mai asteptam!', NULL, N'F2', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.1C', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
 (N'RESTAURANT DEMO', NULL, N'H1', N'A', 17, NULL, NULL, NULL, NULL, NULL, NULL, 1, N'TableManager 2.1C', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
 (N'Strada Exemplu nr. 1', NULL, N'H2', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.1C', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
-(N'Telefon: 0000.000.000', NULL, N'H3', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.1C', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL);
+(N'Telefon: 0000.000.000', NULL, N'H3', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.1C', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
+(N'', NULL, N'P1', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.1C', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
+(N'', NULL, N'P2', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.1C', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL);
 GO
 
 ------------------------------------------------------------ tblMese (80 randuri)

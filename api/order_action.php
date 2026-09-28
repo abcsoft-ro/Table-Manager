@@ -91,6 +91,16 @@ function getDiscountParola($conn) {
 }
 
 /**
+ * Parola de stornare din tblParola.ParolaStornare (string; '' = nu se cere).
+ * Cand este goala, anularea liniilor trimise nu cere nici parola, nici motiv.
+ */
+function getStornoParola($conn) {
+    $stmt = @sqlsrv_query($conn, "SELECT TOP 1 ParolaStornare FROM tblParola");
+    $row = $stmt ? sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC) : null;
+    return $row ? trim((string)($row['ParolaStornare'] ?? '')) : '';
+}
+
+/**
  * Repartizeaza o suma (in centi) pe o lista de ponderi (in centi), folosind
  * metoda celui mai mare rest, astfel incat suma alocata sa fie exact $amount
  * si nicio alocare sa nu depaseasca ponderea corespunzatoare.
@@ -122,6 +132,45 @@ function distributeDiscountCents($amount, $weights) {
         $remainder--;
     }
     return $result;
+}
+
+/**
+ * Cumuleaza pozitiile identice ale unui bon de sectie: acelasi produs
+ * (ProdID) si aceleasi moduri de preparare. Cantitatile se aduna, iar o
+ * pozitie anulata integral (cantitate neta 0) dispare. Se pastreaza ordinea
+ * primei aparitii.
+ */
+function cumuleazaLiniiBucatarie($lines) {
+    $byKey = [];
+    foreach ($lines as $ln) {
+        $mods = array_values(array_filter(
+            array_map('strval', $ln['mods'] ?? []),
+            function ($m) { return $m !== ''; }
+        ));
+        $key = ((int)($ln['prodId'] ?? 0)) . "\x1f" . mb_strtolower(implode("\x1e", $mods));
+        if (!isset($byKey[$key])) {
+            $byKey[$key] = [
+                "cant" => (float)$ln['cant'],
+                "denumire" => $ln['denumire'],
+                "mods" => $mods
+            ];
+        } else {
+            $byKey[$key]["cant"] += (float)$ln['cant'];
+        }
+    }
+
+    $out = [];
+    foreach ($byKey as $ln) {
+        $cant = $ln["cant"];
+        if (abs($cant) < 0.0001) { continue; } // anulat integral
+        $out[] = [
+            "cant" => $cant,
+            "denumire" => $ln["denumire"],
+            "storno" => ($cant < 0.0),
+            "mods" => $ln["mods"]
+        ];
+    }
+    return $out;
 }
 
 /**
@@ -215,6 +264,7 @@ function printKitchen($conn, $docId) {
         $kp = (int)$r['KP'];
         $currentKp = $kp;
         $groups[$kp][] = [
+            "prodId" => $prodId,
             "cant" => $cant,
             "denumire" => trim((string)$r['Denumire']),
             "storno" => ($cant < 0.0),
@@ -225,6 +275,14 @@ function printKitchen($conn, $docId) {
 
     if ($lineCount === 0) {
         return ["jobs" => 0, "lines" => 0, "error" => null];
+    }
+
+    // Pozitiile identice se cumuleaza pe fiecare imprimanta (ca pe nota):
+    // acelasi produs + aceleasi moduri -> o singura linie cu cantitatea insumata.
+    $printedLines = 0;
+    foreach ($groups as $kp => $linesG) {
+        $groups[$kp] = cumuleazaLiniiBucatarie($linesG);
+        $printedLines += count($groups[$kp]);
     }
 
     // 4. Scriem joburile si marcam liniile Preluat = 1, atomic.
@@ -269,7 +327,7 @@ function printKitchen($conn, $docId) {
     sqlsrv_commit($conn);
     wakePrintService();
 
-    return ["jobs" => $jobs, "lines" => $lineCount, "nrBon" => $nrBon, "error" => null];
+    return ["jobs" => $jobs, "lines" => $printedLines, "nrBon" => $nrBon, "error" => null];
 }
 
 /**
@@ -356,13 +414,14 @@ function closeBill($conn, $docId, $plati = []) {
  * si liniile fiscale. $title difera intre nota de plata ("NOTA DE PLATA") si
  * proforma ("NOTA PROFORMA"). Intoarce array sau false la eroare.
  */
-function buildBillPrintData($conn, $docId, $bon, $plati, $title) {
+function buildBillPrintData($conn, $docId, $bon, $plati, $title, $isProforma = false) {
     // 1. Randurile de header/footer ale notei (tblAntet): H1-H3 = antet, F1-F2 = subsol.
+    //    Proforma mai are si P1-P2 (footer suplimentar, valabil doar pentru proforma).
     //    Pastram si fontul/size/bold ca sa fie respectate la tiparire.
     $headerLines = [];
     $footerLines = [];
     $stmtHF = sqlsrv_query($conn, "SELECT Seria, Nume, NumeFont, Size, Bold
-                                   FROM tblAntet WHERE Seria IN ('H1','H2','H3','F1','F2')");
+                                   FROM tblAntet WHERE Seria IN ('H1','H2','H3','F1','F2','P1','P2')");
     if ($stmtHF) {
         $tmp = [];
         while ($h = sqlsrv_fetch_array($stmtHF, SQLSRV_FETCH_ASSOC)) {
@@ -378,10 +437,18 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title) {
         }
         foreach (['H1', 'H2', 'H3'] as $k) { if (!empty($tmp[$k])) { $headerLines[] = $tmp[$k]; } }
         foreach (['F1', 'F2'] as $k) { if (!empty($tmp[$k])) { $footerLines[] = $tmp[$k]; } }
+        // Footer suplimentar doar pentru proforma.
+        if ($isProforma) {
+            foreach (['P1', 'P2'] as $k) { if (!empty($tmp[$k])) { $footerLines[] = $tmp[$k]; } }
+        }
     }
 
-    // 2. Liniile notei (fara modurile de preparare)
+    // 2. Liniile notei (fara modurile de preparare). Liniile identice (acelasi
+    //    produs) se cumuleaza: cantitatile si valorile se aduna, iar randurile
+    //    de storno (Cant negativ) se scad din linia produsului, deci nu mai apar
+    //    ca pozitii separate pe nota.
     $items = [];
+    $itemsByKey = [];
     $fiscalItems = [];
     $subtotal = 0.0;  // valoare de catalog (PVC), inainte de discount
     $total = 0.0;     // valoare neta (PV, dupa discount)
@@ -418,15 +485,35 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title) {
         // O linie are discount "pe produs" (nu pe subtotal) daca are [Comment]
         // (motivul discountului de linie). Doar acestea se evidentiaza pe produs.
         $discountLinie = (trim((string)($r['Comment'] ?? '')) !== '');
-        $items[] = [
-            "cant" => $cant,
-            "denumire" => $den,
-            "valoare" => round($val, 2),
-            "valoareOriginala" => round($valOrig, 2),
-            "tva" => $cota,
-            "discountLinie" => $discountLinie
-        ];
+
+        // Cumulare pe produs (cheie = ProdID). Storno (Cant negativ) se scade.
+        $key = ($prodId > 0) ? ('p' . $prodId) : ('n' . mb_strtolower($den));
+        if (!isset($itemsByKey[$key])) {
+            $itemsByKey[$key] = [
+                "cant" => $cant,
+                "denumire" => $den,
+                "valoare" => $val,
+                "valoareOriginala" => $valOrig,
+                "tva" => $cota,
+                "discountLinie" => $discountLinie
+            ];
+        } else {
+            $itemsByKey[$key]["cant"] += $cant;
+            $itemsByKey[$key]["valoare"] += $val;
+            $itemsByKey[$key]["valoareOriginala"] += $valOrig;
+            if ($discountLinie) { $itemsByKey[$key]["discountLinie"] = true; }
+        }
+
         $fiscalItems[] = ["cant" => $cant, "denumire" => $den, "pret" => $pv, "cota" => $cota];
+    }
+
+    // Liniile cumulate (sarim peste produsele anulate integral -> cantitate 0).
+    foreach ($itemsByKey as $it) {
+        if (abs($it["cant"]) < 0.0001) { continue; }
+        $it["cant"] = round($it["cant"], 3);
+        $it["valoare"] = round($it["valoare"], 2);
+        $it["valoareOriginala"] = round($it["valoareOriginala"], 2);
+        $items[] = $it;
     }
 
     // 3. Formele de plata (FPID -> denumire)
@@ -847,7 +934,7 @@ switch ($action) {
         }
 
         // Nota este inca deschisa, deci nu are plati inregistrate.
-        $data = buildBillPrintData($conn, $docId, $bon, [], "NOTA PROFORMA");
+        $data = buildBillPrintData($conn, $docId, $bon, [], "NOTA PROFORMA", true);
         if ($data === false) {
             sendJsonResponse(["status" => "error", "message" => "Eroare construire nota proforma"], 500);
         }
@@ -1349,19 +1436,23 @@ switch ($action) {
         $cantLinie = (float)$row['Cant'];
         $trimis = ((int)$row['Preluat'] === 1);
 
-        // Pentru liniile deja trimise (Preluat = 1) cerem parola de manager si motivul
+        // Pentru liniile deja trimise (Preluat = 1) cerem parola de manager si
+        // motivul doar daca ParolaStornare este setata; altfel nu cerem nimic.
         if ($trimis) {
-            if ($motiv === '') {
-                sendJsonResponse(["status" => "error", "message" => "Selectati motivul anularii"], 400);
-            }
-            if ($parola === '') {
-                sendJsonResponse(["status" => "error", "message" => "Introduceti parola de manager"], 401);
-            }
-            $stmtPrg = @sqlsrv_query($conn, "SELECT TOP 1 ParolaStornare FROM tblParola");
-            $prg = $stmtPrg ? sqlsrv_fetch_array($stmtPrg, SQLSRV_FETCH_ASSOC) : null;
-            $parolaOk = $prg && isset($prg['ParolaStornare']) && trim($prg['ParolaStornare']) !== '' && trim($prg['ParolaStornare']) === $parola;
-            if (!$parolaOk) {
-                sendJsonResponse(["status" => "error", "message" => "Parola de stornare incorecta"], 401);
+            $parolaStorn = getStornoParola($conn);
+            if ($parolaStorn !== '') {
+                if ($motiv === '') {
+                    sendJsonResponse(["status" => "error", "message" => "Selectati motivul anularii"], 400);
+                }
+                if ($parola === '') {
+                    sendJsonResponse(["status" => "error", "message" => "Introduceti parola de manager"], 401);
+                }
+                if ($parolaStorn !== $parola) {
+                    sendJsonResponse(["status" => "error", "message" => "Parola de stornare incorecta"], 401);
+                }
+            } else {
+                // Parola nu este setata: nu cerem nici parola, nici motiv.
+                $motiv = ($motiv === '') ? null : $motiv;
             }
         } else {
             $motiv = null;

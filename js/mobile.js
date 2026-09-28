@@ -20,6 +20,8 @@ const MOBILE_STATE = {
   // Daca discountul cere parola (tblParola.ParolaDiscount) + parola verificata.
   parolaDiscount: 0,
   discountParola: "",
+  // Daca stornarea liniilor trimise cere parola/motiv (tblParola.ParolaStornare).
+  parolaStornare: 0,
 
   // Masa / nota curenta
   masaCurenta: null,
@@ -176,6 +178,7 @@ async function loadMenu() {
   MOBILE_STATE.nrZecCant = (nz >= 0 && nz <= 2) ? nz : 1;
   MOBILE_STATE.red = (data.red === 0 || data.red === "0") ? 0 : 1;
   MOBILE_STATE.parolaDiscount = (data.parolaDiscount == 1) ? 1 : 0;
+  MOBILE_STATE.parolaStornare = (data.parolaStornare == 1) ? 1 : 0;
 
   // Index plat pentru cautare / scanare
   const all = [];
@@ -1180,14 +1183,16 @@ function renderVoid() {
 
   if (!a.preluat) {
     html += `<div class="mv-info-note">Linia nu a fost trimisa la sectie. Anularea reduce sau sterge linia direct.</div>`;
-  } else {
+  } else if (MOBILE_STATE.parolaStornare === 1) {
     html += `<div class="mv-info-note">Linia a fost trimisa la sectie. Se va scrie o nota de anulare, cu parola de manager.</div>`;
+  } else {
+    html += `<div class="mv-info-note">Linia a fost trimisa la sectie. Se va scrie o nota de anulare.</div>`;
   }
 
   html += `<div class="mv-field-label">Cantitate de anulat (max ${formatQtyDec(a.ramas != null ? a.ramas : a.cantitate)})</div>`;
   html += `<button class="mv-value-btn" onclick="voidEditQty()">${formatQtyDec(voidState.cantitate)}</button>`;
 
-  if (a.preluat) {
+  if (a.preluat && MOBILE_STATE.parolaStornare === 1) {
     html += `<div class="mv-field-label">Motiv anulare</div>`;
     html += `<input type="text" class="mv-text-input" id="void-motiv" placeholder="Motiv" autocomplete="off">`;
     html += `<div class="mv-field-label">Parola manager</div>`;
@@ -1226,7 +1231,7 @@ async function voidApply() {
     cantitate: voidState.cantitate
   };
 
-  if (a.preluat && !a.storno) {
+  if (a.preluat && !a.storno && MOBILE_STATE.parolaStornare === 1) {
     const motivEl = document.getElementById("void-motiv");
     const parolaEl = document.getElementById("void-parola");
     payload.motiv = motivEl ? motivEl.value.trim() : "";
