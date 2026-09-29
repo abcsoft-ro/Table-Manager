@@ -257,6 +257,40 @@ if ($stmtRed) {
     }
 }
 
+// 4f2. Tipul discountului (tblSet.TipDiscount): 0 = complet, 1 = doar procent
+//      la subtotal (popup cu tastatura numerica), 2 = procent fix la subtotal.
+//      Procentul fix este in tblSet.ProcentDiscountFix (implicit 10).
+$tipDiscount = 0;
+$stmtTD = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'TipDiscount'");
+if ($stmtTD) {
+    $td = sqlsrv_fetch_array($stmtTD, SQLSRV_FETCH_ASSOC);
+    if ($td && trim((string)$td['Value']) !== '') {
+        $tdv = (int)trim((string)$td['Value']);
+        if ($tdv >= 0 && $tdv <= 2) { $tipDiscount = $tdv; }
+    }
+}
+$procentDiscountFix = 10.0;
+$stmtPF = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'ProcentDiscountFix'");
+if ($stmtPF) {
+    $pf = sqlsrv_fetch_array($stmtPF, SQLSRV_FETCH_ASSOC);
+    if ($pf && trim((string)$pf['Value']) !== '') {
+        $pfv = (float)str_replace(',', '.', trim((string)$pf['Value']));
+        if ($pfv >= 0 && $pfv <= 100) { $procentDiscountFix = $pfv; }
+    }
+}
+
+// 4f3. Export/sincronizare catre server (tblSet.Server): 1 = DA. Cand este 1,
+//      editarea manuala a grupelor/produselor este blocata in ecranul de
+//      programare (se foloseste Sincronizare produse); la 0 este invers.
+$server = 0;
+$stmtSrv = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'Server'");
+if ($stmtSrv) {
+    $srv = sqlsrv_fetch_array($stmtSrv, SQLSRV_FETCH_ASSOC);
+    if ($srv && trim((string)$srv['Value']) !== '') {
+        $server = ((int)trim((string)$srv['Value']) === 1) ? 1 : 0;
+    }
+}
+
 // 4g. Parola de discount (tblParola.ParolaDiscount): 1 daca este setata (deci
 //     discountul cere parola), 0 daca nu. Valoarea parolei NU se trimite.
 $parolaDiscount = 0;
@@ -317,6 +351,9 @@ sendJsonResponse([
     "cantMax" => $cantMax,
     "nrZecCant" => $nrZecCant,
     "red" => $red,
+    "tipDiscount" => $tipDiscount,
+    "procentDiscountFix" => $procentDiscountFix,
+    "server" => $server,
     "parolaDiscount" => $parolaDiscount,
     "parolaStornare" => $parolaStornare,
     "motivDiscount" => $motivDiscount,

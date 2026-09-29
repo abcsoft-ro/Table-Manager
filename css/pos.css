@@ -880,6 +880,19 @@ body {
   background: #dddddd;
 }
 
+.prog-btn:disabled {
+  background: #cccccc;
+  color: #666666;
+  border-color: #999;
+  cursor: not-allowed;
+  box-shadow: none;
+  opacity: 0.7;
+}
+
+.prog-btn:disabled:active {
+  background: #cccccc;
+}
+
 /* ==========================================================================
    ECRAN SETARI (tblSet)
    ========================================================================== */

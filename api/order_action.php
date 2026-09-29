@@ -139,6 +139,44 @@ function getRed($conn) {
 }
 
 /**
+ * Tipul discountului (tblSet.TipDiscount): 0 = complet, 1 = doar procent la
+ * subtotal, 2 = procent fix la subtotal. Implicit 0 cand lipseste/invalid.
+ */
+function getTipDiscount($conn) {
+    static $cache = null;
+    if ($cache !== null) { return $cache; }
+    $cache = 0;
+    $stmt = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'TipDiscount'");
+    if ($stmt) {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        if ($row && trim((string)$row['Value']) !== '') {
+            $v = (int)trim((string)$row['Value']);
+            if ($v >= 0 && $v <= 2) { $cache = $v; }
+        }
+    }
+    return $cache;
+}
+
+/**
+ * Procentul fix de discount (tblSet.ProcentDiscountFix) folosit cand
+ * TipDiscount = 2. Implicit 10, limitat la 0..100.
+ */
+function getProcentDiscountFix($conn) {
+    static $cache = null;
+    if ($cache !== null) { return $cache; }
+    $cache = 10.0;
+    $stmt = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'ProcentDiscountFix'");
+    if ($stmt) {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        if ($row && trim((string)$row['Value']) !== '') {
+            $v = (float)str_replace(',', '.', trim((string)$row['Value']));
+            if ($v >= 0 && $v <= 100) { $cache = $v; }
+        }
+    }
+    return $cache;
+}
+
+/**
  * Parola de discount din tblParola.ParolaDiscount (string; '' = nu se cere).
  */
 function getDiscountParola($conn) {
@@ -1520,6 +1558,18 @@ switch ($action) {
         $ecrId = (int)($input['ecrId'] ?? 0);
         $motiv = isset($input['motiv']) ? trim((string)$input['motiv']) : '';
         if ($motiv === '') { $motiv = null; }
+
+        // Cand TipDiscount = 1 sau 2, discountul se aplica doar pe subtotal,
+        // procentual. La 2 valoarea este cea fixa, programata in Setari (fara
+        // popup pe client).
+        $tipDiscount = getTipDiscount($conn);
+        if ($tipDiscount === 1 || $tipDiscount === 2) {
+            $scope = 'bill';
+            $mode = 'percent';
+            if ($tipDiscount === 2) {
+                $value = getProcentDiscountFix($conn);
+            }
+        }
 
         if (!in_array($scope, ['line', 'bill'], true)) {
             sendJsonResponse(["status" => "error", "message" => "Scop discount invalid"], 400);

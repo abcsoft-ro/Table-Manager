@@ -105,7 +105,7 @@ function ensureSetariMeta($conn) {
     if (!$hasRed) {
         @sqlsrv_query(
             $conn,
-            "INSERT INTO tblSet (Setting, Value, Descriere, Grup) VALUES ('RED', '1', ?, 'General')",
+            "INSERT INTO tblSet (Setting, Value, Descriere, Grup) VALUES ('RED', '1', ?, 'Discount')",
             [$redDesc]
         );
     } else {
@@ -116,14 +116,48 @@ function ensureSetariMeta($conn) {
         );
     }
 
+    // Tipul discountului (TipDiscount): 0 = complet, 1 = doar procent la
+    // subtotal (popup cu tastatura numerica 0-100), 2 = procent fix la subtotal
+    // (valoarea din ProcentDiscountFix, aplicat direct fara popup).
+    ensureSetariValue($conn, 'TipDiscount', '0',
+        "Tipul discountului: 0 = complet (produs sau subtotal, procent sau valoare, cu popup); 1 = doar procent la subtotal (popup cu tastatura numerica 0-100); 2 = procent fix la subtotal (valoarea din ProcentDiscountFix, aplicat direct fara popup).", 'Discount');
+    ensureSetariValue($conn, 'ProcentDiscountFix', '10',
+        "Procentul fix de discount aplicat pe subtotal cand TipDiscount = 2 (0-100).", 'Discount');
+
+    // Export/sincronizare catre server (tblSet.Server): 0 = independent,
+    // 1 = grupe/produse de pe server extern + exportul vanzarilor prin sync-service.
+    $serverDesc = "0 = aplicatia functioneaza independent; 1 = aplicatia incarca grupele si produsele de pe un server extern, aplicatia exporta vanzarile catre serverul extern prin serviciul python sync-service.";
+    $chkSrv = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'Server'");
+    $hasSrv = $chkSrv ? sqlsrv_fetch_array($chkSrv, SQLSRV_FETCH_ASSOC) : null;
+    if (!$hasSrv) {
+        @sqlsrv_query(
+            $conn,
+            "INSERT INTO tblSet (Setting, Value, Descriere, Grup) VALUES ('Server', '0', ?, 'ODBC')",
+            [$serverDesc]
+        );
+    } else {
+        @sqlsrv_query(
+            $conn,
+            "UPDATE tblSet SET Descriere = ? WHERE Setting = 'Server' AND (Descriere IS NULL OR Descriere <> ?)",
+            [$serverDesc, $serverDesc]
+        );
+    }
+
     // Motivele de discount si de stornare: liste editabile, separate prin
     // punct si virgula. Sunt afisate ca optiuni in casetele Discount si VD.
     ensureSetariValue($conn, 'MotivDiscount',
         'Protocol;Inlocuire preparat;Membru fidelitate;Angajat;Card fidelitate;Altele',
-        "Motivele de discount oferite in caseta de discount. Valorile sunt separate prin punct si virgula (;).", 'General');
+        "Motivele de discount oferite in caseta de discount. Valorile sunt separate prin punct si virgula (;).", 'Discount');
     ensureSetariValue($conn, 'MotivStornare',
         'Retur client;Greseala ospatar;Lipsa stoc;Comanda gresita;Altele',
         "Motivele de anulare (stornare) oferite in caseta VD. Valorile sunt separate prin punct si virgula (;).", 'General');
+
+    // Toate setarile de discount sunt grupate in grupul „Discount" (deploy fara
+    // pasi manuali: mutam si randurile existente care inca sunt in alt grup).
+    @sqlsrv_query(
+        $conn,
+        "UPDATE tblSet SET Grup = 'Discount' WHERE Setting IN ('RED', 'TipDiscount', 'ProcentDiscountFix', 'MotivDiscount') AND (Grup IS NULL OR Grup <> 'Discount')"
+    );
 
     // Casa de marcat fiscala: tipul casei + caile fisierelor de comenzi/raspuns.
     ensureSetariValue($conn, 'TipCasaMarcat', 'Datecs',
@@ -151,13 +185,23 @@ function ensureSetariMeta($conn) {
     ensureSetariValue($conn, 'CaleFisierRaspunsCantar', '',
         "Folderul in care cantarul electronic scrie fisierele de raspuns.", 'Cantar');
 
-    // POS bancar: activare + driver + folder comenzi.
+    // POS bancar: activare + driver + folder raspuns.
     ensureSetariValue($conn, 'PoSbanca', '0',
         "POS bancar activ: 1 = DA, 0 = NU.", 'PoSbanca');
     ensureSetariValue($conn, 'CaleDriverPoSbanca', '',
         "Calea catre driverul/executabilul POS-ului bancar.", 'PoSbanca');
-    ensureSetariValue($conn, 'CaleFisierComenziPoSbanca', '',
-        "Folderul in care se scriu fisierele de comenzi catre POS-ul bancar.", 'PoSbanca');
+
+    // Redenumire fara pasi manuali: CaleFisierComenziPoSbanca ->
+    // CaleFisierRaspunsPoSbanca, pastrand valoarea de pe instalatiile existente.
+    @sqlsrv_query(
+        $conn,
+        "UPDATE tblSet SET Setting = 'CaleFisierRaspunsPoSbanca'
+         WHERE Setting = 'CaleFisierComenziPoSbanca'
+           AND NOT EXISTS (SELECT 1 FROM tblSet t2 WHERE t2.Setting = 'CaleFisierRaspunsPoSbanca')"
+    );
+    ensureSetariValue($conn, 'CaleFisierRaspunsPoSbanca', '',
+        "Fisierul in care POS-ul bancar scrie raspunsul.", 'PoSbanca');
+    @sqlsrv_query($conn, "DELETE FROM tblSet WHERE Setting = 'CaleFisierComenziPoSbanca'");
 
     // Chei legacy, fara efect in aplicatie: se sterg din tblSet daca exista
     // (nu mai apar nici in ecranul Setari).

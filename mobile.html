@@ -147,19 +147,19 @@
       <button class="mv-sheet-close" onclick="closeDiscountModalMobile()">&times;</button>
     </div>
     <div class="mv-sheet-body">
-      <div class="mv-field-label">Aplicare</div>
+      <div class="mv-field-label" id="disc-scope-label">Aplicare</div>
       <div class="mv-segment" id="disc-scope">
         <button data-scope="bill" onclick="discSetScope('bill')">Pe nota</button>
         <button data-scope="line" onclick="discSetScope('line')">Pe linia selectata</button>
       </div>
-      <div class="mv-field-label">Tip</div>
+      <div class="mv-field-label" id="disc-mode-label">Tip</div>
       <div class="mv-segment" id="disc-mode">
         <button data-mode="percent" onclick="discSetMode('percent')">Procent %</button>
         <button data-mode="valoric" onclick="discSetMode('valoric')">Valoric L</button>
       </div>
       <div class="mv-field-label">Valoare</div>
       <button class="mv-value-btn" id="disc-value-btn" onclick="discEditValue()">0</button>
-      <div class="mv-field-label">Motiv (optional)</div>
+      <div class="mv-field-label" id="disc-motiv-label">Motiv (optional)</div>
       <input type="text" class="mv-text-input" id="disc-motiv" placeholder="Motiv discount" autocomplete="off">
       <button class="mv-primary-btn" onclick="discApply()">Aplica discount</button>
     </div>

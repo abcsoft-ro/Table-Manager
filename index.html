@@ -294,8 +294,8 @@
       </div>
       <div class="prog-grid" id="prog-grid">
         <button class="prog-btn" onclick="progAction('Setari')">Setari</button>
-        <button class="prog-btn" onclick="progAction('Grupe')">Grupe</button>
-        <button class="prog-btn" onclick="progAction('Produse')">Produse</button>
+        <button class="prog-btn" id="prog-btn-grupe" onclick="progAction('Grupe')">Grupe</button>
+        <button class="prog-btn" id="prog-btn-produse" onclick="progAction('Produse')">Produse</button>
         <button class="prog-btn" onclick="progAction('Sectii')">Sectii</button>
         <button class="prog-btn" onclick="progAction('Programare mese')">Programare mese</button>
         <button class="prog-btn" onclick="progAction('Ospatari')">Ospatari</button>
@@ -307,7 +307,7 @@
         <button class="prog-btn" onclick="progAction('Forme de plata')">Forme de plata</button>
         <button class="prog-btn" onclick="progAction('Cote TVA')">Cote TVA</button>
         <button class="prog-btn" onclick="progAction('Conectare server')">Conectare server</button>
-        <button class="prog-btn" onclick="progAction('Sincronizare produse')">Sincronizare produse</button>
+        <button class="prog-btn" id="prog-btn-sync" onclick="progAction('Sincronizare produse')">Sincronizare produse</button>
         <button class="prog-btn" onclick="openPrintQueue()">Coada printare</button>
         <button class="prog-btn" onclick="openSendQueue()">Coada export</button>
       </div>
@@ -1192,12 +1192,12 @@
   <div class="modal-keyboard-overlay" id="modal-discount">
     <div class="discount-dialog">
       <div class="keyboard-dialog-header">
-        <span>APLICARE DISCOUNT</span>
+        <span id="disc-modal-title">APLICARE DISCOUNT</span>
         <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeDiscountModal()">Inchide</button>
       </div>
       <div class="discount-body">
         <!-- 1. Nivel de aplicare -->
-        <div class="disc-section">
+        <div class="disc-section" id="disc-scope-section">
           <div class="disc-section-title">NIVEL DE APLICARE</div>
           <div class="disc-scope">
             <button class="disc-scope-btn on" id="disc-scope-line" onclick="discSetScope('line')">
@@ -1212,7 +1212,7 @@
         </div>
 
         <!-- 2. Tip discount -->
-        <div class="disc-mode-row">
+        <div class="disc-mode-row" id="disc-mode-section">
           <span class="disc-section-title">TIP DISCOUNT</span>
           <div class="disc-mode">
             <button class="disc-mode-btn on" id="disc-mode-percent" onclick="discSetMode('percent')">Procent (%)</button>
@@ -1221,7 +1221,7 @@
         </div>
 
         <!-- 3. Valoare / numpad / presets -->
-        <div class="disc-main">
+        <div class="disc-main" id="disc-main">
           <div class="disc-left">
             <div class="disc-section-title">VALOARE DISCOUNT</div>
             <div class="disc-value-box">
@@ -1247,8 +1247,10 @@
           </div>
 
           <div class="disc-right">
-            <div class="disc-section-title">PRESETS RAPIDE</div>
-            <div class="disc-presets" id="disc-presets"></div>
+            <div id="disc-presets-block">
+              <div class="disc-section-title">PRESETS RAPIDE</div>
+              <div class="disc-presets" id="disc-presets"></div>
+            </div>
 
             <div class="disc-section-title" style="margin-top:14px;">NUMPAD</div>
             <div class="disc-numpad">
@@ -1269,7 +1271,7 @@
         </div>
 
         <!-- 4. Motiv -->
-        <div class="disc-motiv">
+        <div class="disc-motiv" id="disc-motiv-block">
           <label for="disc-motiv-select">MOTIV / OBSERVATII (optional)</label>
           <select id="disc-motiv-select" class="disc-motiv-select">
             <option value="">— selectati motivul —</option>

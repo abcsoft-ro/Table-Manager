@@ -27,6 +27,14 @@ const POS_STATE = {
   nrZecCant: 1,
   // Discountul permis/interzis (tblSet.RED: 1 = DA, 0 = NU).
   red: 1,
+  // Tipul discountului (tblSet.TipDiscount): 0 = complet, 1 = doar procent la
+  // subtotal (popup cu tastatura numerica), 2 = procent fix la subtotal
+  // (aplicat direct, fara popup). Procentul fix = tblSet.ProcentDiscountFix.
+  tipDiscount: 0,
+  procentDiscountFix: 10,
+  // Export/sincronizare server (tblSet.Server): 1 = DA. Cand e 1, Grupe/Produse
+  // sunt blocate in ecranul de programare, iar Sincronizare produse e activa.
+  server: 0,
   // Daca discountul cere parola (tblParola.ParolaDiscount setata) si parola
   // verificata in sesiunea curenta de discount.
   parolaDiscount: 0,
@@ -147,6 +155,11 @@ async function loadMenu() {
   const nz = parseInt(data.nrZecCant, 10);
   POS_STATE.nrZecCant = (nz >= 0 && nz <= 2) ? nz : 1;
   POS_STATE.red = (data.red === 0 || data.red === "0") ? 0 : 1;
+  const td = parseInt(data.tipDiscount, 10);
+  POS_STATE.tipDiscount = (td >= 0 && td <= 2) ? td : 0;
+  const pf = Number(data.procentDiscountFix);
+  POS_STATE.procentDiscountFix = (pf >= 0 && pf <= 100) ? pf : 10;
+  POS_STATE.server = (data.server == 1) ? 1 : 0;
   POS_STATE.parolaDiscount = (data.parolaDiscount == 1) ? 1 : 0;
   POS_STATE.parolaStornare = (data.parolaStornare == 1) ? 1 : 0;
 
@@ -154,6 +167,8 @@ async function loadMenu() {
   updateMeniulZileiButton();
   applyTipVanzUI();
   applyRedUI();
+  applyTipDiscountUI();
+  applyServerModeUI();
   refreshMotiveSelects();
   updateTablesFooter(data.distrRand1, data.distrRand2);
 }
@@ -187,6 +202,41 @@ function applyRedUI() {
   document.querySelectorAll(".js-discount-btn").forEach(el => {
     el.style.display = allowed ? "" : "none";
   });
+}
+
+// Eticheta procentului de discount (fara zecimale inutile).
+function discountPctLabel(v) {
+  const n = Number(v);
+  if (!isFinite(n)) return "0";
+  return (Math.round(n * 100) / 100).toString();
+}
+
+// Actualizeaza eticheta butoanelor de discount in functie de tblSet.TipDiscount.
+function applyTipDiscountUI() {
+  const tip = POS_STATE.tipDiscount;
+  let label = "Discount";
+  if (tip === 1) {
+    label = "Discount %";
+  } else if (tip === 2) {
+    label = "Discount " + discountPctLabel(POS_STATE.procentDiscountFix) + "%";
+  }
+  document.querySelectorAll(".js-discount-btn").forEach(el => {
+    el.textContent = label;
+  });
+}
+
+// In ecranul de programare: cand tblSet.Server = 1 (export/sincronizare activ),
+// Grupe si Produse sunt blocate (datele vin din sincronizare), iar Sincronizare
+// produse este activa; cand Server = 0 este invers.
+function applyServerModeUI() {
+  const serverOn = (POS_STATE.server === 1);
+  const set = (id, disabled) => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = disabled;
+  };
+  set("prog-btn-grupe", serverOn);
+  set("prog-btn-produse", serverOn);
+  set("prog-btn-sync", !serverOn);
 }
 
 // Footer-ul ecranului mese: datele de contact din tblSet (DistrRand1/2)
@@ -1515,6 +1565,7 @@ function openProgramming() {
   const active = document.querySelector(".pos-screen.active");
   progPrevScreen = active ? active.id : "screen-marcare";
   navigateToScreen("screen-programare");
+  applyServerModeUI();
   showToast("Acces programare");
 }
 
@@ -1631,7 +1682,7 @@ async function doSyncProducts() {
 // Doar coloana Value este editabila; Setting si Descriere sunt doar afisate.
 // --------------------------------------------------------------------------
 const SETARI_TABS = [
-  { id: "general",    label: "General",    groups: ["General"] },
+  { id: "general",    label: "General",    groups: ["Discount", "General"] },
   { id: "device",     label: "Device-uri", groups: ["Casa", "Afiseaj", "Cantar", "PoSbanca"] },
   { id: "altele",     label: "Altele",     groups: null } // null = toate cele neincluse mai sus
 ];
@@ -1762,14 +1813,15 @@ function renderSetariTabs() {
 // Ordinea explicita a setarilor in cadrul unui grup (dupa tblSet.Setting).
 // Cele care nu apar in lista raman dupa ele, in ordinea primita de la server.
 const SETARI_ORDINE = {
+  "discount": ["RED", "TipDiscount", "ProcentDiscountFix", "MotivDiscount"],
   "casa": ["TipCasaMarcat", "BonFiscalDiscStorno", "CaleFisierComenziECR", "CaleFisierRaspunsECR"],
   "afiseaj": ["AfiseajClient", "PortComAfiseaj", "BaudRateAfisaj", "CaleDriverAfiseajClient", "CaleFisierComenziAfiseajClient"],
   "cantar": ["Cantar", "CaleDriverCantar", "CaleFisierRaspunsCantar", "Delay_cantar"],
-  "posbanca": ["PoSbanca", "CaleDriverPoSbanca", "CaleFisierComenziPoSbanca"]
+  "posbanca": ["PoSbanca", "CaleDriverPoSbanca", "CaleFisierRaspunsPoSbanca"]
 };
 
 // Etichete prietenoase pentru grupuri (altfel se afiseaza numele brut din tblSet.Grup).
-const SETARI_GRUP_LABELS = { "casa": "Casa Marcat", "posbanca": "POS Banca" };
+const SETARI_GRUP_LABELS = { "discount": "Discount", "casa": "Casa Marcat", "posbanca": "POS Banca" };
 
 function setariSortRows(grup, rows) {
   const ord = SETARI_ORDINE[setariNorm(grup)];
@@ -1812,6 +1864,10 @@ function setariField(row) {
   // Discountul permis/interzis: lista DA / NU.
   if (row.Setting === "RED") {
     return setariRedField(row);
+  }
+  // Tipul discountului: lista 0 / 1 / 2.
+  if (row.Setting === "TipDiscount") {
+    return setariTipDiscountField(row);
   }
   // Transferul de produse permis/interzis: lista DA / NU.
   if (row.Setting === "TransferMasa") {
@@ -1991,6 +2047,46 @@ function setariRedField(row) {
     opt.value = pair[0];
     opt.textContent = pair[1];
     if (pair[0] === (cur === "0" ? "0" : "1")) opt.selected = true;
+    select.appendChild(opt);
+  });
+  select.onchange = () => { setariDirty[row.Setting] = select.value; };
+  div.appendChild(select);
+
+  if (row.Descriere && String(row.Descriere).trim() !== "") {
+    const d = document.createElement("div");
+    d.className = "setari-desc";
+    d.textContent = row.Descriere;
+    div.appendChild(d);
+  }
+
+  return div;
+}
+
+// Combobox pentru tblSet.TipDiscount: 0 = complet, 1 = procent la subtotal,
+// 2 = procent fix la subtotal.
+function setariTipDiscountField(row) {
+  const div = document.createElement("div");
+  div.className = "setari-field";
+
+  const label = document.createElement("label");
+  label.className = "setari-label";
+  label.textContent = row.Setting;
+  div.appendChild(label);
+
+  const select = document.createElement("select");
+  select.className = "tva-input setari-input";
+  select.id = "setari-inp-" + row.Setting;
+
+  const cur = String(row.Value === null || row.Value === undefined ? "" : row.Value).trim();
+  [
+    ["0", "0 - Complet (produs/subtotal, procent/valoare)"],
+    ["1", "1 - Doar procent la subtotal (popup)"],
+    ["2", "2 - Procent fix la subtotal (fara popup)"]
+  ].forEach(pair => {
+    const opt = document.createElement("option");
+    opt.value = pair[0];
+    opt.textContent = pair[1];
+    if (pair[0] === (cur === "1" || cur === "2" ? cur : "0")) opt.selected = true;
     select.appendChild(opt);
   });
   select.onchange = () => { setariDirty[row.Setting] = select.value; };
@@ -2206,6 +2302,19 @@ async function saveSetari() {
       applyRedUI();
     }
 
+    // Tipul discountului si procentul fix se aplica imediat pe eticheta butonului.
+    if (keys.indexOf("TipDiscount") !== -1 || keys.indexOf("ProcentDiscountFix") !== -1) {
+      if (keys.indexOf("TipDiscount") !== -1) {
+        const td = parseInt(setariDirty["TipDiscount"], 10);
+        POS_STATE.tipDiscount = (td >= 0 && td <= 2) ? td : 0;
+      }
+      if (keys.indexOf("ProcentDiscountFix") !== -1) {
+        const pf = Number(String(setariDirty["ProcentDiscountFix"]).replace(",", "."));
+        POS_STATE.procentDiscountFix = (pf >= 0 && pf <= 100) ? pf : 10;
+      }
+      applyTipDiscountUI();
+    }
+
     // Motivele de discount/stornare se aplica imediat in casetele Discount/VD.
     if (keys.indexOf("MotivDiscount") !== -1 || keys.indexOf("MotivStornare") !== -1) {
       if (keys.indexOf("MotivDiscount") !== -1) {
@@ -2215,6 +2324,12 @@ async function saveSetari() {
         POS_STATE.motivStornare = parseMotiveList(setariDirty["MotivStornare"]);
       }
       refreshMotiveSelects();
+    }
+
+    // Export/sincronizare server: actualizeaza blocarea Grupe/Produse in programare.
+    if (keys.indexOf("Server") !== -1) {
+      POS_STATE.server = (String(setariDirty["Server"]).trim() === "1") ? 1 : 0;
+      applyServerModeUI();
     }
 
     setariDirty = {};
@@ -6833,10 +6948,17 @@ function openDiscountModal() {
   // Deschidem pe "produs" doar daca linia selectata mai are valoare neta;
   // altfel (linie voidata integral sau fara selectie) pe nota intreaga.
   const it = discSelectedItem();
+  if (POS_STATE.tipDiscount === 1 || POS_STATE.tipDiscount === 2) {
+    openDiscountSubtotalModal();
+    return;
+  }
   discScope = (it && lineValNet(it) > 0.0001) ? "line" : "bill";
   discBuffer = "";
   discMotiv = "";
+  const titleFull = document.getElementById("disc-modal-title");
+  if (titleFull) titleFull.textContent = "APLICARE DISCOUNT";
   refreshMotiveSelects();
+  discApplySimpleVisibility(false);
   discRender();
   document.getElementById("modal-discount").classList.add("active");
   discRefreshScopeButtons();
@@ -6844,6 +6966,35 @@ function openDiscountModal() {
   // ca butonul activ sa corespunda intotdeauna calculului.
   discRefreshModeButtons();
   discRecalcEstimate();
+}
+
+// Popup simplificat pentru TipDiscount = 1: doar procent pe subtotal, cu
+// tastatura numerica 0-100 si buton de confirmare.
+function openDiscountSubtotalModal() {
+  discScope = "bill";
+  discMode = "percent";
+  discBuffer = "";
+  discMotiv = "";
+  const motivSel = document.getElementById("disc-motiv-select");
+  if (motivSel) motivSel.value = "";
+  discApplySimpleVisibility(true);
+  const title = document.getElementById("disc-modal-title");
+  if (title) title.textContent = "DISCOUNT PROCENT SUBTOTAL";
+  discRender();
+  document.getElementById("modal-discount").classList.add("active");
+  discRefreshScopeButtons();
+  discRefreshModeButtons();
+  discRecalcEstimate();
+}
+
+// Ascunde/afiseaza in modalul de discount sectiunile care nu se folosesc in
+// modul "doar procent la subtotal" (nivel, tip, presets, motiv).
+function discApplySimpleVisibility(simple) {
+  const ids = ["disc-scope-section", "disc-mode-section", "disc-presets-block", "disc-motiv-block"];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = simple ? "none" : "";
+  });
 }
 
 function closeDiscountModal() {
@@ -6971,10 +7122,19 @@ function discNumpad(ch) {
   discRecalcEstimate();
 }
 
-async function discApply() {
+async function discApply(fixedPct) {
+  // Cand fixedPct este dat (TipDiscount = 2), aplicam procentul fix pe subtotal
+  // direct, fara sa depindem de starea modalului.
+  if (fixedPct != null) {
+    discScope = "bill";
+    discMode = "percent";
+    discBuffer = String(fixedPct);
+    const motivSel = document.getElementById("disc-motiv-select");
+    if (motivSel) motivSel.value = "";
+  }
   // Daca discountul cere parola si nu a fost inca verificata, o cerem acum.
   if (POS_STATE.parolaDiscount === 1 && !POS_STATE.discountParola) {
-    ensureDiscountParola(() => discApply());
+    ensureDiscountParola(() => discApply(fixedPct));
     return;
   }
 
@@ -7033,7 +7193,7 @@ async function discApply() {
       if (res.required === true || /parola/i.test(res.message || "")) {
         POS_STATE.discountParola = "";
         POS_STATE.parolaDiscount = 1;
-        ensureDiscountParola(() => discApply());
+        ensureDiscountParola(() => discApply(fixedPct));
         return;
       }
       throw new Error(res.message);
@@ -7061,6 +7221,16 @@ function actionDiscount() {
   }
   if (!POS_STATE.articole.length) {
     showToast("Nota este goala; nu exista pe ce sa se aplice discount");
+    return;
+  }
+  // TipDiscount = 2: procent fix pe subtotal, aplicat direct, fara popup.
+  if (POS_STATE.tipDiscount === 2) {
+    const pct = Number(POS_STATE.procentDiscountFix);
+    if (!(pct > 0) || pct > 100) {
+      showToast("Procentul fix de discount nu este configurat (Setari > ProcentDiscountFix).");
+      return;
+    }
+    ensureDiscountParola(() => discApply(pct));
     return;
   }
   ensureDiscountParola(() => openDiscountModal());

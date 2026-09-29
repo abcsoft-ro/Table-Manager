@@ -17,6 +17,10 @@ const MOBILE_STATE = {
   nrZecCant: 1,
   // Discountul permis/interzis (tblSet.RED: 1 = DA, 0 = NU).
   red: 1,
+  // Tipul discountului (tblSet.TipDiscount): 0 = complet, 1 = doar procent la
+  // subtotal (popup cu tastatura numerica), 2 = procent fix la subtotal.
+  tipDiscount: 0,
+  procentDiscountFix: 10,
   // Daca discountul cere parola (tblParola.ParolaDiscount) + parola verificata.
   parolaDiscount: 0,
   discountParola: "",
@@ -125,6 +129,13 @@ function parseNum(v) {
   return isNaN(n) ? 0 : n;
 }
 
+// Eticheta procentului de discount (fara zecimale inutile).
+function discountPctLabel(v) {
+  const n = Number(v);
+  if (!isFinite(n)) return "0";
+  return (Math.round(n * 100) / 100).toString();
+}
+
 function colorIntToHex(v) {
   if (v === null || v === undefined) return null;
   const n = Number(v) >>> 0;
@@ -177,6 +188,10 @@ async function loadMenu() {
   const nz = parseInt(data.nrZecCant, 10);
   MOBILE_STATE.nrZecCant = (nz >= 0 && nz <= 2) ? nz : 1;
   MOBILE_STATE.red = (data.red === 0 || data.red === "0") ? 0 : 1;
+  const td = parseInt(data.tipDiscount, 10);
+  MOBILE_STATE.tipDiscount = (td >= 0 && td <= 2) ? td : 0;
+  const pf = Number(data.procentDiscountFix);
+  MOBILE_STATE.procentDiscountFix = (pf >= 0 && pf <= 100) ? pf : 10;
   MOBILE_STATE.parolaDiscount = (data.parolaDiscount == 1) ? 1 : 0;
   MOBILE_STATE.parolaStornare = (data.parolaStornare == 1) ? 1 : 0;
 
@@ -869,7 +884,7 @@ function openLineActions(a) {
     if (!isFastFood()) {
       html += `<button class="mv-action-btn" onclick="openModsModal()">Mod preparare</button>`;
     }
-    if (MOBILE_STATE.red !== 0) {
+    if (MOBILE_STATE.red !== 0 && MOBILE_STATE.tipDiscount === 0) {
       html += `<button class="mv-action-btn" onclick="openDiscountModal('line')">Discount pe linie</button>`;
     }
   }
@@ -888,7 +903,15 @@ function openMarkMenu() {
 
   let html = "";
   if (MOBILE_STATE.red !== 0) {
-    html += `<button class="mv-action-btn" onclick="openDiscountModal('bill')">Discount pe nota</button>`;
+    const tip = MOBILE_STATE.tipDiscount;
+    if (tip === 0) {
+      html += `<button class="mv-action-btn" onclick="openDiscountModal('bill')">Discount pe nota</button>`;
+    } else if (tip === 1) {
+      html += `<button class="mv-action-btn" onclick="openDiscountModal('bill')">Discount % (nota)</button>`;
+    } else if (tip === 2) {
+      const pct = discountPctLabel(MOBILE_STATE.procentDiscountFix);
+      html += `<button class="mv-action-btn" onclick="actionDiscountFixMobile()">Discount ${pct}% (nota)</button>`;
+    }
   }
   if (!isFastFood()) {
     html += `<button class="mv-action-btn" onclick="menuMods()">Mod preparare</button>`;
@@ -1011,14 +1034,31 @@ const discState = { scope: "bill", mode: "percent", value: 0 };
 
 function openDiscountModal(scope) {
   if (MOBILE_STATE.red === 0) { showToast("Discountul nu este permis."); return; }
+  const tip = MOBILE_STATE.tipDiscount;
+  // TipDiscount = 2: procent fix pe subtotal, aplicat direct, fara popup.
+  if (tip === 2) { actionDiscountFixMobile(); return; }
+  // TipDiscount = 1: doar procent pe subtotal.
+  if (tip === 1) { scope = "bill"; }
   const a = selectedArticle();
   if (scope === "line" && !a) { showToast("Selectati o linie."); return; }
   // Daca discountul cere parola, o cerem inainte de a deschide modalul.
   ensureDiscountParolaMobile(() => openDiscountModalNow(scope));
 }
 
+// TipDiscount = 2: aplica procentul fix pe subtotal, fara popup.
+function actionDiscountFixMobile() {
+  if (MOBILE_STATE.red === 0) { showToast("Discountul nu este permis."); return; }
+  const pct = Number(MOBILE_STATE.procentDiscountFix);
+  if (!(pct > 0) || pct > 100) {
+    showToast("Procentul fix de discount nu este configurat.");
+    return;
+  }
+  ensureDiscountParolaMobile(() => discApply(pct));
+}
+
 function openDiscountModalNow(scope) {
-  discState.scope = scope || "bill";
+  const tip = MOBILE_STATE.tipDiscount;
+  discState.scope = (tip === 1) ? "bill" : (scope || "bill");
   discState.mode = "percent";
   discState.value = 0;
   closeModal("modal-line");
@@ -1079,6 +1119,13 @@ function promptDiscountParolaMobile(cb) {
 }
 
 function renderDiscount() {
+  // TipDiscount = 1: doar procent pe subtotal; ascundem nivelul, tipul si motivul.
+  const simple = (MOBILE_STATE.tipDiscount === 1);
+  ["disc-scope-label", "disc-scope", "disc-mode-label", "disc-mode", "disc-motiv-label", "disc-motiv"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = simple ? "none" : "";
+  });
+
   document.querySelectorAll("#disc-scope button").forEach(b => {
     const isLine = b.dataset.scope === "line";
     b.classList.toggle("active", b.dataset.scope === discState.scope);
@@ -1114,10 +1161,18 @@ function discEditValue() {
   });
 }
 
-async function discApply() {
+async function discApply(fixedPct) {
+  // Cand fixedPct este dat (TipDiscount = 2), aplicam procentul fix pe subtotal.
+  if (fixedPct != null) {
+    discState.scope = "bill";
+    discState.mode = "percent";
+    discState.value = Number(fixedPct);
+    const motivEl = document.getElementById("disc-motiv");
+    if (motivEl) motivEl.value = "";
+  }
   // Daca discountul cere parola si nu a fost verificata, o cerem acum.
   if (MOBILE_STATE.parolaDiscount === 1 && !MOBILE_STATE.discountParola) {
-    ensureDiscountParolaMobile(() => discApply());
+    ensureDiscountParolaMobile(() => discApply(fixedPct));
     return;
   }
   if (discState.value <= 0) { showToast("Introduceti valoarea discountului"); return; }
@@ -1141,7 +1196,7 @@ async function discApply() {
     // Serverul cere parola (sau a fost schimbata intre timp): o cerem si reincercam.
     if (res.required === true || /parola/i.test(res.message || "")) {
       MOBILE_STATE.discountParola = "";
-      ensureDiscountParolaMobile(() => discApply());
+      ensureDiscountParolaMobile(() => discApply(fixedPct));
       return;
     }
     appAlert(res.message);
