@@ -6,12 +6,15 @@ cd /d "%~dp0"
 
 if not exist "logs" mkdir "logs"
 
-set "PYEXE="
-set "CANDIDATE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
-if exist "%CANDIDATE%" set "PYEXE=%CANDIDATE%"
-if not defined PYEXE if exist "%USERPROFILE%\AppData\Local\Programs\Python\Python312\python.exe" set "PYEXE=%USERPROFILE%\AppData\Local\Programs\Python\Python312\python.exe"
-if not defined PYEXE (py -3 --version >nul 2>nul && set "PYEXE=py -3")
-if not defined PYEXE set "PYEXE=python"
+rem Mediul virtual Python (obligatoriu), in radacina proiectului.
+set "PYEXE=%~dp0..\.venv\Scripts\python.exe"
+if not exist "%PYEXE%" (
+    echo.
+    echo EROARE: nu exista mediul virtual Python "%PYEXE%"
+    echo Rulati mai intai setup-venv.bat din radacina proiectului.
+    pause
+    exit /b 1
+)
 
 echo Pornire serviciu sincronizare cu: %PYEXE%
 %PYEXE% server.py

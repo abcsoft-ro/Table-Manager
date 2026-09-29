@@ -142,15 +142,13 @@ schimbarea notei si dupa inchiderea bonului); se poate sterge cu butonul „Fara
 
 - **Apache** cu **PHP** si extensia **`php_sqlsrv`** incarcata.
 - **Microsoft SQL Server** (baza de date `Rual`).
-- **Python 3.12** (Windows) pentru `print-service/` — optional, doar pentru printare.
-  Pentru imprimante Windows raw este nevoie de `pip install pywin32`.
-- **Python 3.12** (Windows) pentru `sync-service/` — optional, doar daca se foloseste
-  exportul catre serverul extern. Are nevoie de `pip install pyodbc` si de un
-  **ODBC Driver for SQL Server** instalat.
-- **Python 3.12** (Windows) pentru `import_server_grp_prod.py` — optional, doar daca se
-  foloseste importul produselor/grupelor la pornire. Are nevoie de `pip install pyodbc`
-  si de un **ODBC Driver for SQL Server** (aceleasi ca la `sync-service/`). Daca lipseste,
-  kiosc-ul porneste normal, iar importul este doar sarit.
+- **Python 3.12** (Windows) pentru componentele Python (`print-service/`, `sync-service/`,
+  `import_server_grp_prod.py`) — optional, doar daca folositi una dintre ele. Toate ruleaza
+  **dintr-un mediu virtual comun** `.venv` din radacina proiectului, creat o singura data cu
+  `setup-venv.bat` (dependintele — `pyodbc`, `pywin32` — sunt in `requirements.txt`). Este
+  nevoie si de un **ODBC Driver for SQL Server** instalat. Mediul virtual este obligatoriu:
+  fara el, pornirea kiosc-ului si a serviciilor Python se opreste cu un mesaj care cere
+  rularea `setup-venv.bat`.
 
 ## Instalare si configurare
 
@@ -160,17 +158,20 @@ schimbarea notei si dupa inchiderea bonului); se poate sterge cu butonul „Fara
 3. Configurati conexiunea la baza de date:
    copiati `api/db.local.example.php` in `api/db.local.php` si completati serverul,
    baza de date, utilizatorul si parola.
-4. (Optional) Porniti serviciul de printare: `print-service/start-print-service.bat`.
+4. (Optional, dar obligatoriu daca folositi componentele Python) Rulati `setup-venv.bat`
+   din radacina proiectului: creeaza mediul virtual `.venv` si instaleaza dependintele din
+   `requirements.txt`. Se ruleaza o singura data (sau dupa reinstalarea Python-ului).
+5. (Optional) Porniti serviciul de printare: `print-service/start-print-service.bat`.
    Adaugati un shortcut in `shell:startup` pentru pornire automata. Serviciul asculta
    doar pe `127.0.0.1:8756`. Destinatiile fizice (sectii si tintele globale Nota/Rapoarte/
    Fiscal) se configureaza din **Setari → Imprimante sectii**, cu butoane de test; modificarile
    se aplica instant (hot-reload), fara repornirea serviciului.
-5. (Optional) Porniti serviciul de export catre server: `sync-service/start-sync-service.bat`
+6. (Optional) Porniti serviciul de export catre server: `sync-service/start-sync-service.bat`
    (sau `start-sync-service-hidden.vbs` pentru rulare in fundal, fara consola). Adaugati un
    shortcut in `shell:startup` pentru pornire automata. Serviciul asculta doar pe `127.0.0.1:8757`,
    citeste serverul/baza/credentialele din `tblConectare` (ID = 1) si executa pe acel server
-   comenzile scrise in `temp_Send_Sql`. Necesita `pip install pyodbc`.
-6. (Optional) Folositi `Pornire-POS-Kiosk.bat` (in radacina proiectului sau pe Desktop) pentru a
+   comenzile scrise in `temp_Send_Sql`.
+7. (Optional) Folositi `Pornire-POS-Kiosk.bat` (in radacina proiectului sau pe Desktop) pentru a
    deschide aplicatia in mod kiosc fullscreen. La pornire, acelasi bat ruleaza si
    `import_server_grp_prod.py` (importul produselor/grupelor de pe server, cand
    `tblSet.Server = 1`); se poate pune un shortcut in `shell:startup` pentru pornire automata.
@@ -219,5 +220,8 @@ db/                     reconstructia bazei de date
   seed.sql              date de referinta + meniu demo (fara date reale)
 Pornire-POS-Kiosk.bat   lansator kiosc (fullscreen) + import produse la pornire
 import_server_grp_prod.py  import produse/grupe de pe server (dbo.ImportProd)
+requirements.txt        dependintele Python (pyodbc, pywin32) pentru mediul virtual
+setup-venv.bat          creeaza .venv si instaleaza dependintele (o singura data)
+.venv/                  mediul virtual Python (creat local, ignorat de git)
 sync.sh                 commit + push catre GitHub (doar cand exista modificari)
 ```

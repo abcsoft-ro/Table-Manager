@@ -27,10 +27,16 @@ rem intarzie pornirea aplicatiei.
 set "IMPORT_SCRIPT=%~dp0import_server_grp_prod.py"
 if not exist "%IMPORT_SCRIPT%" set "IMPORT_SCRIPT=C:\Apache24\htdocs\rual\import_server_grp_prod.py"
 
-set "PYEXE="
-if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set "PYEXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
-if not defined PYEXE if exist "%USERPROFILE%\AppData\Local\Programs\Python\Python312\python.exe" set "PYEXE=%USERPROFILE%\AppData\Local\Programs\Python\Python312\python.exe"
-if not defined PYEXE set "PYEXE=python"
+rem Mediul virtual Python (obligatoriu). Daca lipseste, kiosc-ul nu porneste.
+set "PYEXE=%~dp0.venv\Scripts\python.exe"
+if not exist "%PYEXE%" set "PYEXE=C:\Apache24\htdocs\rual\.venv\Scripts\python.exe"
+if not exist "%PYEXE%" (
+    echo.
+    echo EROARE: nu exista mediul virtual Python .venv.
+    echo Rulati mai intai setup-venv.bat din radacina proiectului.
+    pause
+    exit /b 1
+)
 
 rem Ce face importul daca tblNoteD are linii (se poate schimba aici):
 rem   --if-notes=run   executa ImportProd oricum (implicit, ca in aplicatia veche)

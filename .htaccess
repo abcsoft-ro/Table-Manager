@@ -1,0 +1,5 @@
+Options +FollowSymLinks
+RewriteEngine On
+
+# Nu expunem mediul virtual Python (.venv) si fisierele lui prin web.
+RewriteRule ^\.venv(/|$) - [F,L]
