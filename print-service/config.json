@@ -1,7 +1,7 @@
 {
   "http_host": "127.0.0.1",
   "http_port": 8756,
-  "api_base": "https://127.0.0.1/rual/api",
+  "api_base": "",
   "verify_ssl": false,
   "poll_interval_sec": 1.0,
   "max_attempts": 50,
@@ -14,8 +14,8 @@
   ],
   "charset": "ascii",
   "receipt_width": 42,
-  "preview_dir": "C:\\Apache24\\htdocs\\rual\\print-service\\preview",
-  "fiscal_spool_dir": "C:\\Apache24\\htdocs\\rual\\print-service\\spool/fiscal",
+  "preview_dir": "preview",
+  "fiscal_spool_dir": "spool/fiscal",
   "default_printer_nr": "1",
   "printers": {
     "1": {
@@ -39,7 +39,7 @@
   "fiscal_target": {
     "target": "file"
   },
-  "log_file": "C:\\Apache24\\htdocs\\rual\\print-service\\logs/print-service.log",
+  "log_file": "logs/print-service.log",
   "kitchen_title": "BON COMANDA",
   "nota_title": "NOTA DE PLATA",
   "raport_target": {

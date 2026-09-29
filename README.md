@@ -88,6 +88,11 @@ imprimante termice reale, cu un emulator inclus pentru testare.
 reutilizeaza exact aceleasi API-uri PHP (fara backend duplicat). Avantaj: ospatarii pot marca de pe
 terminal propriu, fara sa atinga POS-ul desktop si fara cod sau rute suplimentare pe server.
 
+**Ruleaza pe HTTP** — aplicatia si serviciile Python folosesc `http://127.0.0.1` (nu este nevoie de
+HTTPS/certificat). La pornire, serviciile isi deduc singure URL-ul API din numele folderului de
+instalare (`http://127.0.0.1/<folder>/api`), deci functioneaza chiar daca proiectul e redenumit sau
+instalat in alt folder direct sub `htdocs`.
+
 **Securitate** — interogari cu parametri (prepared statements), parole POS pentru programare,
 rapoarte, stornare, discount si iesire, autentificare pe fiecare ospatar cu blocare, iar
 credențialele bazei de date stau intr-un fisier local ignorat de git.
@@ -161,7 +166,8 @@ schimbarea notei si dupa inchiderea bonului); se poate sterge cu butonul „Fara
 4. (Optional, dar obligatoriu daca folositi componentele Python) Rulati `setup-venv.bat`
    din radacina proiectului: creeaza mediul virtual `.venv` si instaleaza dependintele din
    `requirements.txt`. Se ruleaza o singura data (sau dupa reinstalarea Python-ului).
-5. (Optional) Porniti serviciul de printare: `print-service/start-print-service.bat`.
+5. (Optional) Porniti serviciul de printare: `print-service/start-print-service.bat`
+   (sau `start-print-service-hidden.vbs` pentru rulare in fundal, fara consola).
    Adaugati un shortcut in `shell:startup` pentru pornire automata. Serviciul asculta
    doar pe `127.0.0.1:8756`. Destinatiile fizice (sectii si tintele globale Nota/Rapoarte/
    Fiscal) se configureaza din **Setari → Imprimante sectii**, cu butoane de test; modificarile

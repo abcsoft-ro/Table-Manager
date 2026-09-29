@@ -3,9 +3,15 @@ setlocal
 title TableManager POS - Kiosk
 
 rem Porneste TableManager in modul kiosc (fullscreen), intr-un profil dedicat.
-rem Se poate pune un shortcut in shell:startup pentru pornire automata.
+rem Aplicatia ruleaza pe HTTP (fara certificat). Se poate pune un shortcut in
+rem shell:startup pentru pornire automata.
 
-set "URL=https://127.0.0.1/rual/"
+rem Folderul aplicatiei = folderul acestui bat (proiectul e direct sub htdocs).
+rem URL-ul se compune din numele folderului, deci merge si daca il redenumesti.
+set "APPDIR=%~dp0"
+for %%I in ("%APPDIR%.") do set "APPFOLDER=%%~nxI"
+
+set "URL=http://127.0.0.1/%APPFOLDER%/"
 set "PROFILE=%LOCALAPPDATA%\TableManagerKiosk"
 
 set "BROWSER="
@@ -24,15 +30,13 @@ if not defined BROWSER (
 rem Import produse/grupe de pe server (ruleaza doar cand tblSet.Server = 1,
 rem doar daca nu exista linii in tblNoteD). Se lanseaza in fundal, ca sa nu
 rem intarzie pornirea aplicatiei.
-set "IMPORT_SCRIPT=%~dp0import_server_grp_prod.py"
-if not exist "%IMPORT_SCRIPT%" set "IMPORT_SCRIPT=C:\Apache24\htdocs\rual\import_server_grp_prod.py"
+set "IMPORT_SCRIPT=%APPDIR%import_server_grp_prod.py"
 
 rem Mediul virtual Python (obligatoriu). Daca lipseste, kiosc-ul nu porneste.
-set "PYEXE=%~dp0.venv\Scripts\python.exe"
-if not exist "%PYEXE%" set "PYEXE=C:\Apache24\htdocs\rual\.venv\Scripts\python.exe"
+set "PYEXE=%APPDIR%.venv\Scripts\python.exe"
 if not exist "%PYEXE%" (
     echo.
-    echo EROARE: nu exista mediul virtual Python .venv.
+    echo EROARE: nu exista mediul virtual Python .venv in "%APPDIR%".
     echo Rulati mai intai setup-venv.bat din radacina proiectului.
     pause
     exit /b 1
@@ -44,6 +48,6 @@ rem   --if-notes=skip  sare peste import daca sunt linii (se ruleaza dupa Z)
 set "IMPORT_ARGS=--if-notes=run"
 if exist "%IMPORT_SCRIPT%" start "TableManager Import" /min "%PYEXE%" "%IMPORT_SCRIPT%" %IMPORT_ARGS%
 
-start "" "%BROWSER%" --kiosk "%URL%" --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check --disable-session-crashed-bubble --disable-infobars --disable-features=TranslateUI --ignore-certificate-errors --test-type --autoplay-policy=no-user-gesture-required
+start "" "%BROWSER%" --kiosk "%URL%" --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check --disable-session-crashed-bubble --disable-infobars --disable-features=TranslateUI --autoplay-policy=no-user-gesture-required
 
 endlocal

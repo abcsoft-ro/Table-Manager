@@ -13,7 +13,10 @@ TARGET_KINDS = ("preview", "file", "windows", "network")
 DEFAULTS = {
     "http_host": "127.0.0.1",
     "http_port": 8756,
-    "api_base": "https://127.0.0.1/rual/api",
+    # Gol = se deduce automat (http://127.0.0.1/<folder-proiect>/api), ca sa
+    # functioneze indiferent cum se numeste folderul de instalare. O valoare
+    # ne-goala in config.json este folosita ca atare (override).
+    "api_base": "",
     "verify_ssl": False,
     "poll_interval_sec": 1.0,
     "max_attempts": 50,
@@ -32,12 +35,26 @@ DEFAULTS = {
 }
 
 
+def default_api_base():
+    """URL-ul API-ului PHP, dedus din numele folderului proiectului.
+
+    Serviciul sta in <proiect>/print-service, iar proiectul e direct sub
+    DocumentRoot, deci calea web este /<nume-folder>/api. Ex.: daca folderul
+    este "myproject", rezulta http://127.0.0.1/myproject/api.
+    """
+    project = os.path.basename(os.path.dirname(BASE_DIR))
+    return "http://127.0.0.1/%s/api" % project
+
+
 def load_config(path=None):
     path = path or os.path.join(BASE_DIR, "config.json")
     cfg = dict(DEFAULTS)
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as fh:
             cfg.update(json.load(fh))
+
+    if not str(cfg.get("api_base") or "").strip():
+        cfg["api_base"] = default_api_base()
 
     for key in ("preview_dir", "fiscal_spool_dir", "log_file"):
         value = cfg.get(key)
