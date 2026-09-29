@@ -5,15 +5,7 @@
  * POST -> actiuni: insert / update / delete
  */
 require_once __DIR__ . '/db.php';
-
-function tblProdWinColorToHex($v) {
-    if ($v === null || $v === '') return null;
-    $val = (int)$v;
-    $r = $val & 0xFF;
-    $g = ($val >> 8) & 0xFF;
-    $b = ($val >> 16) & 0xFF;
-    return sprintf("#%02x%02x%02x", $r, $g, $b);
-}
+require_once __DIR__ . '/colors.php';
 
 function tblProdIntOrNull($v) {
     $t = trim((string)$v);
@@ -56,9 +48,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 "NrGrp" => (int)$p['NrGrp'],
                 "KP" => tblProdIntOrNull($p['KP'] ?? ''),
                 "BackColor" => $bg,
-                "BackHex" => tblProdWinColorToHex($bg),
+                "BackHex" => winColorToHex($bg),
                 "FontColor" => $fg,
-                "FontHex" => tblProdWinColorToHex($fg),
+                "FontHex" => winColorToHex($fg),
                 "FontSize" => tblProdIntOrNull($p['FontSize'] ?? ''),
                 "Bold" => (bool)($p['Bold'] == -1 || $p['Bold'] == 1),
                 "Poz" => tblProdIntOrNull($p['Poz'] ?? ''),

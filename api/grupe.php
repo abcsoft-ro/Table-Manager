@@ -5,15 +5,7 @@
  * POST -> actiuni: insert / update  (NU se permite stergerea)
  */
 require_once __DIR__ . '/db.php';
-
-function tblGrpWinColorToHex($v) {
-    if ($v === null || $v === '') return null;
-    $val = (int)$v;
-    $r = $val & 0xFF;
-    $g = ($val >> 8) & 0xFF;
-    $b = ($val >> 16) & 0xFF;
-    return sprintf("#%02x%02x%02x", $r, $g, $b);
-}
+require_once __DIR__ . '/colors.php';
 
 function tblGrpIntOrNull($v) {
     $t = trim((string)$v);
@@ -35,9 +27,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 "NrGrp" => (int)$r['NrGrp'],
                 "Denumire" => trim($r['Denumire'] ?? ''),
                 "BackColor" => $bg,
-                "BackHex" => tblGrpWinColorToHex($bg),
+                "BackHex" => winColorToHex($bg),
                 "FontColor" => $fg,
-                "FontHex" => tblGrpWinColorToHex($fg),
+                "FontHex" => winColorToHex($fg),
                 "FontSize" => tblGrpIntOrNull($r['FontSize'] ?? ''),
                 "Bold" => (bool)($r['Bold'] == -1 || $r['Bold'] == 1),
                 "FontType" => trim($r['FontType'] ?? ''),

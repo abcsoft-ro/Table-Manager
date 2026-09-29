@@ -2535,11 +2535,29 @@ function colorHexToInt(hex) {
   return (r) + (g << 8) + (b << 16);
 }
 
+// Culori de sistem VBA / SystemColorConstants (Access/VB): nu sunt COLORREF
+// reale, au bitul 0x80000000 set (valoare negativa), ex. vbButtonFace =
+// &H8000000F. Le mapam la culori concrete (implicit gri neutru).
+function vbaSystemColorToHex(index) {
+  const map = {
+    0x00: "#000000", 0x01: "#000000", 0x02: "#000080", 0x03: "#808080",
+    0x04: "#c0c0c0", 0x05: "#ffffff", 0x06: "#000000", 0x07: "#000000",
+    0x08: "#000000", 0x09: "#ffffff", 0x0a: "#c0c0c0", 0x0b: "#c0c0c0",
+    0x0c: "#c0c0c0", 0x0d: "#000080", 0x0e: "#ffffff", 0x0f: "#d4d0c8",
+    0x10: "#808080", 0x11: "#808080", 0x12: "#000000", 0x13: "#c0c0c0",
+    0x14: "#ffffff", 0x15: "#000000", 0x16: "#d4d0c8", 0x17: "#000000",
+    0x18: "#ffffe1"
+  };
+  return map[index & 0xff] || "#d4d0c8";
+}
+
 function colorIntToHex(v) {
   if (v === null || v === undefined) return null;
-  const r = (v & 255).toString(16).padStart(2, "0");
-  const g = ((v >> 8) & 255).toString(16).padStart(2, "0");
-  const b = ((v >> 16) & 255).toString(16).padStart(2, "0");
+  const n = Number(v);
+  if (n < 0 || n > 0xffffff) return vbaSystemColorToHex(n & 0xff);
+  const r = (n & 255).toString(16).padStart(2, "0");
+  const g = ((n >> 8) & 255).toString(16).padStart(2, "0");
+  const b = ((n >> 16) & 255).toString(16).padStart(2, "0");
   return "#" + r + g + b;
 }
 

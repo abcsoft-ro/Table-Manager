@@ -5,6 +5,7 @@
  * Produsele cu BackColor = 0 au garantat FontColor alb (#ffffff)
  */
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/colors.php';
 
 $conn = getDBConnection();
 
@@ -18,16 +19,6 @@ function parseMotiveList($value) {
         if ($m !== '') { $out[] = $m; }
     }
     return $out;
-}
-
-// Functie auxiliara pentru transformarea culorii Windows COLORREF (0x00BBGGRR) in Hex (#RRGGBB)
-function winColorToHex($colorVal) {
-    if ($colorVal === null || $colorVal === '') return null;
-    $val = (int)$colorVal;
-    $r = $val & 0xFF;
-    $g = ($val >> 8) & 0xFF;
-    $b = ($val >> 16) & 0xFF;
-    return sprintf("#%02x%02x%02x", $r, $g, $b);
 }
 
 // Cautare produse dupa Denumire (optional: menu.php?search=...)

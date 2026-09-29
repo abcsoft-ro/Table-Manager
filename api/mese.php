@@ -5,15 +5,7 @@
  * POST -> actiuni: insert / update / delete
  */
 require_once __DIR__ . '/db.php';
-
-function tblMeseWinColorToHex($v) {
-    if ($v === null || $v === '') return null;
-    $val = (int)$v;
-    $r = $val & 0xFF;
-    $g = ($val >> 8) & 0xFF;
-    $b = ($val >> 16) & 0xFF;
-    return sprintf("#%02x%02x%02x", $r, $g, $b);
-}
+require_once __DIR__ . '/colors.php';
 
 function tblMeseIntOrNull($v) {
     $t = trim((string)$v);
@@ -35,9 +27,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 "MasaID" => (int)$m['MasaID'],
                 "NrMasa" => (int)$m['NrMasa'],
                 "BackColor" => $bg,
-                "BackHex" => tblMeseWinColorToHex($bg),
+                "BackHex" => winColorToHex($bg),
                 "ForeColor" => $fg,
-                "ForeHex" => tblMeseWinColorToHex($fg),
+                "ForeHex" => winColorToHex($fg),
                 "Bold" => (bool)$m['Bold'],
                 "Afisez" => (bool)$m['Afisez'],
                 "NrPOS" => tblMeseIntOrNull($m['NrPOS'] ?? ''),

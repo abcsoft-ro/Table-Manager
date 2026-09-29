@@ -44,8 +44,9 @@ regandit pentru fiabilitate, intretinere simpla si lipsa dependentelor grele.
   stocata `dbo.ImportProd` pentru sincronizarea produselor si grupelor de pe serverul extern.
   Comportamentul cand exista note deschise se alege din parametrul `--if-notes` (`run` implicit,
   sau `skip` pentru a rula doar dupa raportul Z).
-- **Pornire kiosc si inchidere** — `Pornire-POS-Kiosk.bat` (in radacina proiectului si pe Desktop)
-  deschide aplicatia in mod kiosc fullscreen, cu profil dedicat de browser; parola de inchidere
+- **Pornire kiosc si inchidere** — `Pornire-POS-Kiosk.vbs` (fara fereastra DOS) sau
+  `Pornire-POS-Kiosk.bat` (vizibil, in radacina proiectului si pe Desktop) deschide aplicatia in
+  mod kiosc fullscreen, cu profil dedicat de browser; parola de inchidere
   (`tblParola.ParolaExit`, tastata in modalul de parola) inchide browserul POS.
 - **Rapoarte X** — PLU, Grupe, Sectii, Casieri, General si **Note** (bonurile inchise din
   sesiune, cu detaliul fiecarei note), pe bonurile inchise din sesiunea curenta.
@@ -177,10 +178,11 @@ schimbarea notei si dupa inchiderea bonului); se poate sterge cu butonul „Fara
    shortcut in `shell:startup` pentru pornire automata. Serviciul asculta doar pe `127.0.0.1:8757`,
    citeste serverul/baza/credentialele din `tblConectare` (ID = 1) si executa pe acel server
    comenzile scrise in `temp_Send_Sql`.
-7. (Optional) Folositi `Pornire-POS-Kiosk.bat` (in radacina proiectului sau pe Desktop) pentru a
-   deschide aplicatia in mod kiosc fullscreen. La pornire, acelasi bat ruleaza si
-   `import_server_grp_prod.py` (importul produselor/grupelor de pe server, cand
+7. (Optional) Folositi `Pornire-POS-Kiosk.vbs` (in radacina proiectului sau pe Desktop) pentru a
+   deschide aplicatia in mod kiosc fullscreen, fara fereastra DOS. La pornire, acelasi launcher
+   ruleaza si `import_server_grp_prod.py` (importul produselor/grupelor de pe server, cand
    `tblSet.Server = 1`); se poate pune un shortcut in `shell:startup` pentru pornire automata.
+   Varianta cu fereastra vizibila ramane `Pornire-POS-Kiosk.bat`.
 
 ## Reconstructie baza de date
 
@@ -224,7 +226,8 @@ sync-service/           serviciu Python de export catre serverul extern (temp_Se
 db/                     reconstructia bazei de date
   schema.sql            structura tabelelor + proceduri stocate
   seed.sql              date de referinta + meniu demo (fara date reale)
-Pornire-POS-Kiosk.bat   lansator kiosc (fullscreen) + import produse la pornire
+Pornire-POS-Kiosk.vbs   lansator kiosc ascuns (fara fereastra DOS) + import produse la pornire
+Pornire-POS-Kiosk.bat   lansator kiosc cu fereastra vizibila (aceeasi logica)
 import_server_grp_prod.py  import produse/grupe de pe server (dbo.ImportProd)
 requirements.txt        dependintele Python (pyodbc, pywin32) pentru mediul virtual
 setup-venv.bat          creeaza .venv si instaleaza dependintele (o singura data)
