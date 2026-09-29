@@ -291,6 +291,16 @@ if ($stmtSrv) {
     }
 }
 
+// 4f4. POS bancar (tblSet.PoSbanca): 1 = DA (la inchiderea unei note cu plata
+//      pe card se apeleaza terminalul bancar prin api/pos_banca.php). Cand e 0
+//      fluxul de plata este neschimbat.
+$posBanca = 0;
+$stmtPb = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'PoSbanca'");
+if ($stmtPb) {
+    $pb = sqlsrv_fetch_array($stmtPb, SQLSRV_FETCH_ASSOC);
+    if ($pb && trim((string)$pb['Value']) === '1') { $posBanca = 1; }
+}
+
 // 4g. Parola de discount (tblParola.ParolaDiscount): 1 daca este setata (deci
 //     discountul cere parola), 0 daca nu. Valoarea parolei NU se trimite.
 $parolaDiscount = 0;
@@ -354,6 +364,7 @@ sendJsonResponse([
     "tipDiscount" => $tipDiscount,
     "procentDiscountFix" => $procentDiscountFix,
     "server" => $server,
+    "posBanca" => $posBanca,
     "parolaDiscount" => $parolaDiscount,
     "parolaStornare" => $parolaStornare,
     "motivDiscount" => $motivDiscount,

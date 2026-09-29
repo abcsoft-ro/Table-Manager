@@ -1365,11 +1365,12 @@ switch ($action) {
     case 'authenticate':
         $parola = trim($input['parola'] ?? '');
 
-        // 1. Parole POS (tblParola): programare / rapoarte
-        $stmtP = @sqlsrv_query($conn, "SELECT TOP 1 ParolaProgramare, ParolaRapoarte FROM tblParola");
+        // 1. Parole POS (tblParola): programare / rapoarte / inchidere aplicatie
+        $stmtP = @sqlsrv_query($conn, "SELECT TOP 1 ParolaProgramare, ParolaRapoarte, ParolaExit FROM tblParola");
         $p = $stmtP ? sqlsrv_fetch_array($stmtP, SQLSRV_FETCH_ASSOC) : null;
         $prgParola = $p ? trim((string)$p['ParolaProgramare']) : '';
         $rapParola = $p ? trim((string)$p['ParolaRapoarte']) : '';
+        $exitParola = $p ? trim((string)$p['ParolaExit']) : '';
 
         if ($prgParola !== '' && $prgParola === $parola) {
             sendJsonResponse([
@@ -1384,6 +1385,14 @@ switch ($action) {
                 "status" => "success",
                 "rapoarte" => true,
                 "message" => "Acces rapoarte"
+            ]);
+        }
+
+        if ($exitParola !== '' && $exitParola === $parola) {
+            sendJsonResponse([
+                "status" => "success",
+                "exit" => true,
+                "message" => "Inchidere aplicatie"
             ]);
         }
 

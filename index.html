@@ -1681,6 +1681,37 @@
     </div>
   </div>
 
+  <!-- Modal POS BANCAR (tranzactie refuzata): Cancel / Retry / Ignore -->
+  <div class="modal-keyboard-overlay" id="modal-pos-banca">
+    <div class="transfer-dialog" style="max-width: 480px;">
+      <div class="keyboard-dialog-header">
+        <span>TRANZACTIE REFUZATA!</span>
+      </div>
+      <div class="transfer-body">
+        <div id="pos-banca-message" style="font-size:15px; color:#222; margin:8px 0 18px 0; line-height:1.4; white-space: pre-line;"></div>
+        <div class="tva-actions">
+          <button class="act-btn" id="pos-banca-cancel">Cancel</button>
+          <button class="act-btn" id="pos-banca-retry" style="background:#ffff00;">Retry</button>
+          <button class="act-btn" id="pos-banca-ignore">Ignore</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal POS BANCAR - asteptare raspuns terminal (fara butoane) -->
+  <div class="modal-keyboard-overlay" id="modal-pos-banca-wait">
+    <div class="transfer-dialog" style="max-width: 420px;">
+      <div class="keyboard-dialog-header">
+        <span>POS BANCAR</span>
+      </div>
+      <div class="transfer-body">
+        <div style="font-size:16px; color:#222; padding:16px 0; text-align:center;">
+          Se asteapta terminalul bancar...
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal TRANSFER PRODUSE (selectie produse + masa destinatie prin numar) -->
   <div class="modal-keyboard-overlay" id="modal-transfer">
     <div class="transfer-dialog">

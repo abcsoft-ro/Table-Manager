@@ -18,6 +18,12 @@ regandit pentru fiabilitate, intretinere simpla si lipsa dependentelor grele.
 - **Stornare (VD)** — anulare linii trimise, cu parola de manager si motiv; cantitatile nu pot fi depasite.
 - **Transfer produse** intre mese.
 - **Plata** — split pe mai multe forme de plata (numerar, card etc.), cu rest afisat.
+- **POS bancar (terminal card)** — cand nota are plata pe card si `tblSet.PoSbanca = 1`,
+  la inchidere aplicatia comunica sincron cu terminalul bancar printr-un driver extern
+  (un folder cu `vanzare.bat`, sau direct un `.bat`/`.cmd`/`.exe`), cu timeout de 190 s,
+  dialog **Cancel / Retry / Ignore** la refuz (Cancel pastreaza nota deschisa, Ignore
+  inchide nota oricum) si audit al fiecarei incercari (suma, TRX_ID, status, mesaj) in
+  `tblPosBancaLog`.
 - **Printare** — bon de comanda pe sectii (cu numerotare proprie a bonurilor de sectie),
   nota de plata, nota proforma si rapoarte, printr-o coada durabila; destinatiile fizice
   ale fiecarei sectii se configureaza din aplicatie, cu test de tiparire.
@@ -33,6 +39,14 @@ regandit pentru fiabilitate, intretinere simpla si lipsa dependentelor grele.
   (`sync-service/`) o executa pe serverul din `tblConectare` si marcheaza `Preluat = 1`. Daca serverul
   e oprit sau locatia e offline, comanda ramane in coada si se reincearca **la infinit** (cu backoff),
   pana cand legatura revine; ecranul **Coada export** (Programare) arata starea si permite retry/stergere.
+- **Import produse/grupe la pornire** — la deschiderea kiosc-ului, `Pornire-POS-Kiosk.bat`
+  ruleaza `import_server_grp_prod.py`, care (doar cand `tblSet.Server = 1`) executa procedura
+  stocata `dbo.ImportProd` pentru sincronizarea produselor si grupelor de pe serverul extern.
+  Comportamentul cand exista note deschise se alege din parametrul `--if-notes` (`run` implicit,
+  sau `skip` pentru a rula doar dupa raportul Z).
+- **Pornire kiosc si inchidere** — `Pornire-POS-Kiosk.bat` (in radacina proiectului si pe Desktop)
+  deschide aplicatia in mod kiosc fullscreen, cu profil dedicat de browser; parola de inchidere
+  (`tblParola.ParolaExit`, tastata in modalul de parola) inchide browserul POS.
 - **Rapoarte X** — PLU, Grupe, Sectii, Casieri, General si **Note** (bonurile inchise din
   sesiune, cu detaliul fiecarei note), pe bonurile inchise din sesiunea curenta.
 - **Inchidere Z** — arhivare si golire atomica a zilei, cu raport General Z plus rapoartele selectate.
@@ -133,6 +147,10 @@ schimbarea notei si dupa inchiderea bonului); se poate sterge cu butonul „Fara
 - **Python 3.12** (Windows) pentru `sync-service/` — optional, doar daca se foloseste
   exportul catre serverul extern. Are nevoie de `pip install pyodbc` si de un
   **ODBC Driver for SQL Server** instalat.
+- **Python 3.12** (Windows) pentru `import_server_grp_prod.py` — optional, doar daca se
+  foloseste importul produselor/grupelor la pornire. Are nevoie de `pip install pyodbc`
+  si de un **ODBC Driver for SQL Server** (aceleasi ca la `sync-service/`). Daca lipseste,
+  kiosc-ul porneste normal, iar importul este doar sarit.
 
 ## Instalare si configurare
 
@@ -152,6 +170,10 @@ schimbarea notei si dupa inchiderea bonului); se poate sterge cu butonul „Fara
    shortcut in `shell:startup` pentru pornire automata. Serviciul asculta doar pe `127.0.0.1:8757`,
    citeste serverul/baza/credentialele din `tblConectare` (ID = 1) si executa pe acel server
    comenzile scrise in `temp_Send_Sql`. Necesita `pip install pyodbc`.
+6. (Optional) Folositi `Pornire-POS-Kiosk.bat` (in radacina proiectului sau pe Desktop) pentru a
+   deschide aplicatia in mod kiosc fullscreen. La pornire, acelasi bat ruleaza si
+   `import_server_grp_prod.py` (importul produselor/grupelor de pe server, cand
+   `tblSet.Server = 1`); se poate pune un shortcut in `shell:startup` pentru pornire automata.
 
 ## Reconstructie baza de date
 
@@ -183,6 +205,9 @@ api/                    endpoints PHP (JSON)
   send_queue.php        API-ul cozii durabile de export catre server (temp_Send_Sql)
   send_common.php       helperi comuni (ensureSendSqlTable, enqueueBillSendSql)
   print_config.php      proxy catre serviciul de printare (citire/salvare config, test)
+  pos_banca.php         comunicarea cu terminalul bancar (POS bancar) + audit
+  exit_app.php          inchide browserul POS din parola de inchidere
+  sync_products.php     ruleaza procedura stocata dbo.ImportProd (Sincronizare produse)
   ...                   editori de configurare (produse, grupe, mese, tva, kp, fp, etc.)
   sql/z_procedure.sql   procedura stocata de inchidere Z
 print-service/          serviciu Python de printare ESC/POS
@@ -192,5 +217,7 @@ sync-service/           serviciu Python de export catre serverul extern (temp_Se
 db/                     reconstructia bazei de date
   schema.sql            structura tabelelor + proceduri stocate
   seed.sql              date de referinta + meniu demo (fara date reale)
+Pornire-POS-Kiosk.bat   lansator kiosc (fullscreen) + import produse la pornire
+import_server_grp_prod.py  import produse/grupe de pe server (dbo.ImportProd)
 sync.sh                 commit + push catre GitHub (doar cand exista modificari)
 ```

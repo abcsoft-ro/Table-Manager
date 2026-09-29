@@ -488,6 +488,36 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_temp_Send_Sql_Preluat
 CREATE NONCLUSTERED INDEX [IX_temp_Send_Sql_Preluat] ON dbo.[temp_Send_Sql] ([Preluat],[Stare],[NextAttempt]) INCLUDE ([Id]);
 GO
 
+------------------------------------------------------------ tblPosBancaLog
+-- Audit al comunicatiei cu POS-ul bancar (terminalul de card): fiecare apelare
+-- a driverului din tblSet.CaleDriverPoSbanca la inchiderea unei note scrie un
+-- rand aici (suma, TrxId, STATUS, MESAJ, EMITE_BON). Actiune = decizia finala a
+-- utilizatorului la refuz: 'aprobat' / 'ignorat' / 'anulat' (NULL cat timp nu s-a
+-- decis); 'config' marcheaza o eroare de configurare a driverului.
+IF OBJECT_ID(N'dbo.tblPosBancaLog', N'U') IS NULL
+BEGIN
+CREATE TABLE dbo.[tblPosBancaLog] (
+    [Id] int IDENTITY(1,1) NOT NULL,
+    [DocID] int NULL,
+    [NrDoc] int NULL,
+    [Suma] decimal(18,2) NULL,
+    [TrxId] nvarchar(50) NULL,
+    [Status] nvarchar(50) NULL,
+    [Mesaj] nvarchar(255) NULL,
+    [EmiteBon] bit NULL,
+    [Actiune] nvarchar(20) NULL,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tblPosBancaLog_Created] DEFAULT (sysdatetime()),
+    [ResolvedAt] datetime2(7) NULL
+);
+END
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = N'PK_tblPosBancaLog')
+ALTER TABLE dbo.[tblPosBancaLog] ADD CONSTRAINT [PK_tblPosBancaLog] PRIMARY KEY CLUSTERED ([Id]);
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_tblPosBancaLog_DocID' AND object_id = OBJECT_ID(N'dbo.tblPosBancaLog'))
+CREATE NONCLUSTERED INDEX [IX_tblPosBancaLog_DocID] ON dbo.[tblPosBancaLog] ([DocID],[CreatedAt]);
+GO
+
 ------------------------------------------------------------ tblConectare
 IF OBJECT_ID(N'dbo.tblConectare', N'U') IS NULL
 BEGIN

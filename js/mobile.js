@@ -280,7 +280,7 @@ function openLogin() {
     onSubmit: async (val) => {
       if (!val) { showToast("Introduceti parola!"); return; }
       const res = await mvPost("authenticate", { parola: val });
-      if (res.status !== "success" || res.programare || res.rapoarte) {
+      if (res.status !== "success" || res.programare || res.rapoarte || res.exit) {
         showToast("Parola incorecta sau nu apartine unui ospatar!");
         numpadClear();
         return;

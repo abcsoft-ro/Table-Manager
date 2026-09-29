@@ -42,6 +42,9 @@ const POS_STATE = {
   // Daca stornarea liniilor trimise cere parola/motiv (tblParola.ParolaStornare
   // setata). Cand e 0, popup-ul de stornare nu le mai afiseaza.
   parolaStornare: 0,
+  // POS bancar activ (tblSet.PoSbanca): cand e 1, la inchiderea unei note cu
+  // plata pe card se apeleaza terminalul bancar prin api/pos_banca.php.
+  posBanca: 0,
   reducereProcent: 0,
   selectedItemIndex: 0,
   // Forme de plata (tblFP) si platile inregistrate pe ecranul de inchidere:
@@ -160,6 +163,7 @@ async function loadMenu() {
   const pf = Number(data.procentDiscountFix);
   POS_STATE.procentDiscountFix = (pf >= 0 && pf <= 100) ? pf : 10;
   POS_STATE.server = (data.server == 1) ? 1 : 0;
+  POS_STATE.posBanca = (data.posBanca == 1) ? 1 : 0;
   POS_STATE.parolaDiscount = (data.parolaDiscount == 1) ? 1 : 0;
   POS_STATE.parolaStornare = (data.parolaStornare == 1) ? 1 : 0;
 
@@ -340,7 +344,6 @@ function openCategory(nrGrp, groupName) {
 
   showMenuHeader(groupName);
   renderProductGrid(produse);
-  showToast(`Grupa: ${groupName}`);
 }
 
 // Afiseaza bara superioara cu titlul panoului si butonul de inapoi la grupe
@@ -798,7 +801,6 @@ async function addProduct(prodId) {
     const res = await resp.json();
     if (res.status !== "success") throw new Error(res.message);
 
-    showToast(`Adaugat in BD: ${res.denumire || "Produs"}`);
     await loadOrder(POS_STATE.masaCurenta);
     await loadTables();
 
@@ -1145,6 +1147,19 @@ async function finalizePaymentTransaction() {
 
   const rest = totalPaid - total;
 
+  // Comunicarea cu POS-ul bancar: cand exista plata pe card (FPID = 1) si
+  // terminalul e activ, se cere aprobarea inainte de a inchide nota. La Cancel
+  // nota ramane deschisa si ecranul de plata revine la starea initiala.
+  const cardAmount = Number(POS_STATE.payments[1] || 0);
+  if (POS_STATE.posBanca === 1 && cardAmount > 0) {
+    const aprobat = await runBankPosForPayment(cardAmount);
+    if (!aprobat) {
+      resetPaymentScreen();
+      showToast("Tranzactie bancara anulata");
+      return;
+    }
+  }
+
   try {
     const resp = await fetch("api/order_action.php", {
       method: "POST",
@@ -1203,6 +1218,136 @@ async function finalizePaymentTransaction() {
   } catch (err) {
     appAlert("Eroare la inchiderea bonului: " + err.message);
   }
+}
+
+// --------------------------------------------------------------------------
+// 4b. COMUNICARE POS BANCAR (terminal card) la inchiderea notei
+// --------------------------------------------------------------------------
+
+// Trimite suma pe card la terminal si rezolva interactiv refuzul:
+//   true  = se poate inchide nota (aprobat sau Ignore)
+//   false = utilizatorul a ales Cancel (nota ramane deschisa, plata se reseteaza)
+async function runBankPosForPayment(amount) {
+  showBankPosWait();
+  try {
+    while (true) {
+      let res;
+      try {
+        const resp = await fetch("api/pos_banca.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "pay",
+            amount: Number(amount) || 0,
+            docId: POS_STATE.docId
+          })
+        });
+        res = await resp.json();
+      } catch (err) {
+        res = {
+          status: "error",
+          emiteBon: false,
+          posStatus: "ERROR",
+          posMessage: "Eroare comunicare POS bancar: " + err.message,
+          trxId: ""
+        };
+      }
+
+      // Aprobat (sau eroare de configurare, cand se emite bonul oricum).
+      if (res && res.emiteBon) {
+        if (res.configError) {
+          hideBankPosWait();
+          appAlert(String(res.posMessage || "Eroare configurare POS bancar"));
+        }
+        return true;
+      }
+
+      // Refuzat: intrebam utilizatorul (Cancel / Retry / Ignore).
+      hideBankPosWait();
+      const decizie = await openPosBancaDialog(res || {});
+      if (decizie === "retry") { showBankPosWait(); continue; }
+
+      await resolveBankPosDecision(POS_STATE.docId, decizie === "ignore" ? "ignorat" : "anulat");
+      return decizie === "ignore";
+    }
+  } finally {
+    hideBankPosWait();
+  }
+}
+
+// Marcheaza in audit (tblPosBancaLog) decizia finala a utilizatorului.
+async function resolveBankPosDecision(docId, actiune) {
+  try {
+    await fetch("api/pos_banca.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "resolve", docId: docId, actiune: actiune })
+    });
+  } catch (err) {
+    // Auditul este best-effort; nu blocam inchiderea notei.
+  }
+}
+
+// Dialog cu 3 optiuni pentru tranzactia refuzata.
+// Rezolva 'cancel' | 'retry' | 'ignore'.
+function openPosBancaDialog(info) {
+  const modal = document.getElementById("modal-pos-banca");
+  if (!modal) {
+    // Fallback fara modal: confirm() ofera Retry / Cancel (fara Ignore).
+    return Promise.resolve(window.confirm("Tranzactie refuzata. Incercati din nou?") ? "retry" : "cancel");
+  }
+
+  const status = String(info.posStatus || "ERROR").toUpperCase();
+  const mesaj = String(info.posMessage || "").trim();
+  const trx = String(info.trxId || "").trim();
+  let text = status;
+  if (mesaj) { text += "\n" + mesaj; }
+  if (trx) { text += "\nTRX_ID: " + trx; }
+  document.getElementById("pos-banca-message").textContent = text;
+
+  return new Promise(resolve => {
+    const cancel = document.getElementById("pos-banca-cancel");
+    const retry = document.getElementById("pos-banca-retry");
+    const ignore = document.getElementById("pos-banca-ignore");
+
+    const done = (val) => {
+      modal.classList.remove("active");
+      cancel.onclick = null;
+      retry.onclick = null;
+      ignore.onclick = null;
+      resolve(val);
+    };
+
+    cancel.onclick = () => done("cancel");
+    retry.onclick = () => done("retry");
+    ignore.onclick = () => done("ignore");
+    modal.classList.add("active");
+  });
+}
+
+function showBankPosWait() {
+  const modal = document.getElementById("modal-pos-banca-wait");
+  if (modal) modal.classList.add("active");
+}
+
+function hideBankPosWait() {
+  const modal = document.getElementById("modal-pos-banca-wait");
+  if (modal) modal.classList.remove("active");
+}
+
+// Readuce ecranul de plata la starea initiala (fara plati inregistrate).
+function resetPaymentScreen() {
+  POS_STATE.payments = {};
+  POS_STATE.activePaymentFp = null;
+  const total = parseFloat(document.getElementById("val-total").innerText) || 0;
+  const input = document.getElementById("pay-amount-input");
+  if (input) {
+    input.value = total.toFixed(2);
+    input.dataset.fresh = "true";
+  }
+  const def = POS_STATE.paymentForms.find(f => f.Poz === 1) || POS_STATE.paymentForms[0];
+  if (def) { selectPaymentMethod(def.FPID); }
+  updatePaymentProgress();
 }
 
 // --------------------------------------------------------------------------
@@ -1405,7 +1550,7 @@ async function vkeyValidate() {
 
     // Mod "login" (intrarea pe masa): acceptam doar parola de ospatar.
     if (keyboardAction === "login") {
-      if (res.status !== "success" || res.programare || res.rapoarte) {
+      if (res.status !== "success" || res.programare || res.rapoarte || res.exit) {
         appAlert("Parola incorecta sau nu apartine unui ospatar!");
         return;
       }
@@ -1435,12 +1580,33 @@ async function vkeyValidate() {
       return;
     }
 
+    // Parola de inchidere aplicatie: se inchide fereastra POS (kiosk).
+    if (res.exit) {
+      closeKeyboardModal();
+      exitApplication(valoare);
+      return;
+    }
+
     setAuthenticatedWaiter(res.nrOsp, res.nume, res.rol);
     closeKeyboardModal();
     showToast(`Autentificat: ${res.nume} (${res.rol})`);
   } catch (err) {
     appAlert("Eroare la autentificare: " + err.message);
   }
+}
+
+// Inchide aplicatia POS: cere serverului sa termine procesele de browser ale
+// aplicatiei si, in plus, incearca window.close() (browser normal).
+function exitApplication(parola) {
+  try {
+    fetch("api/exit_app.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parola: parola || "" }),
+      keepalive: true
+    }).catch(() => {});
+  } catch (err) { /* fereastra se inchide oricum */ }
+  setTimeout(() => { try { window.close(); } catch (e) {} }, 150);
 }
 
 // --------------------------------------------------------------------------
@@ -6069,39 +6235,8 @@ async function actionMarcare() {
 async function actionNota() {
   const total = parseFloat(document.getElementById("val-total").innerText) || 0;
 
-  if (total <= 0) {
-    try {
-      const resp = await fetch("api/order_action.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "close_bill",
-          docId: POS_STATE.docId,
-          plati: {},
-          cui: POS_STATE.cui || ""
-        })
-      });
-      const res = await resp.json();
-      if (res.status !== "success") throw new Error(res.message);
-
-      POS_STATE.cui = "";
-      POS_STATE.cuiDocId = null;
-      updateCuiButton();
-
-      showToast(res.message || "Nota a fost inchisa");
-      await loadOrder(POS_STATE.masaCurenta);
-      if (isFastFood()) {
-        returnToGroups();
-        navigateToScreen("screen-marcare");
-        return;
-      }
-      await loadTables();
-      navigateToScreen("screen-mese");
-    } catch (err) {
-      appAlert("Eroare la inchiderea notei: " + err.message);
-    }
-    return;
-  }
+  // Nota goala: click pe Nota nu face nimic (nu exista articole de inchis).
+  if (total <= 0) { return; }
 
   // Click pe Nota trimite automat si la imprimantele de sectie; reincarcam
   // nota ca liniile sa fie marcate ca trimise (qty blocat) si la revenirea
