@@ -866,7 +866,9 @@ function openLineActions(a) {
     if (!a.preluat) {
       html += `<button class="mv-action-btn" onclick="openQtyModal()">Cantitate (QTY)</button>`;
     }
-    html += `<button class="mv-action-btn" onclick="openModsModal()">Mod preparare</button>`;
+    if (!isFastFood()) {
+      html += `<button class="mv-action-btn" onclick="openModsModal()">Mod preparare</button>`;
+    }
     if (MOBILE_STATE.red !== 0) {
       html += `<button class="mv-action-btn" onclick="openDiscountModal('line')">Discount pe linie</button>`;
     }
@@ -888,7 +890,9 @@ function openMarkMenu() {
   if (MOBILE_STATE.red !== 0) {
     html += `<button class="mv-action-btn" onclick="openDiscountModal('bill')">Discount pe nota</button>`;
   }
-  html += `<button class="mv-action-btn" onclick="menuMods()">Mod preparare</button>`;
+  if (!isFastFood()) {
+    html += `<button class="mv-action-btn" onclick="menuMods()">Mod preparare</button>`;
+  }
   html += `<button class="mv-action-btn" onclick="openTransferModal()">Transfer produse</button>`;
   if (MOBILE_STATE.meniulZilei === 1 && getMZProducts().length > 0) {
     html += `<button class="mv-action-btn" onclick="menuMeniulZilei()">Meniul Zilei</button>`;

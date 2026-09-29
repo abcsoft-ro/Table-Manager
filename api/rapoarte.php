@@ -365,6 +365,248 @@ function buildGeneralReport($conn) {
 }
 
 /**
+ * Formateaza o data/ora venita din sqlsrv (ReturnDatesAsStrings = true).
+ */
+function reportDateString($value) {
+    if ($value === null || $value === '') { return ''; }
+    try {
+        $dt = new DateTime((string)$value);
+        return $dt->format('d-m-Y H:i');
+    } catch (Exception $e) {
+        return (string)$value;
+    }
+}
+
+/**
+ * Construieste lista notelor inchise din sesiunea curenta: antetul fiecarei
+ * note (numar, masa, ospatar, ora, motiv discount pe nota) + total, reducere,
+ * stornari si formele de plata. Detaliile liniilor se incarca separat
+ * (buildNoteDetail), la click pe rand.
+ */
+function buildNoteReport($conn) {
+    ensureBillDiscountMotiveColumn($conn);
+
+    $sql = "SELECT b.DocID AS DocID, b.NrDoc AS NrNota, b.NrMasa AS NrMasa,
+                   COALESCE(o.Nume, 'CASIER 1') AS Ospatar,
+                   b.Ora AS Ora, b.Data AS Data, b.MotivDiscount AS MotivDiscount,
+                   COUNT(CASE WHEN d.ProdID > 0 AND d.Cant > 0 THEN 1 END) AS NrLinii,
+                   ROUND(SUM(d.Cant * d.PV), 2) AS Total,
+                   ROUND(SUM(CASE WHEN d.Cant > 0 THEN d.Cant * (COALESCE(d.PVC, d.PV) - d.PV) ELSE 0 END), 2) AS Reducere,
+                   ROUND(SUM(CASE WHEN d.Cant < 0 THEN -d.Cant * d.PV ELSE 0 END), 2) AS Stornari
+            FROM tblBonCurent b
+            INNER JOIN tblNoteD d ON d.DocID = b.DocID
+            LEFT JOIN tblOsp o ON b.NrOp = o.NrOsp
+            WHERE b.Stare = 'I'
+            GROUP BY b.DocID, b.NrDoc, b.NrMasa, o.Nume, b.Ora, b.Data, b.MotivDiscount
+            ORDER BY b.NrDoc";
+    $stmt = sqlsrv_query($conn, $sql);
+    if ($stmt === false) {
+        return null;
+    }
+
+    $note = [];
+    $indexByDoc = [];
+    $totalReducere = 0.0;
+    $totalStornari = 0.0;
+    $totalValoare = 0.0;
+
+    while ($r = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+        $reducere = round((float)$r['Reducere'], 2);
+        $stornari = round((float)$r['Stornari'], 2);
+        $total = round((float)$r['Total'], 2);
+        $ora = !empty($r['Ora']) ? $r['Ora'] : $r['Data'];
+
+        $docId = (int)$r['DocID'];
+        $indexByDoc[$docId] = count($note);
+        $note[] = [
+            "docId" => $docId,
+            "nrNota" => (int)$r['NrNota'],
+            "nrMasa" => (int)$r['NrMasa'],
+            "ospatar" => trim((string)$r['Ospatar']),
+            "dataOra" => reportDateString($ora),
+            "motivDiscount" => trim((string)($r['MotivDiscount'] ?? '')),
+            "nrLinii" => (int)$r['NrLinii'],
+            "reducere" => $reducere,
+            "stornari" => $stornari,
+            "total" => $total,
+            "plati" => []
+        ];
+        $totalReducere += $reducere;
+        $totalStornari += $stornari;
+        $totalValoare += $total;
+    }
+
+    // Formele de plata ale fiecarei note (doar bonurile inchise din sesiune).
+    $sqlPlati = "SELECT b.DocID AS DocID, f.FPID AS FPID, f.Denumire AS Denumire,
+                        ROUND(SUM(p.Suma), 2) AS Suma
+                 FROM trelDocIDFpID p
+                 INNER JOIN tblBonCurent b ON p.DocID = b.DocID
+                 INNER JOIN tblFP f ON p.FPID = f.FPID
+                 WHERE b.Stare = 'I'
+                 GROUP BY b.DocID, f.FPID, f.Denumire, f.Poz
+                 ORDER BY b.DocID, f.Poz, f.Denumire";
+    $stmtPlati = sqlsrv_query($conn, $sqlPlati);
+    if ($stmtPlati === false) {
+        return null;
+    }
+
+    $totalPlati = [];
+    $totalPlatiOrder = [];
+    while ($r = sqlsrv_fetch_array($stmtPlati, SQLSRV_FETCH_ASSOC)) {
+        $docId = (int)$r['DocID'];
+        if (!isset($indexByDoc[$docId])) { continue; }
+        $suma = round((float)$r['Suma'], 2);
+        $note[$indexByDoc[$docId]]["plati"][] = [
+            "fpid" => (int)$r['FPID'],
+            "denumire" => trim((string)$r['Denumire']),
+            "suma" => $suma
+        ];
+
+        $fpKey = (string)$r['FPID'];
+        if (!isset($totalPlati[$fpKey])) {
+            $totalPlati[$fpKey] = ["denumire" => trim((string)$r['Denumire']), "suma" => 0.0];
+            $totalPlatiOrder[] = $fpKey;
+        }
+        $totalPlati[$fpKey]["suma"] += $suma;
+    }
+
+    $totalPlatiOut = [];
+    foreach ($totalPlatiOrder as $fpKey) {
+        $totalPlatiOut[] = [
+            "fpid" => (int)$fpKey,
+            "denumire" => $totalPlati[$fpKey]["denumire"],
+            "suma" => round($totalPlati[$fpKey]["suma"], 2)
+        ];
+    }
+
+    return [
+        "note" => $note,
+        "totalBonuri" => count($note),
+        "totalReducere" => round($totalReducere, 2),
+        "totalStornari" => round($totalStornari, 2),
+        "totalValoare" => round($totalValoare, 2),
+        "totalPlati" => $totalPlatiOut
+    ];
+}
+
+/**
+ * Construieste detaliile unei note inchise: antetul (masa, ospatar, ora, motiv
+ * discount pe nota) + toate liniile (produse, moduri de preparare, stornari cu
+ * motivul lor, discounturi pe linie cu motiv) + formele de plata.
+ * Intoarce null daca nota nu exista (sau nu este inchisa).
+ */
+function buildNoteDetail($conn, $docId) {
+    ensureBillDiscountMotiveColumn($conn);
+    $docId = (int)$docId;
+
+    $sqlBon = "SELECT b.DocID, b.NrDoc, b.NrMasa, b.NrOp, b.Ora, b.Data, b.TotalB,
+                      b.MotivDiscount, COALESCE(o.Nume, 'CASIER 1') AS Ospatar
+               FROM tblBonCurent b
+               LEFT JOIN tblOsp o ON b.NrOp = o.NrOsp
+               WHERE b.DocID = ? AND b.Stare = 'I'";
+    $stmtBon = sqlsrv_query($conn, $sqlBon, [$docId]);
+    if ($stmtBon === false) { return null; }
+    $bon = sqlsrv_fetch_array($stmtBon, SQLSRV_FETCH_ASSOC);
+    if (!$bon) { return null; }
+
+    $sqlArt = "SELECT d.ECRID, d.ProdID, d.Cant, d.PV, d.PVC, d.TVAc, d.Descriere,
+                      d.NrGrp, d.[Comment], d.Preluat, d.StornoRef,
+                      COALESCE(p.Denumire, d.Descriere, 'Produs #' + CAST(d.ProdID AS VARCHAR)) AS Denumire
+               FROM tblNoteD d
+               LEFT JOIN tblProd p ON d.ProdID = p.ProdID
+               WHERE d.DocID = ?
+               ORDER BY d.OraComanda, d.ECRID";
+    $stmtArt = sqlsrv_query($conn, $sqlArt, [$docId]);
+    if ($stmtArt === false) { return null; }
+
+    $articole = [];
+    $subtotal = 0.0;
+    $total = 0.0;
+    $currentIdx = -1;
+
+    while ($art = sqlsrv_fetch_array($stmtArt, SQLSRV_FETCH_ASSOC)) {
+        $cant = (float)$art['Cant'];
+        $prodId = (int)$art['ProdID'];
+        $pv = (float)$art['PV'];
+        $pvc = ($art['PVC'] !== null) ? (float)$art['PVC'] : $pv;
+        $val = $cant * $pv;
+        $valOrig = $cant * $pvc;
+
+        // Mod de preparare: se ataseaza produsului care il precede.
+        if ($prodId === 0 && $cant <= 0.0) {
+            if ($currentIdx >= 0) {
+                $articole[$currentIdx]['mods'][] = [
+                    "ecrId" => (int)$art['ECRID'],
+                    "nrGrp" => (int)($art['NrGrp'] ?? 0),
+                    "text" => trim((string)$art['Descriere'])
+                ];
+            }
+            continue;
+        }
+
+        $isStorno = ($cant < 0.0);
+        $subtotal += $valOrig;
+        $total += $val;
+        // Reducerea liniei: diferenta dintre valoarea de catalog si cea neta.
+        $discount = round($valOrig - $val, 2);
+
+        $articole[] = [
+            "ecrId" => (int)$art['ECRID'],
+            "prodId" => $prodId,
+            "denumire" => trim((string)$art['Denumire']),
+            "cantitate" => $cant,
+            "pretUnitar" => (float)$pv,
+            "pvc" => (float)$pvc,
+            "valoare" => (float)$val,
+            "valoareOriginala" => (float)$valOrig,
+            "discount" => $discount,
+            "comment" => trim((string)($art['Comment'] ?? '')),
+            "storno" => $isStorno,
+            "stornoRef" => (int)($art['StornoRef'] ?? 0),
+            "preluat" => ((int)$art['Preluat'] === 1),
+            "tva" => (int)($art['TVAc'] ?? 9),
+            "mods" => []
+        ];
+        $currentIdx = count($articole) - 1;
+    }
+
+    // Formele de plata ale notei.
+    $sqlPlati = "SELECT f.FPID AS FPID, f.Denumire AS Denumire,
+                        ROUND(SUM(p.Suma), 2) AS Suma
+                 FROM trelDocIDFpID p
+                 INNER JOIN tblFP f ON p.FPID = f.FPID
+                 WHERE p.DocID = ?
+                 GROUP BY f.FPID, f.Denumire, f.Poz
+                 ORDER BY f.Poz, f.Denumire";
+    $stmtPlati = sqlsrv_query($conn, $sqlPlati, [$docId]);
+    if ($stmtPlati === false) { return null; }
+    $plati = [];
+    while ($r = sqlsrv_fetch_array($stmtPlati, SQLSRV_FETCH_ASSOC)) {
+        $plati[] = [
+            "fpid" => (int)$r['FPID'],
+            "denumire" => trim((string)$r['Denumire']),
+            "suma" => round((float)$r['Suma'], 2)
+        ];
+    }
+
+    $ora = !empty($bon['Ora']) ? $bon['Ora'] : $bon['Data'];
+
+    return [
+        "docId" => $docId,
+        "nrNota" => (int)$bon['NrDoc'],
+        "nrMasa" => (int)$bon['NrMasa'],
+        "ospatar" => trim((string)$bon['Ospatar']),
+        "dataOra" => reportDateString($ora),
+        "motivDiscount" => trim((string)($bon['MotivDiscount'] ?? '')),
+        "subtotal" => round($subtotal, 2),
+        "reducere" => round(max(0, $subtotal - $total), 2),
+        "total" => round($total, 2),
+        "articole" => $articole,
+        "plati" => $plati
+    ];
+}
+
+/**
  * Aliniaza stanga/dreapta pe latimea bonului (aproximare pe lungime caractere).
  */
 function reportLr($left, $right, $width = 42) {
@@ -708,6 +950,34 @@ if ($isGet) {
 
     $tab = strtoupper(trim($_GET['tab'] ?? 'X'));
     $tip = strtoupper(trim($_GET['tip'] ?? 'PLU'));
+
+    // Raport "Note": lista notelor inchise sau detaliul unei note (cu docId).
+    if ($tip === 'NOTE') {
+        if (!empty($_GET['docId'])) {
+            $detail = buildNoteDetail($conn, (int)$_GET['docId']);
+            if ($detail === null) {
+                sendJsonResponse(["status" => "error", "message" => "Nota nu a fost gasita (sau nu este inchisa)"], 404);
+            }
+            sendJsonResponse([
+                "status" => "success",
+                "tab" => $tab,
+                "tip" => "NOTE",
+                "title" => reportTitle("X", "NOTE"),
+                "detail" => true
+            ] + $detail);
+        }
+        $list = buildNoteReport($conn);
+        if ($list === null) {
+            sendJsonResponse(["status" => "error", "message" => "Eroare interogare note: " . sqlsrv_errors()[0]['message']], 500);
+        }
+        sendJsonResponse([
+            "status" => "success",
+            "tab" => $tab,
+            "tip" => "NOTE",
+            "title" => reportTitle("X", "NOTE"),
+            "generat" => date('d-m-Y H:i')
+        ] + $list);
+    }
 
     $built = buildReportData($conn, $tip);
     if ($built === false) {

@@ -57,6 +57,22 @@ function nextNrBon($conn) {
 }
 
 /**
+ * Adauga coloana tblBonCurent.MotivDiscount daca lipseste (deploy fara pasi
+ * manuali). Retine motivul discountului aplicat pe toata nota, distinct de
+ * motivul discountului pe linie (care sta in tblNoteD.[Comment]).
+ */
+function ensureBillDiscountMotiveColumn($conn) {
+    static $done = false;
+    if ($done) { return; }
+    @sqlsrv_query(
+        $conn,
+        "IF COL_LENGTH('dbo.tblBonCurent','MotivDiscount') IS NULL
+             ALTER TABLE dbo.tblBonCurent ADD MotivDiscount nvarchar(50) NULL"
+    );
+    $done = true;
+}
+
+/**
  * Creeaza tabela tblPrintQueue daca nu exista (deploy fara pasi manuali).
  */
 function ensurePrintQueueTable($conn) {

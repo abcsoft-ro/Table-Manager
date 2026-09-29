@@ -260,6 +260,7 @@ CREATE TABLE dbo.[tblBonCurent] (
     [TotalB] float NULL CONSTRAINT [DF_tblBonCurent_TotalB] DEFAULT ((0)),
     [SC] float NULL CONSTRAINT [DF_tblBonCurent_SC] DEFAULT ((0)),
     [TIB] nvarchar(1) NULL,
+    [MotivDiscount] nvarchar(50) NULL,
     [Ora] datetime NULL CONSTRAINT [DF_tblBonCurent_Ora] DEFAULT (getdate()),
     [TVAA] int NULL CONSTRAINT [DF_tblBonCurent_TVAA] DEFAULT ((0)),
     [TVAB] int NULL CONSTRAINT [DF_tblBonCurent_TVAB] DEFAULT ((0)),
@@ -457,6 +458,34 @@ ALTER TABLE dbo.[tblPrintQueue] ADD CONSTRAINT [PK__tblPrint__056690E2B0F5AE6C] 
 GO
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_tblPrintQueue_Stare' AND object_id = OBJECT_ID(N'dbo.tblPrintQueue'))
 CREATE NONCLUSTERED INDEX [IX_tblPrintQueue_Stare] ON dbo.[tblPrintQueue] ([Stare],[NextAttempt]) INCLUDE ([JobID]);
+GO
+
+------------------------------------------------------------ temp_Send_Sql
+-- Coada durabila de export catre serverul extern (tblConectare): fiecare
+-- inchidere de nota scrie aici comanda EXEC EmitBon_Ext_NOU (Restaurant) sau
+-- EmitBon_Ext_2 (FastFood). Serviciul Python (sync-service) ridica randurile
+-- cu Preluat = 0, executa str_sql pe serverul extern si pune Preluat = 1.
+IF OBJECT_ID(N'dbo.temp_Send_Sql', N'U') IS NULL
+BEGIN
+CREATE TABLE dbo.[temp_Send_Sql] (
+    [Id] int IDENTITY(1,1) NOT NULL,
+    [DocID] int NULL,
+    [str_sql] nvarchar(MAX) NULL,
+    [Preluat] bit NOT NULL CONSTRAINT [DF_temp_Send_Sql_Preluat] DEFAULT ((0)),
+    [Stare] nvarchar(10) NOT NULL CONSTRAINT [DF_temp_Send_Sql_Stare] DEFAULT ('pending'),
+    [Attempts] int NOT NULL CONSTRAINT [DF_temp_Send_Sql_Attempts] DEFAULT ((0)),
+    [NextAttempt] datetime2(7) NULL,
+    [LastError] nvarchar(500) NULL,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_temp_Send_Sql_Created] DEFAULT (sysdatetime()),
+    [SentAt] datetime2(7) NULL
+);
+END
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = N'PK_temp_Send_Sql')
+ALTER TABLE dbo.[temp_Send_Sql] ADD CONSTRAINT [PK_temp_Send_Sql] PRIMARY KEY CLUSTERED ([Id]);
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_temp_Send_Sql_Preluat' AND object_id = OBJECT_ID(N'dbo.temp_Send_Sql'))
+CREATE NONCLUSTERED INDEX [IX_temp_Send_Sql_Preluat] ON dbo.[temp_Send_Sql] ([Preluat],[Stare],[NextAttempt]) INCLUDE ([Id]);
 GO
 
 ------------------------------------------------------------ tblConectare

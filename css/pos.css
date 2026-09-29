@@ -1232,6 +1232,65 @@ body {
 }
 
 /* ==========================================================================
+   POPUP COD FISCAL CLIENT (CUI) - tastatura numerica + RO
+   ========================================================================== */
+.cui-label {
+  font-size: 18px;
+  font-weight: 900;
+  color: #cc0000;
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.cui-error {
+  min-height: 16px;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #cc0000;
+  text-align: center;
+}
+
+.cui-numpad {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: 52px;
+  gap: 6px;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.cui-numpad .qty-key {
+  height: 100%;
+}
+
+.cui-numpad .cui-ok {
+  grid-column: 4;
+  grid-row: span 2;
+  height: auto;
+}
+
+.cui-numpad .cui-zero {
+  grid-column: span 2;
+}
+
+.cui-numpad .cui-ro {
+  grid-column: span 2;
+  background: #eaeaea;
+  letter-spacing: 2px;
+}
+
+.cui-remove {
+  width: 100%;
+  margin-top: 10px;
+  background: #eaeaea;
+}
+
+.act-btn.cui-set {
+  background: #ffff00;
+}
+
+/* ==========================================================================
    MODAL TRANSFER PRODUSE
    ========================================================================== */
 .transfer-dialog {
@@ -1836,6 +1895,35 @@ select.tva-input {
   font-weight: bold;
   background: #ffffcc;
   border-top: 2px solid #888;
+}
+
+/* Raport "Note": randuri clickabile + detaliul notei */
+.raport-table tr.raport-row-click {
+  cursor: pointer;
+}
+.raport-table tr.raport-row-click:hover td {
+  background: #eef4ff;
+}
+.raport-table tr.nota-det-storno td {
+  color: #b00000;
+}
+.raport-table tr.nota-det-disc td {
+  color: #8a6d00;
+  font-size: 12px;
+  font-style: italic;
+}
+.raport-table tr.nota-det-mod td {
+  color: #666;
+  font-size: 12px;
+  padding-left: 22px;
+}
+.nota-det-tag {
+  font-size: 10px;
+  font-weight: bold;
+  color: #fff;
+  background: #b00000;
+  padding: 1px 4px;
+  border-radius: 2px;
 }
 
 /* ==========================================================================

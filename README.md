@@ -19,15 +19,28 @@ regandit pentru fiabilitate, intretinere simpla si lipsa dependentelor grele.
 - **Transfer produse** intre mese.
 - **Plata** — split pe mai multe forme de plata (numerar, card etc.), cu rest afisat.
 - **Printare** — bon de comanda pe sectii (cu numerotare proprie a bonurilor de sectie),
-  nota de plata, nota proforma si text fiscal, printr-o coada durabila; destinatiile fizice
+  nota de plata, nota proforma si rapoarte, printr-o coada durabila; destinatiile fizice
   ale fiecarei sectii se configureaza din aplicatie, cu test de tiparire.
+- **Casa de marcat** — fisierul de comenzi pentru driverul fiscal, generat pentru
+  **Datecs/FiscalWire** (`.inp`) sau **FiscalNet** (`^`), in functie de `tblSet.TipCasaMarcat`,
+  si copiat automat in folderul monitorizat de driver (`tblSet.CaleFisierComenziECR`).
+- **CUI (cod fiscal client)** — popup cu tastatura dedicata pe ecranul de plata; codul e validat
+  cu cifra de control ANAF si trimis pe bon (`K,...` la Datecs, `CF^...` la FiscalNet).
 - **Modul mobil** — pagina dedicata pentru tableta/telefon (`mobile.html`) pentru marcarea
   meselor, independenta de POS-ul desktop, dar folosind aceleasi API-uri.
-- **Rapoarte X** — PLU, Grupe, Sectii, Casieri, General, pe bonurile inchise din sesiunea curenta.
+- **Export catre server** — la inchiderea fiecarei note se scrie o comanda `EXEC EmitBon_Ext_NOU`
+  (Restaurant) / `EmitBon_Ext_2` (FastFood) in coada durabila `temp_Send_Sql`; un serviciu Python
+  (`sync-service/`) o executa pe serverul din `tblConectare` si marcheaza `Preluat = 1`. Daca serverul
+  e oprit sau locatia e offline, comanda ramane in coada si se reincearca **la infinit** (cu backoff),
+  pana cand legatura revine; ecranul **Coada export** (Programare) arata starea si permite retry/stergere.
+- **Rapoarte X** — PLU, Grupe, Sectii, Casieri, General si **Note** (bonurile inchise din
+  sesiune, cu detaliul fiecarei note), pe bonurile inchise din sesiunea curenta.
 - **Inchidere Z** — arhivare si golire atomica a zilei, cu raport General Z plus rapoartele selectate.
 - **Setari operationale** — cantitate maxima pe linie, numar de zecimale la cantitate,
-  permitere/respingere discount (cu parola optionala), contorul bonurilor de sectie.
-- **Programare** — setari, grupe, produse, mese, ospatari, moduri preparare, parole, TVA,
+  permitere/respingere discount (cu parola optionala), contorul bonurilor de sectie, tipul
+  casei de marcat impreuna cu caile fisierelor de comenzi/raspuns, afisarea discountului si
+  stornarii pe bonul fiscal, plus listele de motive pentru discount si stornare.
+- **Programare** — setari, grupe, produse, sectii, mese, ospatari, moduri preparare, parole, TVA,
   imprimante sectii (destinatie fizica pe tip de tinta si test de tiparire), forme de plata,
   antet, nota, conectare server si sincronizare produse.
 
@@ -75,12 +88,51 @@ o procedura stocata care arhiveaza si goleste datele intr-o singura tranzactie c
 eroare, iar toate accesarile la baza de date folosesc interogari parametrizate, ceea ce elimina
 injectia SQL.
 
+## Casa de marcat (fiscal)
+
+La inchiderea notei (`close_bill`), in aceeasi tranzactie, se genereaza fisierul de comenzi
+pentru casa de marcat si se scrie in coada durabila de printare; serviciul Python il scrie in
+`spool/fiscal` si il **copiaza** in folderul monitorizat de driverul fiscal
+(`tblSet.CaleFisierComenziECR`), de unde casa il proceseaza. Daca folderul nu e disponibil,
+jobul se reincearca cu backoff, deci bonul nu se pierde.
+
+Tipul casei se alege din **Setari → Casa Marcat** (`tblSet.TipCasaMarcat`):
+
+- **Datecs** (driver FiscalWire) — fisier `.inp`:
+  - `H,1,______,_,__;` antet (fara linie `F` la final, ca in procedura veche);
+  - `S,1,______,_,__;NUME;PRET;CANT;1;1;NrTVA;0;0;` vanzare (nume majuscule, completat/trunchiat
+    la 22 de caractere; pret cu 2 zecimale; cantitate cu 3 zecimale; storno = cantitate negativa);
+  - `C,1,______,_,__;1;PROCENT;` discount pe linie (procent simplu, ex. `5.00` = 5%);
+  - `K,1,______,_,__;RO12345678;` cod fiscal client, inainte de prima vanzare;
+  - `T,1,______,_,__;COD_PLATA;SUMA;` incasare (platile, descrescator dupa cod).
+- **FiscalNet** — fisier `.txt` cu separator `^`:
+  - `S^NUME^PRET^CANT^buc^GRTVA^1`, `DV^valoare` / `MV^valoare` pentru discount/majorare,
+    `VS^...` pentru stornare, `ST^` subtotal, `P^COD_PLATA^SUMA` incasare;
+  - `CF^RO12345678` cod fiscal client, inainte de prima vanzare.
+
+Codurile de plata se iau direct din `tblFP.FPID` (0 = Numerar, 1 = Card, 2 = CEC, 3 = Tichet,
+4 = OP, 5 = Voucher): la Datecs se scrie `FPID`, la FiscalNet `FPID + 1` (driver-ul foloseste
+coduri 1-based). Grupa de TVA se rezolva din `tblTVA` dupa cota liniei (`tblNoteD.TVAc` ->
+`tblTVA.Nr_TVA`), la fel ca `DLookup("Nr_TVA","tblTVA","Cota=" & TVAc)` din aplicatia veche.
+
+Implicit, bonul fiscal **nu** afiseaza discountul si nici stornarea: se trimit doar cantitatile
+si preturile nete (o linie per produs, cu cantitatea neta dupa stornari). Setarea
+`tblSet.BonFiscalDiscStorno = 1` activeaza modul detaliat (linii de discount/majorare `C`/`DV`/`MV`
+si linii de stornare `VS`).
+
+CUI-ul se introduce dintr-un popup deschis cu butonul **CUI** de pe ecranul de plata, este
+validat cu cifra de control ANAF (algoritmul CUI/CIF) si tinut per nota (se goleste la
+schimbarea notei si dupa inchiderea bonului); se poate sterge cu butonul „Fara cod fiscal".
+
 ## Cerinte
 
 - **Apache** cu **PHP** si extensia **`php_sqlsrv`** incarcata.
 - **Microsoft SQL Server** (baza de date `Rual`).
 - **Python 3.12** (Windows) pentru `print-service/` — optional, doar pentru printare.
   Pentru imprimante Windows raw este nevoie de `pip install pywin32`.
+- **Python 3.12** (Windows) pentru `sync-service/` — optional, doar daca se foloseste
+  exportul catre serverul extern. Are nevoie de `pip install pyodbc` si de un
+  **ODBC Driver for SQL Server** instalat.
 
 ## Instalare si configurare
 
@@ -95,6 +147,11 @@ injectia SQL.
    doar pe `127.0.0.1:8756`. Destinatiile fizice (sectii si tintele globale Nota/Rapoarte/
    Fiscal) se configureaza din **Setari → Imprimante sectii**, cu butoane de test; modificarile
    se aplica instant (hot-reload), fara repornirea serviciului.
+5. (Optional) Porniti serviciul de export catre server: `sync-service/start-sync-service.bat`
+   (sau `start-sync-service-hidden.vbs` pentru rulare in fundal, fara consola). Adaugati un
+   shortcut in `shell:startup` pentru pornire automata. Serviciul asculta doar pe `127.0.0.1:8757`,
+   citeste serverul/baza/credentialele din `tblConectare` (ID = 1) si executa pe acel server
+   comenzile scrise in `temp_Send_Sql`. Necesita `pip install pyodbc`.
 
 ## Reconstructie baza de date
 
@@ -123,11 +180,15 @@ api/                    endpoints PHP (JSON)
   rapoarte.php          rapoarte X, inchidere Z, printare rapoarte
   print_queue.php       API-ul cozii durabile de printare
   print_common.php      helperi comuni (ensurePrintQueueTable, enqueuePrintJob)
+  send_queue.php        API-ul cozii durabile de export catre server (temp_Send_Sql)
+  send_common.php       helperi comuni (ensureSendSqlTable, enqueueBillSendSql)
   print_config.php      proxy catre serviciul de printare (citire/salvare config, test)
   ...                   editori de configurare (produse, grupe, mese, tva, kp, fp, etc.)
   sql/z_procedure.sql   procedura stocata de inchidere Z
 print-service/          serviciu Python de printare ESC/POS
   server.py, worker.py, escpos.py, emulator.py, targets.py, config.py, config.json
+sync-service/           serviciu Python de export catre serverul extern (temp_Send_Sql)
+  server.py, worker.py, db.py, config.py, config.json
 db/                     reconstructia bazei de date
   schema.sql            structura tabelelor + proceduri stocate
   seed.sql              date de referinta + meniu demo (fara date reale)

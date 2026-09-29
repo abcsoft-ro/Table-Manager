@@ -19,12 +19,15 @@ if ($isGet) {
     $action = $_GET['action'] ?? 'list';
 
     if ($action === 'claim') {
-        // Ridica atomic un job gata de procesat (pending sau failed cu
-        // NextAttempt depasit). READPAST + UPDLOCK impiedica dubla preluare.
+        // Ridica atomic un job gata de procesat ('pending' cu NextAttempt
+        // depasit). 'failed' NU se ridica automat (a depasit max_attempts si
+        // asteapta retry manual din ecranul Coada printare); un esec tranzitoriu
+        // pune jobul inapoi pe 'pending' cu NextAttempt. READPAST + UPDLOCK
+        // impiedica dubla preluare.
         $sql = "
         ;WITH cte AS (
             SELECT TOP (1) * FROM tblPrintQueue WITH (UPDLOCK, READPAST)
-            WHERE Stare IN ('pending','failed')
+            WHERE Stare = 'pending'
               AND (NextAttempt IS NULL OR NextAttempt <= GETDATE())
             ORDER BY JobID
         )

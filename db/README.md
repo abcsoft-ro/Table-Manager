@@ -43,6 +43,7 @@ sqlcmd -S <server> -U sa -P <parola> -i db\seed.sql
 La runtime, aplicația își creează singură, dacă lipsesc:
 
 - tabela `tblPrintQueue` (coada durabilă de printare) - `ensurePrintQueueTable()`;
+- tabela `temp_Send_Sql` (coada durabilă de export către serverul extern) - `ensureSendSqlTable()`;
 - procedura `RealizeazaZ` (închiderea Z) - `ensureZProcedure()`.
 
 Sunt incluse oricum în `schema.sql` pentru o instalare completă, dar nu este o problemă
@@ -53,7 +54,7 @@ dacă lipseau.
 `tblTVA`, `tblSectii`, `tblFP`, `tblKP`, `tblSet`, `tblParola`, `tblOsp`, `tblAntet`,
 `tblMese`, `tblMesaj`, `tblGrp`, `tblProd`, `tblBonCurent`, `tblNoteD`, `tblBon`,
 `tempECR`, `tblNrZ`, `trelDocIDFpID`, `trelArhZDocIDFpID`, `tblPrintQueue`,
-`tblConectare`, `ERRORLOG`.
+`temp_Send_Sql`, `tblConectare`, `ERRORLOG`.
 
 Proceduri stocate: `RealizeazaZ`, `ImportProd`, `usp_GetErrorInfo`.
 

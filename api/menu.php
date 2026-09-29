@@ -8,6 +8,18 @@ require_once __DIR__ . '/db.php';
 
 $conn = getDBConnection();
 
+// Transforma o lista de valori separate prin punct si virgula intr-un array,
+// eliminand spatiile si intrarile goale (folosita pentru motivele de
+// discount/stornare din tblSet).
+function parseMotiveList($value) {
+    $out = [];
+    foreach (explode(';', (string)$value) as $m) {
+        $m = trim($m);
+        if ($m !== '') { $out[] = $m; }
+    }
+    return $out;
+}
+
 // Functie auxiliara pentru transformarea culorii Windows COLORREF (0x00BBGGRR) in Hex (#RRGGBB)
 function winColorToHex($colorVal) {
     if ($colorVal === null || $colorVal === '') return null;
@@ -263,6 +275,22 @@ if ($stmtPS) {
     if ($ps && trim((string)($ps['ParolaStornare'] ?? '')) !== '') { $parolaStornare = 1; }
 }
 
+// 4i. Motivele de discount si de stornare (tblSet.MotivDiscount /
+//     tblSet.MotivStornare), liste separate prin punct si virgula.
+$motivDiscount = [];
+$motivStornare = [];
+$stmtMot = sqlsrv_query($conn, "SELECT Setting, Value FROM tblSet WHERE Setting IN ('MotivDiscount','MotivStornare')");
+if ($stmtMot) {
+    while ($mm = sqlsrv_fetch_array($stmtMot, SQLSRV_FETCH_ASSOC)) {
+        $key = strtolower(trim((string)$mm['Setting']));
+        if ($key === 'motivdiscount') {
+            $motivDiscount = parseMotiveList($mm['Value']);
+        } elseif ($key === 'motivstornare') {
+            $motivStornare = parseMotiveList($mm['Value']);
+        }
+    }
+}
+
 // 5. Date de contact pentru footer-ul ecranului mese (tblSet cheie/valoare)
 $distrRand1 = '';
 $distrRand2 = '';
@@ -291,6 +319,8 @@ sendJsonResponse([
     "red" => $red,
     "parolaDiscount" => $parolaDiscount,
     "parolaStornare" => $parolaStornare,
+    "motivDiscount" => $motivDiscount,
+    "motivStornare" => $motivStornare,
     "distrRand1" => $distrRand1,
     "distrRand2" => $distrRand2
 ]);

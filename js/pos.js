@@ -50,9 +50,16 @@ const POS_STATE = {
   groups: [],
   productsByGroup: {},
   messages: [],
+  // Motive programabile (tblSet.MotivDiscount / MotivStornare), editabile in Setari.
+  motivDiscount: [],
+  motivStornare: [],
   meniulZilei: 0,
   articole: [],
-  tables: []
+  tables: [],
+
+  // Codul fiscal al clientului (CUI) pentru bonul fiscal, tinut per nota.
+  cui: "",
+  cuiDocId: null
 };
 
 // Initializare la incarcarea paginii
@@ -91,6 +98,38 @@ async function initApp() {
 // --------------------------------------------------------------------------
 // 1. INCARCARE MENIU DIN MSSQL (tblGrp & tblProd + pret din tblProd.PV)
 // --------------------------------------------------------------------------
+// Motive implicite daca setarile tblSet.MotivDiscount / MotivStornare lipsesc.
+const DEFAULT_MOTIV_DISCOUNT = ["Protocol", "Inlocuire preparat", "Membru fidelitate", "Angajat", "Card fidelitate", "Altele"];
+const DEFAULT_MOTIV_STORNARE = ["Retur client", "Greseala ospatar", "Lipsa stoc", "Comanda gresita", "Altele"];
+
+// Desparte o lista de motive separata prin punct si virgula.
+function parseMotiveList(v) {
+  return String(v == null ? "" : v)
+    .split(";")
+    .map(s => s.trim())
+    .filter(s => s !== "");
+}
+
+// Umple un <select> de motive cu o lista; daca lista e goala foloseste implicitul.
+function populateMotiveSelect(id, list, fallback) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const items = (Array.isArray(list) && list.length > 0) ? list : fallback;
+  el.innerHTML = '<option value="">— selectati motivul —</option>';
+  items.forEach(m => {
+    const opt = document.createElement("option");
+    opt.value = m;
+    opt.textContent = m;
+    el.appendChild(opt);
+  });
+}
+
+// Reimprospateaza listele de motive din casetele Discount si VD.
+function refreshMotiveSelects() {
+  populateMotiveSelect("disc-motiv-select", POS_STATE.motivDiscount, DEFAULT_MOTIV_DISCOUNT);
+  populateMotiveSelect("void-motiv-select", POS_STATE.motivStornare, DEFAULT_MOTIV_STORNARE);
+}
+
 async function loadMenu() {
   const resp = await fetch("api/menu.php");
   const data = await resp.json();
@@ -99,6 +138,8 @@ async function loadMenu() {
   POS_STATE.groups = data.groups || [];
   POS_STATE.productsByGroup = data.productsByGroup || {};
   POS_STATE.messages = data.messages || [];
+  POS_STATE.motivDiscount = Array.isArray(data.motivDiscount) ? data.motivDiscount : [];
+  POS_STATE.motivStornare = Array.isArray(data.motivStornare) ? data.motivStornare : [];
   POS_STATE.meniulZilei = (data.meniulZilei == 1) ? 1 : 0;
   POS_STATE.modLogare = (data.modLogare == 0) ? 0 : 1;
   POS_STATE.tipVanz = (data.tipVanz === "fastfood") ? "fastfood" : "restaurant";
@@ -113,6 +154,7 @@ async function loadMenu() {
   updateMeniulZileiButton();
   applyTipVanzUI();
   applyRedUI();
+  refreshMotiveSelects();
   updateTablesFooter(data.distrRand1, data.distrRand2);
 }
 
@@ -124,7 +166,7 @@ function isFastFood() {
 // Aplica vizibilitatea butoanelor in functie de tipul de vanzare.
 function applyTipVanzUI() {
   const fastfood = isFastFood();
-  const ids = ["btn-marcare", "btn-transfer", "btn-proforma"];
+  const ids = ["btn-marcare", "btn-transfer", "btn-proforma", "btn-mod-preparare"];
   ids.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = fastfood ? "none" : "";
@@ -500,6 +542,12 @@ async function loadOrder(nrMasa) {
 
     POS_STATE.masaCurenta = nrMasa;
     POS_STATE.docId = data.docId || null;
+    // CUI-ul apartine notei curente: se goleste cand trecem pe alta nota.
+    if (POS_STATE.cuiDocId !== POS_STATE.docId) {
+      POS_STATE.cuiDocId = POS_STATE.docId;
+      POS_STATE.cui = "";
+      updateCuiButton();
+    }
     POS_STATE.articole = data.articole || [];
     // Proprietarul bonului (ospatarul care l-a deschis) - nu suprascriem
     // casierul curent (operatorul logat).
@@ -1054,12 +1102,18 @@ async function finalizePaymentTransaction() {
       body: JSON.stringify({
         action: "close_bill",
         docId: POS_STATE.docId,
-        plati: POS_STATE.payments
+        plati: POS_STATE.payments,
+        cui: POS_STATE.cui || ""
       })
     });
 
     const res = await resp.json();
     if (res.status !== "success") throw new Error(res.message);
+
+    // Bonul s-a inchis: CUI-ul nu mai apartine unei note deschise.
+    POS_STATE.cui = "";
+    POS_STATE.cuiDocId = null;
+    updateCuiButton();
 
     // Mod FastFood: fara popup; detaliile de plata raman in panoul alb din
     // stanga (in locul liniei Total) pana la inceperea unui nou bon.
@@ -1708,7 +1762,7 @@ function renderSetariTabs() {
 // Ordinea explicita a setarilor in cadrul unui grup (dupa tblSet.Setting).
 // Cele care nu apar in lista raman dupa ele, in ordinea primita de la server.
 const SETARI_ORDINE = {
-  "casa": ["TipCasaMarcat", "CaleFisierComenziECR", "CaleFisierRaspunsECR"],
+  "casa": ["TipCasaMarcat", "BonFiscalDiscStorno", "CaleFisierComenziECR", "CaleFisierRaspunsECR"],
   "afiseaj": ["AfiseajClient", "PortComAfiseaj", "BaudRateAfisaj", "CaleDriverAfiseajClient", "CaleFisierComenziAfiseajClient"],
   "cantar": ["Cantar", "CaleDriverCantar", "CaleFisierRaspunsCantar", "Delay_cantar"],
   "posbanca": ["PoSbanca", "CaleDriverPoSbanca", "CaleFisierComenziPoSbanca"]
@@ -1766,6 +1820,10 @@ function setariField(row) {
   // Tipul casei de marcat fiscale: lista Datecs / FiscalNet / Tremol.
   if (row.Setting === "TipCasaMarcat") {
     return setariTipCasaMarcatField(row);
+  }
+  // Discount/stornare pe bonul fiscal: lista DA / NU (implicit NU).
+  if (row.Setting === "BonFiscalDiscStorno") {
+    return setariBonFiscalDiscStornoField(row);
   }
   // Afisajul client activ/inactiv: lista DA / NU.
   if (row.Setting === "AfiseajClient") {
@@ -2019,6 +2077,12 @@ function setariTipCasaMarcatField(row) {
   return div;
 }
 
+// Combobox pentru tblSet.BonFiscalDiscStorno: 1 = DA (discount/stornare pe bon),
+// 0 = NU (implicit; bonul fiscal doar cu cantitati/preturi nete).
+function setariBonFiscalDiscStornoField(row) {
+  return setariDaNuField(row.Setting, row.Value, row.Descriere, true);
+}
+
 // Combobox pentru tblSet.AfiseajClient: 1 = DA (afisaj activ), 0 = NU.
 function setariAfiseajClientField(row) {
   return setariDaNuField(row.Setting, row.Value, row.Descriere, false);
@@ -2140,6 +2204,17 @@ async function saveSetari() {
     if (keys.indexOf("RED") !== -1) {
       POS_STATE.red = (String(setariDirty["RED"]).trim() === "0") ? 0 : 1;
       applyRedUI();
+    }
+
+    // Motivele de discount/stornare se aplica imediat in casetele Discount/VD.
+    if (keys.indexOf("MotivDiscount") !== -1 || keys.indexOf("MotivStornare") !== -1) {
+      if (keys.indexOf("MotivDiscount") !== -1) {
+        POS_STATE.motivDiscount = parseMotiveList(setariDirty["MotivDiscount"]);
+      }
+      if (keys.indexOf("MotivStornare") !== -1) {
+        POS_STATE.motivStornare = parseMotiveList(setariDirty["MotivStornare"]);
+      }
+      refreshMotiveSelects();
     }
 
     setariDirty = {};
@@ -3672,7 +3747,7 @@ async function saveParole() {
 // RAPOARTE (taburi X / Z, accesate cu ParolaRapoarte)
 // --------------------------------------------------------------------------
 const REPORTS_TABS = ["X", "Z"];
-const REPORTS_TYPES = ["PLU", "Grupe", "Sectii", "Casieri", "General"];
+const REPORTS_TYPES = ["PLU", "Grupe", "Sectii", "Casieri", "General", "Note"];
 const REPORTS_Z_OPTIONS = ["PLU", "Grupe", "Sectii", "Casieri"];
 let reportsActiveTab = "X";
 let reportsPrevScreen = "screen-mese";
@@ -3786,7 +3861,7 @@ function reportMoney(v) {
 }
 
 async function runReport(tab, tip) {
-  if (tip !== "PLU" && tip !== "Grupe" && tip !== "Sectii" && tip !== "Casieri" && tip !== "General") {
+  if (tip !== "PLU" && tip !== "Grupe" && tip !== "Sectii" && tip !== "Casieri" && tip !== "General" && tip !== "Note") {
     showToast("Raport " + tab + " - " + tip + " (in curand)");
     return;
   }
@@ -3809,6 +3884,44 @@ function renderReportModal(data) {
   if (!content) return;
 
   let html = `<div class="raport-meta">Generat: ${escapeHtml(data.generat || "")}</div>`;
+
+  // Raportul de note este doar pe ecran (fara tiparire).
+  const printBtn = document.getElementById("raport-print-btn");
+  if (printBtn) printBtn.style.display = (data.tip === "NOTE") ? "none" : "";
+
+  if (data.tip === "NOTE") {
+    const note = data.note || [];
+    html += '<table class="raport-table"><thead><tr>' +
+            '<th>NrNota</th><th>Masa</th><th>Ospatar</th><th>Ora</th>' +
+            '<th class="num">Reducere</th><th>Motiv reducere</th>' +
+            '<th class="num">Stornari</th><th>Plati</th><th class="num">Total</th>' +
+            '</tr></thead><tbody>';
+    note.forEach(n => {
+      const platiTxt = (n.plati || []).map(p => escapeHtml(p.denumire || "") + " " + reportMoney(p.suma)).join(" / ");
+      html += `<tr class="raport-row-click" onclick="openNoteDetail(${n.docId})">` +
+              `<td>${n.nrNota}</td><td>${n.nrMasa}</td>` +
+              `<td>${escapeHtml(n.ospatar || "")}</td>` +
+              `<td>${escapeHtml(n.dataOra || "")}</td>` +
+              `<td class="num">${reportMoney(n.reducere)}</td>` +
+              `<td>${escapeHtml(n.motivDiscount || "")}</td>` +
+              `<td class="num">${reportMoney(n.stornari)}</td>` +
+              `<td>${platiTxt}</td>` +
+              `<td class="num">${reportMoney(n.total)}</td></tr>`;
+    });
+    html += `<tr class="raport-total"><td colspan="4">TOTAL (${data.totalBonuri || 0} note)</td>` +
+            `<td class="num">${reportMoney(data.totalReducere)}</td>` +
+            `<td></td>` +
+            `<td class="num">${reportMoney(data.totalStornari)}</td>` +
+            `<td></td>` +
+            `<td class="num">${reportMoney(data.totalValoare)}</td></tr>`;
+    html += '</tbody></table>';
+    if (note.length === 0) {
+      html += '<div style="padding:14px; color:#888;">Nu exista note inchise in sesiunea curenta.</div>';
+    }
+    content.innerHTML = html;
+    document.getElementById("modal-raport").classList.add("active");
+    return;
+  }
 
   if (data.tip === "GENERAL") {
     html += '<table class="raport-table"><tbody>';
@@ -3947,6 +4060,84 @@ function renderReportModal(data) {
 
 function closeReportModal() {
   document.getElementById("modal-raport").classList.remove("active");
+}
+
+// --------------------------------------------------------------------------
+// Detaliul unei note inchise (raportul "Note")
+// --------------------------------------------------------------------------
+async function openNoteDetail(docId) {
+  const content = document.getElementById("nota-det-content");
+  const titleEl = document.getElementById("nota-det-title");
+  if (!content) return;
+
+  content.innerHTML = '<div style="padding:14px; color:#888;">Se incarca...</div>';
+  document.getElementById("modal-nota-detail").classList.add("active");
+  try {
+    const resp = await fetch(`api/rapoarte.php?tab=X&tip=NOTE&docId=${encodeURIComponent(docId)}`);
+    const data = await resp.json();
+    if (data.status !== "success") throw new Error(data.message);
+    if (titleEl) titleEl.innerText = "NOTA " + data.nrNota + " - MASA " + data.nrMasa;
+    content.innerHTML = renderNoteDetailHtml(data);
+  } catch (err) {
+    content.innerHTML = '<div style="padding:14px; color:#b00000;">Eroare: ' + escapeHtml(err.message) + '</div>';
+  }
+}
+
+function renderNoteDetailHtml(d) {
+  let html = '<div class="raport-meta">' +
+    escapeHtml(d.ospatar || "") + ' &middot; ' + escapeHtml(d.dataOra || "") +
+    ' &middot; ' + (d.articole || []).length + ' pozitii</div>';
+  if (d.motivDiscount) {
+    html += '<div class="raport-meta">Motiv reducere nota: <b>' + escapeHtml(d.motivDiscount) + '</b></div>';
+  }
+
+  html += '<table class="raport-table"><thead><tr>' +
+          '<th>Produs</th><th class="num">Cant</th><th class="num">Pret</th>' +
+          '<th class="num">Valoare</th></tr></thead><tbody>';
+  (d.articole || []).forEach(a => {
+    const rowCls = a.storno ? "nota-det-storno" : "";
+    const name = escapeHtml(a.denumire || "") + (a.storno ? ' <span class="nota-det-tag">ANULARE</span>' : '');
+    html += `<tr class="${rowCls}"><td>${name}</td>` +
+            `<td class="num">${reportMoney(a.cantitate)}</td>` +
+            `<td class="num">${reportMoney(a.pretUnitar)}</td>` +
+            `<td class="num">${reportMoney(a.valoare)}</td></tr>`;
+    // Doar reducerile PE LINIE se evidentiaza sub produs (cu motivul lor);
+    // reducerea pe subtotal se arata la nivelul notei (antet + total Reducere).
+    if (!a.storno && a.discount > 0 && a.comment) {
+      html += `<tr class="nota-det-disc"><td colspan="3">Discount linie: ${escapeHtml(a.comment)}</td>` +
+              `<td class="num">-${reportMoney(a.discount)}</td></tr>`;
+    }
+    if (a.storno && a.comment) {
+      html += `<tr class="nota-det-disc"><td colspan="3">Motiv anulare: ${escapeHtml(a.comment)}</td><td></td></tr>`;
+    }
+    (a.mods || []).forEach(m => {
+      html += `<tr class="nota-det-mod"><td colspan="4">+ ${escapeHtml(m.text || "")}</td></tr>`;
+    });
+  });
+  html += `<tr class="raport-sub"><td colspan="3">Subtotal</td>` +
+          `<td class="num">${reportMoney(d.subtotal)}</td></tr>`;
+  html += `<tr><td colspan="3">Reducere</td>` +
+          `<td class="num">${reportMoney(d.reducere)}</td></tr>`;
+  html += `<tr class="raport-total"><td colspan="3">TOTAL</td>` +
+          `<td class="num">${reportMoney(d.total)}</td></tr>`;
+  html += '</tbody></table>';
+
+  html += '<div class="raport-sect" style="padding:6px 8px;">Forme de plata</div>';
+  html += '<table class="raport-table"><tbody>';
+  (d.plati || []).forEach(p => {
+    html += `<tr><td>${escapeHtml(p.denumire || "")}</td>` +
+            `<td class="num">${reportMoney(p.suma)}</td></tr>`;
+  });
+  if ((d.plati || []).length === 0) {
+    html += '<tr><td colspan="2" style="color:#888;">Fara plati inregistrate</td></tr>';
+  }
+  html += '</tbody></table>';
+
+  return html;
+}
+
+function closeNoteDetail() {
+  document.getElementById("modal-nota-detail").classList.remove("active");
 }
 
 async function printCurrentReport() {
@@ -5490,6 +5681,123 @@ function closeNumericKeyboard() {
   numpadDigitsOnly = false;
 }
 
+// --------------------------------------------------------------------------
+// COD FISCAL CLIENT (CUI) pentru bonul fiscal
+// --------------------------------------------------------------------------
+// Normalizeaza CUI-ul: majuscule, doar litere/cifre (ex. "ro 12-345" -> "RO12345").
+function cuiNorm(v) {
+  return String(v == null ? "" : v).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 14);
+}
+
+// Valideaza CUI/CIF prin cifra de control (algoritmul ANAF), ignorand prefixul
+// RO si orice caracter non-numeric.
+function cuiValid(value) {
+  const digits = String(value == null ? "" : value).replace(/[^0-9]/g, "");
+  if (digits.length < 2 || digits.length > 10) return false;
+
+  const key = [7, 5, 3, 2, 1, 7, 5, 3, 2];
+  const ctrl = parseInt(digits.slice(-1), 10);
+  const body = digits.slice(0, -1);
+  const keyAdj = key.slice(key.length - body.length);
+
+  let sum = 0;
+  for (let i = 0; i < body.length; i++) {
+    sum += parseInt(body[i], 10) * keyAdj[i];
+  }
+  const rest = (sum * 10) % 11;
+  const calc = (rest === 10) ? 0 : rest;
+  return calc === ctrl;
+}
+
+function cuiSetError(msg) {
+  const el = document.getElementById("cui-error");
+  if (el) el.textContent = msg || "";
+}
+
+function openCuiModal() {
+  const inp = document.getElementById("cui-display");
+  if (inp) inp.value = POS_STATE.cui || "";
+  cuiSetError("");
+  document.getElementById("modal-cui").classList.add("active");
+  if (inp) {
+    setTimeout(() => {
+      inp.focus();
+      try { inp.setSelectionRange(inp.value.length, inp.value.length); } catch (e) { /* ignoram */ }
+    }, 50);
+  }
+}
+
+function closeCuiModal() {
+  document.getElementById("modal-cui").classList.remove("active");
+}
+
+function cuiInput() {
+  const inp = document.getElementById("cui-display");
+  if (inp) inp.value = cuiNorm(inp.value);
+  cuiSetError("");
+}
+
+function cuiKey(ch) {
+  const inp = document.getElementById("cui-display");
+  if (inp) inp.value = cuiNorm(inp.value + ch);
+  cuiSetError("");
+}
+
+function cuiBackspace() {
+  const inp = document.getElementById("cui-display");
+  if (inp) inp.value = inp.value.slice(0, -1);
+  cuiSetError("");
+}
+
+function cuiClear() {
+  const inp = document.getElementById("cui-display");
+  if (inp) inp.value = "";
+  cuiSetError("");
+}
+
+// Butonul RO: adauga prefixul RO daca nu exista deja.
+function cuiRo() {
+  const inp = document.getElementById("cui-display");
+  if (!inp) return;
+  let v = cuiNorm(inp.value);
+  if (v.slice(0, 2) !== "RO") v = "RO" + v;
+  inp.value = v;
+  cuiSetError("");
+}
+
+function cuiOk() {
+  const inp = document.getElementById("cui-display");
+  const raw = cuiNorm(inp ? inp.value : "");
+  // Codul fiscal e optional; daca e completat, cifra de control trebuie sa fie valida.
+  if (raw !== "" && !cuiValid(raw)) {
+    cuiSetError("Cod fiscal invalid (cifra de control gresita).");
+    return;
+  }
+  POS_STATE.cui = raw;
+  if (POS_STATE.cui !== "") POS_STATE.cuiDocId = POS_STATE.docId;
+  cuiSetError("");
+  closeCuiModal();
+  updateCuiButton();
+  showToast(POS_STATE.cui ? ("CUI: " + POS_STATE.cui) : "Cod fiscal sters");
+}
+
+// Sterge codul fiscal atasat notei curente.
+function cuiRemove() {
+  POS_STATE.cui = "";
+  POS_STATE.cuiDocId = null;
+  cuiSetError("");
+  closeCuiModal();
+  updateCuiButton();
+  showToast("Cod fiscal sters");
+}
+
+function updateCuiButton() {
+  const b = document.getElementById("btn-cui");
+  if (!b) return;
+  b.title = POS_STATE.cui ? ("CUI: " + POS_STATE.cui) : "Fara cod fiscal";
+  b.classList.toggle("cui-set", !!POS_STATE.cui);
+}
+
 function numpadKey(ch) {
   const disp = document.getElementById("num-display");
   let v = disp.value;
@@ -5654,11 +5962,16 @@ async function actionNota() {
         body: JSON.stringify({
           action: "close_bill",
           docId: POS_STATE.docId,
-          plati: {}
+          plati: {},
+          cui: POS_STATE.cui || ""
         })
       });
       const res = await resp.json();
       if (res.status !== "success") throw new Error(res.message);
+
+      POS_STATE.cui = "";
+      POS_STATE.cuiDocId = null;
+      updateCuiButton();
 
       showToast(res.message || "Nota a fost inchisa");
       await loadOrder(POS_STATE.masaCurenta);
@@ -5881,6 +6194,176 @@ async function clearDonePrintJobs() {
       const data = await resp.json();
       if (data.status !== "success") throw new Error(data.message);
       await refreshPrintQueue();
+    } catch (err) {
+      appAlert("Eroare: " + err.message);
+    }
+  }, "Da", "Nu");
+}
+
+// --------------------------------------------------------------------------
+// COADA EXPORT (temp_Send_Sql via api/send_queue.php)
+// --------------------------------------------------------------------------
+let sendQueueRows = [];
+let sendQueueSelected = null;
+
+async function openSendQueue() {
+  document.getElementById("modal-send-queue").classList.add("active");
+  await refreshSendQueue();
+}
+
+function closeSendQueue() {
+  document.getElementById("modal-send-queue").classList.remove("active");
+  sendQueueSelected = null;
+}
+
+async function refreshSendQueue() {
+  try {
+    const resp = await fetch("api/send_queue.php?action=list");
+    const data = await resp.json();
+    if (data.status !== "success") throw new Error(data.message || "Eroare");
+    sendQueueRows = data.rows || [];
+    renderSendQueue();
+  } catch (err) {
+    showToast("Eroare coada export: " + err.message);
+  }
+}
+
+function renderSendQueue() {
+  const tbody = document.getElementById("sendq-list");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+
+  if (sendQueueRows.length === 0) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = '<td colspan="6" style="color:#888; font-weight:normal;">Coada este goala</td>';
+    tbody.appendChild(tr);
+    updateSendQueueBtns();
+    return;
+  }
+
+  sendQueueRows.forEach(r => {
+    const tr = document.createElement("tr");
+    const isFailed = r.Stare === "failed";
+    const isDone = r.Preluat === true || r.Stare === "done";
+    if (r.Id === sendQueueSelected) tr.classList.add("selected");
+    if (isFailed) tr.classList.add("inactive");
+    const stareCls = isFailed ? "kp-off" : (isDone ? "kp-on" : "");
+    const stareTitle = (r.Stare === "sending" && r.NextAttempt) ? ("preluat la: " + r.NextAttempt) : "";
+    tr.innerHTML = `
+      <td class="printq-num"><b>${r.Id}</b></td>
+      <td>${r.DocID != null ? "doc " + r.DocID : "-"}</td>
+      <td class="${stareCls}" title="${escapeHtml(isDone ? ("trimis: " + (r.SentAt || '')) : stareTitle)}">${escapeHtml(r.Stare)}</td>
+      <td class="printq-num" title="${escapeHtml(stareTitle)}">${r.Attempts}</td>
+      <td title="${escapeHtml(r.CreatedAt || '')}">${escapeHtml(r.CreatedAt || "-")}</td>
+      <td title="${escapeHtml(r.LastError || '')}">${escapeHtml(r.LastError || "-")}</td>
+    `;
+    tr.onclick = () => {
+      sendQueueSelected = r.Id;
+      renderSendQueue();
+      updateSendQueueBtns();
+    };
+    tbody.appendChild(tr);
+  });
+
+  updateSendQueueBtns();
+}
+
+function updateSendQueueBtns() {
+  const job = selectedSendJob();
+  const has = !!job;
+  const done = has && (job.Preluat === true || job.Stare === "done");
+
+  const view = document.getElementById("btn-sendq-view");
+  if (view) view.disabled = !has;
+
+  // Retry doar pentru bonurile netrimise
+  const retry = document.getElementById("btn-sendq-retry");
+  if (retry) retry.disabled = !has || done;
+
+  const del = document.getElementById("btn-sendq-del");
+  if (del) del.disabled = !has;
+}
+
+function selectedSendJob() {
+  return sendQueueRows.find(r => r.Id === sendQueueSelected) || null;
+}
+
+async function viewSendJob() {
+  const job = selectedSendJob();
+  if (!job) return;
+  try {
+    const resp = await fetch("api/send_queue.php?action=get&id=" + job.Id);
+    const data = await resp.json();
+    if (data.status !== "success") throw new Error(data.message || "Eroare");
+    const docTxt = data.row.DocID != null ? " (doc " + data.row.DocID + ")" : "";
+    document.getElementById("send-det-title").innerText = "COMANDA EXPORT #" + job.Id + docTxt;
+    document.getElementById("send-det-content").textContent = data.row.str_sql || "(comanda goala)";
+    document.getElementById("modal-send-detail").classList.add("active");
+  } catch (err) {
+    appAlert("Eroare citire comanda: " + err.message);
+  }
+}
+
+function closeSendDetail() {
+  document.getElementById("modal-send-detail").classList.remove("active");
+  document.getElementById("send-det-content").textContent = "";
+}
+
+async function retrySendJob() {
+  const job = selectedSendJob();
+  if (!job) return;
+  if (job.Preluat === true || job.Stare === "done") {
+    showToast("Bonul a fost deja trimis");
+    return;
+  }
+  try {
+    const resp = await fetch("api/send_queue.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "retry", id: job.Id })
+    });
+    const data = await resp.json();
+    if (data.status !== "success") throw new Error(data.message);
+    showToast("Bon reprogramat pentru trimitere");
+    sendQueueSelected = null;
+    await refreshSendQueue();
+  } catch (err) {
+    appAlert("Eroare retry: " + err.message);
+  }
+}
+
+function deleteSendJob() {
+  const job = selectedSendJob();
+  if (!job) return;
+  const docTxt = job.DocID != null ? job.DocID : "-";
+  appConfirm(`Stergeti bonul din coada de export #${job.Id} (doc ${docTxt})?`, async () => {
+    try {
+      const resp = await fetch("api/send_queue.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id: job.Id })
+      });
+      const data = await resp.json();
+      if (data.status !== "success") throw new Error(data.message);
+      sendQueueSelected = null;
+      await refreshSendQueue();
+    } catch (err) {
+      appAlert("Eroare stergere: " + err.message);
+    }
+  }, "Da", "Nu");
+}
+
+async function clearDoneSendJobs() {
+  appConfirm("Stergeti toate bonurile deja trimise (done)?", async () => {
+    try {
+      const resp = await fetch("api/send_queue.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clear_done" })
+      });
+      const data = await resp.json();
+      if (data.status !== "success") throw new Error(data.message);
+      await refreshSendQueue();
     } catch (err) {
       appAlert("Eroare: " + err.message);
     }
@@ -6289,8 +6772,7 @@ async function confirmQty() {
 }
 
 function actionCUI() {
-  const cui = prompt("Introduceti CUI client pentru bon fiscal:", "RO12345678");
-  if (cui) showToast(`CUI ${cui} atasat!`);
+  openCuiModal();
 }
 
 // --------------------------------------------------------------------------
@@ -6354,6 +6836,7 @@ function openDiscountModal() {
   discScope = (it && lineValNet(it) > 0.0001) ? "line" : "bill";
   discBuffer = "";
   discMotiv = "";
+  refreshMotiveSelects();
   discRender();
   document.getElementById("modal-discount").classList.add("active");
   discRefreshScopeButtons();
@@ -6707,6 +7190,7 @@ function actionVoid() {
   document.getElementById("void-cant-linie").innerText = (parseFloat(it.cantitate) || 0).toFixed(2);
   document.getElementById("void-deja").innerText = (parseFloat(it.stornat) || 0).toFixed(2);
   document.getElementById("void-ramas").innerText = ramas.toFixed(2);
+  refreshMotiveSelects();
   document.getElementById("void-motiv-select").value = "";
   document.getElementById("void-parola").value = "";
   document.getElementById("btn-void-apply").innerText = "CONFIRMA STORNO";

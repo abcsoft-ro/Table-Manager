@@ -1,0 +1,22 @@
+{
+  "http_host": "127.0.0.1",
+  "http_port": 8757,
+  "api_base": "https://127.0.0.1/rual/api",
+  "verify_ssl": false,
+  "poll_interval_sec": 2.0,
+  "max_attempts": 0,
+  "backoff_seconds": [
+    5,
+    15,
+    30,
+    60,
+    300
+  ],
+  "db_driver": "ODBC Driver 17 for SQL Server",
+  "db_options": {
+    "Encrypt": "no",
+    "TrustServerCertificate": "yes"
+  },
+  "db_timeout": 10,
+  "log_file": "C:\\Apache24\\htdocs\\rual\\sync-service\\logs/sync-service.log"
+}

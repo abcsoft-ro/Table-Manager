@@ -5,6 +5,7 @@
  */
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/print_common.php';
+require_once __DIR__ . '/send_common.php';
 
 /**
  * Tipul de vanzare configurat in tblSet (TipVanz): "fastfood" cand valoarea
@@ -21,6 +22,62 @@ function getTipVanz($conn) {
         if ($row && (int)trim((string)$row['Value']) === 1) {
             $cache = "fastfood";
         }
+    }
+    return $cache;
+}
+
+/**
+ * Tipul casei de marcat fiscale (tblSet.TipCasaMarcat): "datecs", "fiscalnet"
+ * sau "tremol". Implicit "datecs" cand setarea lipseste sau este necunoscuta.
+ * Determina formatul fisierului de comenzi scris pentru casa de marcat.
+ */
+function getTipCasaMarcat($conn) {
+    static $cache = null;
+    if ($cache !== null) { return $cache; }
+    $cache = "datecs";
+    $stmt = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'TipCasaMarcat'");
+    if ($stmt) {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        if ($row) {
+            $v = mb_strtolower(trim((string)$row['Value']));
+            if ($v === 'fiscalnet') { $cache = "fiscalnet"; }
+            elseif ($v === 'tremol') { $cache = "tremol"; }
+        }
+    }
+    return $cache;
+}
+
+/**
+ * Afisarea discountului/stornarii pe bonul fiscal (tblSet.BonFiscalDiscStorno):
+ * 1 = DA (se scriu comenzile de discount/majorare si liniile de storno),
+ * 0 = NU (implicit; bonul contine doar cantitatile si preturile nete, fara
+ * discount si fara stornare). Se aplica fisierului casei de marcat.
+ */
+function getBonFiscalDiscStorno($conn) {
+    static $cache = null;
+    if ($cache !== null) { return $cache; }
+    $cache = 0;
+    $stmt = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'BonFiscalDiscStorno'");
+    if ($stmt) {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        if ($row && (int)trim((string)$row['Value']) === 1) { $cache = 1; }
+    }
+    return $cache;
+}
+
+/**
+ * Folderul monitorizat de driverul casei de marcat (tblSet.CaleFisierComenziECR).
+ * Fisierul de comenzi trebuie copiat aici ca sa fie procesat (FiscalNet,
+ * FiscalWire sau alt driver).
+ */
+function getCaleFisierComenziECR($conn) {
+    static $cache = null;
+    if ($cache !== null) { return $cache; }
+    $cache = '';
+    $stmt = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'CaleFisierComenziECR'");
+    if ($stmt) {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        if ($row) { $cache = trim((string)$row['Value']); }
     }
     return $cache;
 }
@@ -340,11 +397,16 @@ function printKitchen($conn, $docId) {
  * de plata si nu este folosita nicaieri.
  * Returneaza un array cu status/mesaj/docId (cheia 'http' = codul HTTP dorit).
  */
-function closeBill($conn, $docId, $plati = []) {
+function closeBill($conn, $docId, $plati = [], $cui = '') {
     $docId = (int)$docId;
     if (!is_array($plati)) { $plati = []; }
+    $cui = normalizeCui($cui);
+    // Codul fiscal e optional, dar daca e completat trebuie sa fie valid.
+    if ($cui !== '' && !validateCui($cui)) {
+        return ["status" => "error", "message" => "Cod fiscal (CUI) invalid: " . $cui, "http" => 400];
+    }
 
-    $sqlBon = "SELECT TOP 1 b.DocID, b.NrDoc, b.NrMasa, b.Ora, b.Data,
+    $sqlBon = "SELECT TOP 1 b.DocID, b.NrDoc, b.NrMasa, b.Ora, b.Data, b.TotalB, b.NrOp, b.ClientID,
                       COALESCE(o.Nume, 'CASIER 1') AS NumeCasier
                FROM tblBonCurent b
                LEFT JOIN tblOsp o ON b.NrOp = o.NrOsp
@@ -368,8 +430,10 @@ function closeBill($conn, $docId, $plati = []) {
     }
 
     // Inchidem nota si salvam platile (forme de plata + sume) in trelDocIDFpID,
-    // totul intr-o singura tranzactie.
+    // totul intr-o singura tranzactie. Tabelele de coada se asigura inainte de
+    // tranzactie, ca un ALTER/CREATE sa nu afecteze business-ul.
     ensurePrintQueueTable($conn);
+    ensureSendSqlTable($conn);
     sqlsrv_begin_transaction($conn);
 
     // Marcam bonul ca inchis (Stare = 'I')
@@ -397,16 +461,38 @@ function closeBill($conn, $docId, $plati = []) {
     // Scriem in coada de tiparire nota de plata (nefiscala) + fisierul fiscal.
     // Totul in aceeasi tranzactie cu inchiderea notei: intentia de tiparire nu
     // se poate pierde chiar daca serviciul de tiparire / imprimanta e oprita.
-    $printResult = enqueueBillPrintJobs($conn, $docId, $bon, $plati);
+    $printResult = enqueueBillPrintJobs($conn, $docId, $bon, $plati, $cui);
     if ($printResult === false) {
+        $printErr = sqlsrv_errors();
         sqlsrv_rollback($conn);
-        return ["status" => "error", "message" => "Eroare inscriere in coada de tiparire: " . sqlsrv_errors()[0]['message'], "http" => 500];
+        $printMsg = $printErr ? $printErr[0]['message'] : 'eroare necunoscuta';
+        return ["status" => "error", "message" => "Eroare inscriere in coada de tiparire: " . $printMsg, "http" => 500];
+    }
+
+    // Scriem, tot in aceeasi tranzactie, comanda de export catre serverul extern
+    // (temp_Send_Sql, Preluat = 0). Serviciul Python (sync-service) o executa pe
+    // serverul din tblConectare si marcheaza Preluat = 1.
+    $sendResult = enqueueBillSendSql($conn, $docId, $bon, $plati);
+    if ($sendResult === false) {
+        $sendErr = sqlsrv_errors();
+        sqlsrv_rollback($conn);
+        $sendMsg = $sendErr ? $sendErr[0]['message'] : 'eroare necunoscuta';
+        return ["status" => "error", "message" => "Eroare inscriere coada server: " . $sendMsg, "http" => 500];
     }
 
     sqlsrv_commit($conn);
     wakePrintService();
+    if ($sendResult !== null) {
+        wakeSyncService();
+    }
 
-    return ["status" => "success", "message" => "Bonul a fost inchis", "docId" => $docId, "print" => $printResult];
+    return [
+        "status" => "success",
+        "message" => "Bonul a fost inchis",
+        "docId" => $docId,
+        "print" => $printResult,
+        "send" => $sendResult
+    ];
 }
 
 /**
@@ -504,16 +590,37 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title, $isProforma = f
             if ($discountLinie) { $itemsByKey[$key]["discountLinie"] = true; }
         }
 
-        $fiscalItems[] = ["cant" => $cant, "denumire" => $den, "pret" => $pv, "cota" => $cota];
+        $fiscalItems[] = [
+            "cant" => $cant,
+            "denumire" => $den,
+            "pret" => $pv,
+            "pvc" => $pvc,
+            "cota" => $cota,
+            "discountLinie" => $discountLinie
+        ];
     }
 
     // Liniile cumulate (sarim peste produsele anulate integral -> cantitate 0).
+    $fiscalItemsNet = [];
     foreach ($itemsByKey as $it) {
         if (abs($it["cant"]) < 0.0001) { continue; }
         $it["cant"] = round($it["cant"], 3);
         $it["valoare"] = round($it["valoare"], 2);
         $it["valoareOriginala"] = round($it["valoareOriginala"], 2);
         $items[] = $it;
+
+        // Varianta "fara discount si fara stornare" pentru casa de marcat:
+        // o singura linie per produs, cu cantitatea neta (storno deja scazut)
+        // si pretul net (discountul inclus in pret, fara comanda separata).
+        $pretNet = ($it["cant"] != 0.0) ? ($it["valoare"] / $it["cant"]) : 0.0;
+        $fiscalItemsNet[] = [
+            "cant" => $it["cant"],
+            "denumire" => $it["denumire"],
+            "pret" => $pretNet,
+            "pvc" => $pretNet,
+            "cota" => $it["tva"],
+            "discountLinie" => false
+        ];
     }
 
     // 3. Formele de plata (FPID -> denumire)
@@ -571,6 +678,7 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title, $isProforma = f
     return [
         "nota" => $notaPayload,
         "fiscalItems" => $fiscalItems,
+        "fiscalItemsNet" => $fiscalItemsNet,
         "plati" => $platiArr
     ];
 }
@@ -580,7 +688,7 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title, $isProforma = f
  * casei de marcat. Ruleaza in tranzactia apelantului (closeBill) si nu face
  * commit. Intoarce array-ul cu JobID-uri sau false la eroare.
  */
-function enqueueBillPrintJobs($conn, $docId, $bon, $plati) {
+function enqueueBillPrintJobs($conn, $docId, $bon, $plati, $cui = '') {
     $fastfood = (getTipVanz($conn) === "fastfood");
 
     $data = buildBillPrintData($conn, $docId, $bon, $plati, "NOTA DE PLATA");
@@ -593,31 +701,74 @@ function enqueueBillPrintJobs($conn, $docId, $bon, $plati) {
         if ($notaJob === false) { return false; }
     }
 
-    $fiscalLines = buildFiscalText($data['fiscalItems'], $data['plati']);
-    $fiscalJob = enqueuePrintJob($conn, 'fiscal', $docId, null, [
+    // Implicit bonul fiscal nu arata discountul si nici stornarea: se folosesc
+    // cantitatile/preturile nete (fara comenzi de discount, fara linii de
+    // storno). Setarea tblSet.BonFiscalDiscStorno = 1 reactiveaza modul detaliat.
+    $tipCasa = getTipCasaMarcat($conn);
+    $fiscalItems = getBonFiscalDiscStorno($conn) ? $data['fiscalItems'] : $data['fiscalItemsNet'];
+    $fiscalLines = buildFiscalText($fiscalItems, $data['plati'], $tipCasa, getTvaNrMap($conn), $cui);
+    // Datecs foloseste fisiere .inp (driver FiscalWire), FiscalNet .txt.
+    $fiscalExt = ($tipCasa === 'datecs') ? '.inp' : '.txt';
+    $fiscalPayload = [
         "lines" => $fiscalLines,
-        "filename" => "doc" . (int)$docId . "_" . date('YmdHis') . ".txt"
-    ]);
+        "filename" => "doc" . (int)$docId . "_" . date('YmdHis') . $fiscalExt
+    ];
+    // Folderul monitorizat de driver (tblSet.CaleFisierComenziECR): serviciul de
+    // tiparire copiaza fisierul de comenzi si acolo, ca sa fie procesat.
+    $caleComenzi = getCaleFisierComenziECR($conn);
+    if ($caleComenzi !== '') { $fiscalPayload["copy_dir"] = $caleComenzi; }
+    $fiscalJob = enqueuePrintJob($conn, 'fiscal', $docId, null, $fiscalPayload);
     if ($fiscalJob === false) { return false; }
 
     return ["nota" => $notaJob, "fiscal" => $fiscalJob];
 }
 
 /**
- * Grupa de TVA pentru casa de marcat (Datecs): 1 = 19%, 2 = 9%, 3 = 5%.
- * Extensibila pe masura ce se configureaza casa reala.
+ * Harta cotei de TVA -> Nr_TVA pentru casa de marcat (tblTVA). In procedura
+ * veche: Nr_TVA = DLookup("Nr_TVA","tblTVA","Cota=" & TVAc). Ex. la aceasta
+ * instalare: 1 = 21%, 2 = 11%, 3 = 0%.
  */
-function fiscalTvaGroup($cota) {
-    if (abs($cota - 19) < 0.01) { return 1; }
-    if (abs($cota - 9) < 0.01) { return 2; }
-    if (abs($cota - 5) < 0.01) { return 3; }
-    return 1;
+function getTvaNrMap($conn) {
+    static $cache = null;
+    if ($cache !== null) { return $cache; }
+    $cache = [];
+    $stmt = sqlsrv_query($conn, "SELECT Nr_TVA, Cota FROM tblTVA");
+    if ($stmt) {
+        while ($r = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+            $cache[(string)(int)round((float)$r['Cota'])] = (int)$r['Nr_TVA'];
+        }
+    }
+    return $cache;
 }
 
 /**
- * Codul de plata pentru casa de marcat, dedus din denumirea formei de plata.
+ * Nr_TVA-ul casei de marcat pentru o cota de TVA. Fallback 1 (ca Nz(...,1)
+ * din procedura veche) cand cota nu exista in tblTVA.
  */
-function fiscalPaymentCode($denumire) {
+function tvaNrFor($tvaMap, $cota) {
+    $k = (string)(int)round((float)$cota);
+    return isset($tvaMap[$k]) ? (int)$tvaMap[$k] : 1;
+}
+
+/**
+ * Codul de plata pentru casa de marcat (Datecs). Se foloseste direct FPID-ul
+ * din tblFP (transmis in $platiArr), care este enumerarea aplicatiei
+ * (0 = Numerar, 1 = Card, 2 = CEC, 3 = Tichet, 4 = OP, 5 = Voucher).
+ * Fallback pe denumire doar cand FPID lipseste sau nu e numeric.
+ */
+function fiscalPaymentCode(array $plata) {
+    $fpid = $plata['fpid'] ?? null;
+    if ($fpid !== null && $fpid !== '' && is_numeric($fpid) && (int)$fpid >= 0) {
+        return (int)$fpid;
+    }
+    return fiscalPaymentCodeByName((string)($plata['denumire'] ?? ''));
+}
+
+/**
+ * Rezerva: codul de plata dedus din denumirea formei de plata, folosit doar
+ * cand FPID-ul lipseste.
+ */
+function fiscalPaymentCodeByName($denumire) {
     $d = mb_strtolower((string)$denumire);
     if (mb_strpos($d, 'card') !== false) { return 2; }
     if (mb_strpos($d, 'ticket') !== false || mb_strpos($d, 'bon') !== false) { return 3; }
@@ -626,28 +777,247 @@ function fiscalPaymentCode($denumire) {
 }
 
 /**
- * Construieste liniile de text pentru driver-ul casei de marcat.
- * Format de referinta Datecs / FiscalNet:
- *   S,Denumire,Pret,Cantitate,Departament,GrupaTVA,1,0
- *   T,CodPlata,Suma
+ * Normalizeaza codul fiscal al clientului (CUI): majuscule, fara spatii si
+ * fara alte caractere decat litere/cifre (ex. "ro 12 345" -> "RO12345").
+ * Intoarce '' cand nu ramane nimic valid.
  */
-function buildFiscalText($items, $platiArr) {
+function normalizeCui($raw) {
+    $t = strtoupper(trim((string)$raw));
+    $t = preg_replace('/[^A-Z0-9]/', '', $t);
+    return mb_substr($t, 0, 14);
+}
+
+/**
+ * Valideaza codul fiscal (CUI/CIF) prin cifra de control (algoritmul ANAF),
+ * ignorand prefixul RO si caracterele non-numerice. Intoarce true/false.
+ */
+function validateCui($cui) {
+    $cui = preg_replace('/[^0-9]/', '', (string)$cui);
+    if (strlen($cui) < 2 || strlen($cui) > 10) { return false; }
+
+    $cifraControlOriginala = (int)substr($cui, -1);
+    $cuiFaraControl = substr($cui, 0, -1);
+
+    $cheie = [7, 5, 3, 2, 1, 7, 5, 3, 2];
+    $cheieAjustata = array_slice($cheie, -strlen($cuiFaraControl));
+
+    $suma = 0;
+    $len = strlen($cuiFaraControl);
+    for ($i = 0; $i < $len; $i++) {
+        $suma += (int)$cuiFaraControl[$i] * $cheieAjustata[$i];
+    }
+
+    $rest = ($suma * 10) % 11;
+    $cifraControlCalculata = ($rest === 10) ? 0 : $rest;
+
+    return $cifraControlCalculata === $cifraControlOriginala;
+}
+
+/**
+ * Curata un text pentru fisierul de comenzi Datecs (.inp): elimina separatorul
+ * ";" si caracterele de linie noua, il trece in majuscule, il limiteaza la
+ * $len caractere si il completeaza cu spatii la dreapta pana la $len (in
+ * procedura veche denumirea era un camp fixed-width citit cu Left(UCase(...)),
+ * deci aparea completata cu spatii).
+ */
+function fiscalDatecsText($text, $len = 22) {
+    $t = trim((string)$text);
+    $t = str_replace(["\r", "\n", ";", ","], [" ", " ", " ", " "], $t);
+    $t = mb_substr(mb_strtoupper($t), 0, $len);
+    $pad = $len - mb_strlen($t);
+    if ($pad > 0) { $t .= str_repeat(' ', $pad); }
+    return $t;
+}
+
+/**
+ * Construieste fisierul de comenzi Datecs in formatul .inp folosit de
+ * FiscalWire (preluat din procedura veche SendtoDatecs):
+ *   H,1,______,_,__;                                  (antet)
+ *   S,1,______,_,__;DEN;PRET;CANT;1;1;NrTVA;0;0;      (vanzare; storno = cant negativa)
+ *   C,1,______,_,__;1;PROCENT_X100;;;;                (discount pe linie)
+ *   T,1,______,_,__;COD_PLATA;SUMA;;;;                (incasare)
+ * (linia F de subsol era comentata in procedura veche, deci nu se scrie)
+ * PRET este pretul de catalog (PVC) cu 2 zecimale, CANT are 3 zecimale, iar
+ * discountul se scrie ca procent simplu (ex. 5.00 = 5%), conform manualului
+ * FiscalWire (pg. 22), nu procent * 100.
+ */
+function buildFiscalTextDatecs($items, $platiArr, $tvaMap = [], $cui = '') {
     $lines = [];
+    $lines[] = "H,1,______,_,__;";
+
+    // Codul fiscal al clientului (CUI), inainte de prima linie de vanzare.
+    if ($cui !== '') {
+        $lines[] = "K,1,______,_,__;{$cui};";
+    }
+
+    $hasItems = false;
     foreach ($items as $it) {
         $cant = (float)$it['cant'];
         if (abs($cant) < 0.0001) { continue; }
-        $den = mb_substr(trim((string)$it['denumire']), 0, 32);
-        $den = str_replace([",", "\r", "\n"], [" ", "", ""], $den);
-        $pret = number_format((float)$it['pret'], 2, '.', '');
+        $hasItems = true;
+
+        $pv = (float)$it['pret'];
+        $pvc = (float)($it['pvc'] ?? $it['pret']);
+        $den = fiscalDatecsText($it['denumire'], 22);
+        $nrTva = tvaNrFor($tvaMap, (float)$it['cota']);
+        $pret = number_format($pvc, 2, '.', '');
         $q = number_format($cant, 3, '.', '');
-        $grupa = fiscalTvaGroup((float)$it['cota']);
-        $lines[] = "S,{$den},{$pret},{$q},1,{$grupa},1,0";
+        $lines[] = "S,1,______,_,__;{$den};{$pret};{$q};1;1;{$nrTva};0;0;";
+
+        // Discount pe linie. In modul implicit pretul e deja net (PVC = PV),
+        // deci nu se scrie nicio comanda C. In modul detaliat se scrie procentul
+        // simplu (ex. 5.00 = 5%), conform manualului FiscalWire.
+        if ($pvc > 0.0001) {
+            $ratio = round(round($pvc - $pv, 2) / $pvc, 4);
+            $prRed = 100 * $ratio;
+            if ($prRed > 0.0001) {
+                $val = number_format($prRed, 2, '.', '');
+                $lines[] = "C,1,______,_,__;1;{$val};;;;";
+            }
+        }
+    }
+
+    if (!$hasItems) {
+        // Bon fara articole: o singura plata 0 (ca in procedura veche).
+        $lines[] = "T,1,______,_,__;0;;;;;";
+        return $lines;
+    }
+
+    // Platile, in ordine descrescatoare dupa cod (procedura veche: For j = 6 To 0).
+    $plati = array_values(array_filter($platiArr, function ($p) {
+        return (float)($p['suma'] ?? 0) > 0.0001;
+    }));
+    usort($plati, function ($a, $b) {
+        return fiscalPaymentCode($b) <=> fiscalPaymentCode($a);
+    });
+    foreach ($plati as $p) {
+        $cod = fiscalPaymentCode($p);
+        $suma = number_format((float)$p['suma'], 2, '.', '');
+        $lines[] = "T,1,______,_,__;{$cod};{$suma};;;;";
+    }
+
+    return $lines;
+}
+
+/**
+ * Construieste liniile de text pentru driver-ul casei de marcat.
+ * Datecs = formatul .inp (buildFiscalTextDatecs), FiscalNet = formatul dedicat
+ * (buildFiscalTextFiscalNet, conform FiscalNet.pdf).
+ */
+function buildFiscalText($items, $platiArr, $tipCasa = 'datecs', $tvaMap = [], $cui = '') {
+    if ($tipCasa === 'fiscalnet') {
+        return buildFiscalTextFiscalNet($items, $platiArr, $tvaMap, $cui);
+    }
+    return buildFiscalTextDatecs($items, $platiArr, $tvaMap, $cui);
+}
+
+/**
+ * Codul de plata pentru casa de marcat FiscalNet (comanda P^TipPlata^Valoare).
+ * Driverul FiscalNet foloseste coduri 1-based (1 = Numerar, 2 = Card, ...),
+ * in timp ce FPID-ul din tblFP este 0-based (0 = Numerar, 1 = Card, 2 = CEC,
+ * 3 = Tichet, 4 = OP, 5 = Voucher), deci se aplica offset +1.
+ * Fallback pe denumire cand FPID lipseste sau nu e numeric.
+ */
+function fiscalPaymentCodeFiscalNet(array $plata) {
+    $fpid = $plata['fpid'] ?? null;
+    if ($fpid !== null && $fpid !== '' && is_numeric($fpid) && (int)$fpid >= 0) {
+        return (int)$fpid + 1;
+    }
+    return fiscalPaymentCodeFiscalNetByName((string)($plata['denumire'] ?? ''));
+}
+
+/**
+ * Rezerva: codul de plata FiscalNet dedus din denumirea formei de plata,
+ * folosit doar cand FPID-ul lipseste. 1 = Numerar, 2 = Card, 3 = Credit,
+ * 4 = Tichet masa, 5 = Tichet valoric, 6 = Voucher.
+ */
+function fiscalPaymentCodeFiscalNetByName($denumire) {
+    $d = mb_strtolower(trim((string)$denumire));
+    if (mb_strpos($d, 'card') !== false) { return 2; }
+    if (mb_strpos($d, 'tichet masa') !== false || mb_strpos($d, 'ticket masa') !== false) { return 4; }
+    if (mb_strpos($d, 'tichet valoric') !== false || mb_strpos($d, 'ticket valoric') !== false) { return 5; }
+    if (mb_strpos($d, 'voucher') !== false) { return 6; }
+    if (mb_strpos($d, 'credit') !== false) { return 3; }
+    if (mb_strpos($d, 'numerar') !== false || mb_strpos($d, 'cash') !== false) { return 1; }
+    return 1;
+}
+
+/**
+ * Formateaza o valoare pentru casa de marcat FiscalNet: numar intreg fara
+ * delimitator zecimal, scalat (ex. 10.00 RON -> 1000, 1 -> 1000, 4.15 -> 415).
+ * $decimals = 2 pentru pret/discount/plata, 3 pentru cantitate.
+ */
+function fiscalNetAmount($value, $decimals) {
+    $factor = ($decimals === 3) ? 1000 : 100;
+    return (string)(int)round(((float)$value) * $factor);
+}
+
+/**
+ * Curata un text destinat fisierului FiscalNet: elimina separatorul "^" si
+ * caracterele de linie noua, care ar strica structura comenzii.
+ */
+function fiscalNetText($text) {
+    $t = trim((string)$text);
+    $t = str_replace(["\r", "\n", "^"], [" ", " ", " "], $t);
+    return mb_substr($t, 0, 32);
+}
+
+/**
+ * Construieste fisierul de comenzi pentru driver-ul FiscalNet (FiscalNet.pdf).
+ * Separatorul este "^", iar valorile se scriu fara delimitator zecimal, scalate:
+ *   S^Denumire^Pret^Cantitate^UM^GRTVA^GRDEP     (vanzare)
+ *   VS^Denumire^Pret^Cantitate^UM^GRTVA^GRDEP    (voidare / storno)
+ *   DV^Valoare / MV^Valoare                      (discount/majorare valoric)
+ *   ST^                                          (subtotal)
+ *   P^TipPlata^Valoare                           (incasare)
+ * Comenzile de discount/majorare se scriu obligatoriu imediat sub articolul la
+ * care se aplica.
+ */
+function buildFiscalTextFiscalNet($items, $platiArr, $tvaMap = [], $cui = '') {
+    $lines = [];
+    // Codul fiscal al clientului (CUI), inainte de prima linie de vanzare.
+    if ($cui !== '') {
+        $lines[] = "CF^{$cui}";
+    }
+    $hasItems = false;
+
+    foreach ($items as $it) {
+        $cant = (float)$it['cant'];
+        if (abs($cant) < 0.0001) { continue; }
+        $hasItems = true;
+
+        $pv = (float)$it['pret'];
+        $pvc = (float)($it['pvc'] ?? $it['pret']);
+        $den = fiscalNetText($it['denumire']);
+        $grupa = tvaNrFor($tvaMap, (float)$it['cota']);
+        $pretStr = fiscalNetAmount($pvc, 2);
+        $cantStr = fiscalNetAmount(abs($cant), 3);
+
+        // Linie de storno: comanda de voidare (VS), cu cantitate pozitiva.
+        if ($cant < 0) {
+            $lines[] = "VS^{$den}^{$pretStr}^{$cantStr}^buc^{$grupa}^1";
+            continue;
+        }
+
+        $lines[] = "S^{$den}^{$pretStr}^{$cantStr}^buc^{$grupa}^1";
+
+        // Discount/majorare pe linie, imediat sub articol (obligatoriu).
+        $diff = $pvc - $pv;
+        if (abs($diff) >= 0.0001) {
+            $valStr = fiscalNetAmount(abs($diff) * abs($cant), 2);
+            $lines[] = ($diff > 0 ? "DV^{$valStr}" : "MV^{$valStr}");
+        }
+    }
+
+    if ($hasItems) {
+        $lines[] = "ST^";
     }
     foreach ($platiArr as $p) {
-        $cod = fiscalPaymentCode($p['denumire']);
-        $suma = number_format((float)$p['suma'], 2, '.', '');
-        $lines[] = "T,{$cod},{$suma}";
+        $cod = fiscalPaymentCodeFiscalNet($p);
+        $suma = fiscalNetAmount((float)$p['suma'], 2);
+        $lines[] = "P^{$cod}^{$suma}";
     }
+
     return $lines;
 }
 
@@ -906,7 +1276,8 @@ switch ($action) {
     case 'close_bill':
         $docId = (int)($input['docId'] ?? 0);
         $plati = $input['plati'] ?? [];
-        $result = closeBill($conn, $docId, $plati);
+        $cui = $input['cui'] ?? '';
+        $result = closeBill($conn, $docId, $plati, $cui);
         $http = $result['http'] ?? 200;
         unset($result['http']);
         sendJsonResponse($result, $http);
@@ -1260,6 +1631,14 @@ switch ($action) {
         if ($scope === 'line') {
             $lineComment = ($motiv !== null && $motiv !== '') ? $motiv : 'Discount produs';
         } else {
+            // Discountul pe subtotal: motivul apartine notei (tblBonCurent),
+            // nu liniilor, ca sa nu fie confundat cu un discount de produs
+            // (care se evidentiaza pe linie prin tblNoteD.[Comment]).
+            ensureBillDiscountMotiveColumn($conn);
+            $billMotiv = ($motiv !== null && $motiv !== '') ? $motiv : 'Discount nota';
+            if (!sqlsrv_query($conn, "UPDATE tblBonCurent SET MotivDiscount = ? WHERE DocID = ?", [$billMotiv, $docId])) {
+                sendJsonResponse(["status" => "error", "message" => "Eroare salvare motiv discount: " . sqlsrv_errors()[0]['message']], 500);
+            }
             $sqlReset = "UPDATE tblNoteD SET PV = COALESCE(PVC, PV), [Comment] = NULL WHERE DocID = ? AND Cant > 0";
             if (!sqlsrv_query($conn, $sqlReset, [$docId])) {
                 sendJsonResponse(["status" => "error", "message" => "Eroare resetare discount: " . sqlsrv_errors()[0]['message']], 500);

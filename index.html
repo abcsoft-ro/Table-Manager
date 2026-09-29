@@ -131,7 +131,7 @@
       <div class="bottom-actions-bar">
         <button class="act-btn" id="btn-marcare" onclick="actionMarcare()">Marcare</button>
         <button class="act-btn red-text" onclick="actionNota()">NOTA</button>
-        <button class="act-btn" onclick="actionModPreparare()">Mod<br>Preparare</button>
+        <button class="act-btn" id="btn-mod-preparare" onclick="actionModPreparare()">Mod<br>Preparare</button>
         <button class="act-btn js-discount-btn" onclick="actionDiscount()">Discount</button>
         <button class="act-btn vd-btn" onclick="actionVoid()">VD</button>
         <button class="act-btn" onclick="actionQty()">QTY</button>
@@ -244,7 +244,7 @@
       <div class="bottom-actions-bar">
         <button class="act-btn" id="btn-transfer" onclick="actionTransfer()">Transfer</button>
         <button class="act-btn js-discount-btn" onclick="actionDiscount()">Discount</button>
-        <button class="act-btn" onclick="actionCUI()">CUI</button>
+        <button class="act-btn" id="btn-cui" onclick="openCuiModal()">CUI</button>
         <button class="act-btn" id="btn-proforma" onclick="actionProforma()">Nota<br>Proforma</button>
         <div class="act-spacer"></div>
         <button class="act-btn" onclick="navigateToScreen('screen-marcare')">Inapoi</button>
@@ -309,6 +309,7 @@
         <button class="prog-btn" onclick="progAction('Conectare server')">Conectare server</button>
         <button class="prog-btn" onclick="progAction('Sincronizare produse')">Sincronizare produse</button>
         <button class="prog-btn" onclick="openPrintQueue()">Coada printare</button>
+        <button class="prog-btn" onclick="openSendQueue()">Coada export</button>
       </div>
     </div>
 
@@ -1272,12 +1273,6 @@
           <label for="disc-motiv-select">MOTIV / OBSERVATII (optional)</label>
           <select id="disc-motiv-select" class="disc-motiv-select">
             <option value="">— selectati motivul —</option>
-            <option value="Protocol">Protocol</option>
-            <option value="Inlocuire preparat">Inlocuire preparat</option>
-            <option value="Membru fidelitate">Membru fidelitate</option>
-            <option value="Angajat">Angajat</option>
-            <option value="Card fidelitate">Card fidelitate</option>
-            <option value="Altele">Altele</option>
           </select>
         </div>
 
@@ -1344,11 +1339,6 @@
           <label for="void-motiv-select">MOTIV ANULARE</label>
           <select id="void-motiv-select" class="disc-motiv-select">
             <option value="">— selectati motivul —</option>
-            <option value="Retur client">Retur client</option>
-            <option value="Greseala ospatar">Greseala ospatar</option>
-            <option value="Lipsa stoc">Lipsa stoc</option>
-            <option value="Comanda gresita">Comanda gresita</option>
-            <option value="Altele">Altele</option>
           </select>
         </div>
         <div class="disc-motiv" id="void-parola-box">
@@ -1623,6 +1613,41 @@
     </div>
   </div>
 
+  <!-- Modal COD FISCAL CLIENT (CUI) pentru bonul fiscal -->
+  <div class="modal-keyboard-overlay" id="modal-cui">
+    <div class="keyboard-dialog qty-dialog">
+      <div class="keyboard-dialog-header">
+        <span>COD FISCAL CLIENT</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeCuiModal()">Inchide</button>
+      </div>
+      <div class="keyboard-body">
+        <div class="cui-label">Cod Fiscal</div>
+        <input type="text" id="cui-display" class="keyboard-input-display" value="" autocomplete="off"
+               oninput="cuiInput()" onkeydown="if(event.key==='Enter'){event.preventDefault();cuiOk();}">
+        <div class="cui-error" id="cui-error"></div>
+        <div class="cui-numpad">
+          <button class="qty-key" onclick="cuiKey('7')">7</button>
+          <button class="qty-key" onclick="cuiKey('8')">8</button>
+          <button class="qty-key" onclick="cuiKey('9')">9</button>
+          <button class="qty-key qty-fn" onclick="cuiClear()">C</button>
+
+          <button class="qty-key" onclick="cuiKey('4')">4</button>
+          <button class="qty-key" onclick="cuiKey('5')">5</button>
+          <button class="qty-key" onclick="cuiKey('6')">6</button>
+          <button class="qty-key qty-ok cui-ok" onclick="cuiOk()">OK</button>
+
+          <button class="qty-key" onclick="cuiKey('1')">1</button>
+          <button class="qty-key" onclick="cuiKey('2')">2</button>
+          <button class="qty-key" onclick="cuiKey('3')">3</button>
+
+          <button class="qty-key cui-zero" onclick="cuiKey('0')">0</button>
+          <button class="qty-key cui-ro" onclick="cuiRo()">RO</button>
+        </div>
+        <button class="act-btn cui-remove" onclick="cuiRemove()">Fara cod fiscal</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal CONFIRMARE generica (in-app, fara dialog nativ) -->
   <div class="modal-keyboard-overlay" id="modal-confirm">
     <div class="transfer-dialog" style="max-width: 440px;">
@@ -1747,6 +1772,65 @@
     </div>
   </div>
 
+  <!-- Modal COADA EXPORT (temp_Send_Sql - bonuri catre serverul extern) -->
+  <div class="modal-keyboard-overlay" id="modal-send-queue">
+    <div class="transfer-dialog" style="width: 720px;">
+      <div class="keyboard-dialog-header">
+        <span>COADA EXPORT BONURI</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeSendQueue()">Inchide</button>
+      </div>
+      <div class="transfer-body">
+        <div class="transfer-subtitle">Bonuri trimise catre serverul extern: in asteptare, esuate sau trimise</div>
+        <div class="printq-wrap">
+          <table class="printq-table">
+            <colgroup>
+              <col style="width: 52px;">
+              <col style="width: 90px;">
+              <col style="width: 80px;">
+              <col style="width: 78px;">
+              <col style="width: 150px;">
+              <col>
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="printq-num">Id</th>
+                <th>Doc</th>
+                <th>Stare</th>
+                <th class="printq-num">Incercari</th>
+                <th>Creat</th>
+                <th>Ultima eroare</th>
+              </tr>
+            </thead>
+            <tbody id="sendq-list"></tbody>
+          </table>
+        </div>
+        <div class="tva-actions">
+          <button class="act-btn" onclick="refreshSendQueue()">Reincarca</button>
+          <button class="act-btn" id="btn-sendq-view" onclick="viewSendJob()" disabled>Comanda SQL</button>
+          <button class="act-btn" id="btn-sendq-retry" onclick="retrySendJob()" disabled>Retry</button>
+          <button class="act-btn" id="btn-sendq-del" onclick="deleteSendJob()" disabled>Sterge</button>
+          <button class="act-btn" onclick="clearDoneSendJobs()">Goleste trimise</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal COMANDA SQL (comanda de export catre server) -->
+  <div class="modal-keyboard-overlay" id="modal-send-detail">
+    <div class="transfer-dialog" style="max-width: 820px;">
+      <div class="keyboard-dialog-header">
+        <span id="send-det-title">COMANDA EXPORT</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeSendDetail()">Inchide</button>
+      </div>
+      <div class="transfer-body" style="align-items: stretch;">
+        <pre id="send-det-content" style="white-space: pre-wrap; word-break: break-word; font-family: Consolas, monospace; font-size: 12px; color: #ddd; background: #2b2b2b; padding: 10px; border-radius: 4px; max-height: 420px; overflow: auto; margin: 0;"></pre>
+        <div class="tva-actions">
+          <button class="act-btn" onclick="closeSendDetail()">Inchide</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal PREVIEW BON (emulator ESC/POS) -->
   <div class="modal-keyboard-overlay" id="modal-print-preview">
     <div class="transfer-dialog" style="max-width: 780px;">
@@ -1770,8 +1854,24 @@
       <div class="transfer-body" style="align-items: stretch;">
         <div id="raport-content" class="raport-content"></div>
         <div class="tva-actions">
-          <button class="act-btn" onclick="printCurrentReport()">Tipareste</button>
+          <button class="act-btn" id="raport-print-btn" onclick="printCurrentReport()">Tipareste</button>
           <button class="act-btn" onclick="closeReportModal()">Inchide</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal DETALIU NOTA (raportul "Note") -->
+  <div class="modal-keyboard-overlay" id="modal-nota-detail">
+    <div class="transfer-dialog" style="width: 900px;">
+      <div class="keyboard-dialog-header">
+        <span id="nota-det-title">NOTA</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeNoteDetail()">Inchide</button>
+      </div>
+      <div class="transfer-body" style="align-items: stretch;">
+        <div id="nota-det-content" class="raport-content"></div>
+        <div class="tva-actions">
+          <button class="act-btn" onclick="closeNoteDetail()">Inapoi</button>
         </div>
       </div>
     </div>
@@ -1783,6 +1883,6 @@
   </div><!-- /#pos-stage -->
 
   <!-- Script aplicatie -->
-  <script src="js/pos.js?v=20260929a"></script>
+  <script src="js/pos.js?v=20260929h"></script>
 </body>
 </html>

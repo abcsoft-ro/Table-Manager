@@ -6,6 +6,7 @@ La esec reincearca cu backoff, pana cand imprimanta revine.
 """
 
 import json
+import os
 import ssl
 import threading
 import time
@@ -230,6 +231,23 @@ def build_fiscal_bytes(payload, cfg):
         return transliterate(text).encode("ascii", "replace")
 
 
+def copy_fiscal_file(payload, data, dest_dir, cfg):
+    """Copiaza fisierul de comenzi in folderul monitorizat de driver.
+
+    Ridica TargetError la esec, ca jobul sa fie reincercat cu backoff - driverul
+    casei de marcat trebuie sa primeasca fisierul.
+    """
+    name = payload.get("filename") or ("fiscal_%d.txt" % int(time.time()))
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+        path = os.path.join(dest_dir, name)
+        with open(path, "wb") as fh:
+            fh.write(data)
+    except OSError as exc:
+        raise TargetError("Nu pot copia fisierul fiscal in '%s': %s" % (dest_dir, exc))
+    return "copiat in %s" % path
+
+
 # --------------------------------------------------------------- procesare
 def process_job(cfg, job):
     """Construieste si livreaza un job. Ridica la esec."""
@@ -248,7 +266,13 @@ def process_job(cfg, job):
         target.setdefault("dir", cfg["fiscal_spool_dir"])
         if payload.get("filename") and not target.get("filename"):
             target["filename"] = payload["filename"]
-        return deliver(target, data, cfg, job.get("JobID"))
+        msg = deliver(target, data, cfg, job.get("JobID"))
+        # Copiem fisierul de comenzi si in folderul monitorizat de driverul casei
+        # de marcat (tblSet.CaleFisierComenziECR), de unde este procesat.
+        copy_dir = payload.get("copy_dir")
+        if copy_dir:
+            msg = "%s; %s" % (msg, copy_fiscal_file(payload, data, copy_dir, cfg))
+        return msg
 
     if tip == "kitchen":
         data = build_kitchen(payload, cfg)

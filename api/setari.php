@@ -116,6 +116,15 @@ function ensureSetariMeta($conn) {
         );
     }
 
+    // Motivele de discount si de stornare: liste editabile, separate prin
+    // punct si virgula. Sunt afisate ca optiuni in casetele Discount si VD.
+    ensureSetariValue($conn, 'MotivDiscount',
+        'Protocol;Inlocuire preparat;Membru fidelitate;Angajat;Card fidelitate;Altele',
+        "Motivele de discount oferite in caseta de discount. Valorile sunt separate prin punct si virgula (;).", 'General');
+    ensureSetariValue($conn, 'MotivStornare',
+        'Retur client;Greseala ospatar;Lipsa stoc;Comanda gresita;Altele',
+        "Motivele de anulare (stornare) oferite in caseta VD. Valorile sunt separate prin punct si virgula (;).", 'General');
+
     // Casa de marcat fiscala: tipul casei + caile fisierelor de comenzi/raspuns.
     ensureSetariValue($conn, 'TipCasaMarcat', 'Datecs',
         "Tipul casei de marcat fiscale: Datecs, FiscalNet sau Tremol.", 'Casa');
@@ -123,6 +132,8 @@ function ensureSetariMeta($conn) {
         "Folderul in care se scriu fisierele de comenzi catre casa de marcat fiscala.", 'Casa');
     ensureSetariValue($conn, 'CaleFisierRaspunsECR', 'C:\\POS\\fiscal\\raspuns',
         "Folderul in care casa de marcat fiscala scrie fisierele de raspuns.", 'Casa');
+    ensureSetariValue($conn, 'BonFiscalDiscStorno', '0',
+        "Afiseaza discountul si stornarea pe bonul fiscal: 1 = DA, 0 = NU (implicit). La 0 bonul contine doar cantitatile si preturile nete, fara comenzi de discount si fara linii de storno.", 'Casa');
 
     // Afisaj client: activare + driver + folder comenzi.
     ensureSetariValue($conn, 'AfiseajClient', '1',
