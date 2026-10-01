@@ -1913,6 +1913,7 @@ function promptUpdateParola() {
 const SETARI_TABS = [
   { id: "general",    label: "General",    groups: ["Discount", "General"] },
   { id: "device",     label: "Device-uri", groups: ["Casa", "Afiseaj", "Cantar", "PoSbanca"] },
+  { id: "servicii",   label: "Servicii",   groups: [], special: true },
   { id: "altele",     label: "Altele",     groups: null } // null = toate cele neincluse mai sus
 ];
 
@@ -2471,6 +2472,15 @@ function renderSetariTab(tabId) {
   if (!wrap) return;
   wrap.innerHTML = "";
 
+  // Butonul Salveaza nu are sens pe tabul Servicii (fara campuri tblSet).
+  const saveBtn = document.getElementById("setari-save-btn");
+  if (saveBtn) saveBtn.style.visibility = (tabId === "servicii") ? "hidden" : "visible";
+
+  if (tabId === "servicii") {
+    renderServiciiTab(wrap);
+    return;
+  }
+
   const groups = setariGroupsForTab(tabId);
   const total = groups.reduce((n, g) => n + g.rows.length, 0);
 
@@ -2488,6 +2498,133 @@ function renderSetariTab(tabId) {
     }
     grp.rows.forEach(r => wrap.appendChild(setariField(r)));
   });
+}
+
+// --------------------------------------------------------------------------
+// SERVICII (print-service / sync-service): pornire / oprire / repornire
+// --------------------------------------------------------------------------
+const SERVICES_DEF = [
+  { key: "print", label: "Serviciu de tiparire (print-service)" },
+  { key: "sync",  label: "Serviciu de sincronizare (sync-service)" }
+];
+
+function renderServiciiTab(wrap) {
+  const info = document.createElement("div");
+  info.className = "setari-desc";
+  info.style.marginBottom = "12px";
+  info.textContent = "Serviciile locale ruleaza pe acest calculator. Pornirea, oprirea si repornirea se fac de aici.";
+  wrap.appendChild(info);
+
+  SERVICES_DEF.forEach(svc => {
+    const card = document.createElement("div");
+    card.className = "serviciu-card";
+
+    const head = document.createElement("div");
+    head.className = "serviciu-head";
+    const nume = document.createElement("span");
+    nume.className = "serviciu-nume";
+    nume.textContent = svc.label;
+    const badge = document.createElement("span");
+    badge.className = "serviciu-badge";
+    badge.id = "serviciu-badge-" + svc.key;
+    badge.textContent = "...";
+    head.appendChild(nume);
+    head.appendChild(badge);
+    card.appendChild(head);
+
+    const actions = document.createElement("div");
+    actions.className = "serviciu-actions";
+    [["start", "Porneste"], ["stop", "Opreste"], ["restart", "Reporneste"]].forEach(pair => {
+      const b = document.createElement("button");
+      b.className = "act-btn";
+      b.textContent = pair[1];
+      b.onclick = () => serviceAction(svc.key, pair[0], b);
+      actions.appendChild(b);
+    });
+    card.appendChild(actions);
+    wrap.appendChild(card);
+  });
+
+  const bar = document.createElement("div");
+  bar.className = "serviciu-actions";
+  bar.style.marginTop = "14px";
+  [["servicii-start-all", "Porneste toate", () => serviceAction("all", "start")],
+   ["servicii-restart-all", "Reporneste toate", () => serviceAction("all", "restart")],
+   ["servicii-refresh", "Reincarca starea", () => refreshServicesStatus(true)]].forEach(item => {
+    const b = document.createElement("button");
+    b.className = "act-btn";
+    b.id = item[0];
+    b.textContent = item[1];
+    b.onclick = item[2];
+    bar.appendChild(b);
+  });
+  wrap.appendChild(bar);
+
+  refreshServicesStatus();
+}
+
+async function refreshServicesStatus(showMessage) {
+  try {
+    const resp = await fetch("api/services.php?action=status", { cache: "no-store" });
+    const data = await resp.json();
+    if (data.status !== "success") throw new Error(data.message || "Eroare");
+    applyServicesStatus(data.services || {});
+    if (showMessage) showToast("Stare actualizata");
+  } catch (err) {
+    if (showMessage) appAlert("Eroare status servicii: " + err.message);
+  }
+}
+
+function applyServicesStatus(services) {
+  Object.keys(services).forEach(key => {
+    const badge = document.getElementById("serviciu-badge-" + key);
+    if (!badge) return;
+    const up = !!services[key].up;
+    badge.textContent = up ? "ONLINE" : "OFFLINE";
+    badge.className = "serviciu-badge " + (up ? "up" : "down");
+  });
+}
+
+function serviceLabel(key) {
+  const def = SERVICES_DEF.find(s => s.key === key);
+  return def ? def.label : key;
+}
+
+async function serviceAction(service, action, btn) {
+  const actiune = { start: "pornirea", stop: "oprirea", restart: "repornirea" }[action] || action;
+  const tinta = (service === "all") ? "tuturor serviciilor" : ("serviciului " + serviceLabel(service));
+  appConfirm(
+    "Confirmati " + actiune + " " + tinta + "?",
+    async () => {
+      const buttons = document.querySelectorAll("#setari-content button");
+      buttons.forEach(b => { b.disabled = true; });
+      const old = btn ? btn.textContent : null;
+      if (btn) btn.textContent = "...";
+      try {
+        showToast("Se executa: " + actiune + " ...");
+        const resp = await fetch("api/services.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ action: action, service: service })
+        });
+        const data = await resp.json();
+        applyServicesStatus(data.services || {});
+        if (data.status !== "success") {
+          appAlert(data.message || "Operatiunea nu a reusit");
+        } else {
+          showToast(data.message || "Gata");
+        }
+      } catch (err) {
+        appAlert("Eroare servicii: " + err.message);
+      } finally {
+        buttons.forEach(b => { b.disabled = false; });
+        if (btn && old !== null) btn.textContent = old;
+      }
+    },
+    "Da",
+    "Nu"
+  );
 }
 
 async function saveSetari() {

@@ -94,6 +94,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({
                 "status": "ok",
                 "service": "tablemanager-print",
+                "pid": os.getpid(),
                 "http_port": CFG.get("http_port"),
                 "api_base": CFG.get("api_base"),
                 "preview_dir": CFG.get("preview_dir"),
@@ -144,6 +145,12 @@ class Handler(BaseHTTPRequestHandler):
             WAKE.set()
             log("Config de tiparire actualizat (hot-reload).", CFG)
             self._json({"status": "success", "message": "Configurare salvata", "config": print_config_payload(CFG)})
+            return
+
+        if path == "/shutdown":
+            # Oprire linistita, declansata din Setari > Servicii (api/services.php).
+            self._json({"status": "ok", "message": "Oprire serviciu de tiparire"})
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
             return
 
         if path == "/test":

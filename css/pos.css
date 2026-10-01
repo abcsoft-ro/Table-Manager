@@ -1046,8 +1046,54 @@ body {
   padding: 10px;
 }
 
+/* Servicii (print-service / sync-service) */
+.serviciu-card {
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #f7f7f7;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.serviciu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.serviciu-nume {
+  font-size: 15px;
+  font-weight: 900;
+  color: #004080;
+}
+
+.serviciu-badge {
+  font-size: 13px;
+  font-weight: 900;
+  padding: 4px 12px;
+  border-radius: 12px;
+  color: #fff;
+  background: #888;
+}
+
+.serviciu-badge.up {
+  background: #0a8f2c;
+}
+
+.serviciu-badge.down {
+  background: #c01414;
+}
+
+.serviciu-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* ==========================================================================
-   MODAL TASTATURA VIRTUALE / AUTENTIFICARE (ecran_autentificare_selectie_masa2.PNG)
+   MODAL TASTATURA VIRTUALA / AUTENTIFICARE (ecran_autentificare_selectie_masa2.PNG)
    ========================================================================== */
 .modal-keyboard-overlay {
   display: none;

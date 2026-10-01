@@ -62,6 +62,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({
                 "status": "ok",
                 "service": "tablemanager-sync",
+                "pid": os.getpid(),
                 "http_port": cfg.get("http_port"),
                 "api_base": cfg.get("api_base"),
                 "db_driver": cfg.get("db_driver"),
@@ -87,6 +88,12 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/wake", "/health"):
             WAKE.set()
             self._json({"status": "ok", "message": "worker trezit"})
+            return
+
+        if path == "/shutdown":
+            # Oprire linistita, declansata din Setari > Servicii (api/services.php).
+            self._json({"status": "ok", "message": "Oprire serviciu de sincronizare"})
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
             return
 
         if path == "/config":
