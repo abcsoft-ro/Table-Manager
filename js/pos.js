@@ -1851,12 +1851,28 @@ async function doSyncProducts() {
 // UPDATE: descarca ultima versiune din GitHub (api/update.php)
 // Fisierele de configurare locale (config.json, db.local.php) nu sunt atinse.
 // --------------------------------------------------------------------------
+// Fetch JSON fara cache, cu eroare explicita daca serverul nu intoarce JSON
+// (ex. 404/500 HTML), ca sa nu apara "JSON.parse: unexpected character".
+async function fetchJsonNoStore(url, options) {
+  const resp = await fetch(url, Object.assign({ cache: "no-store" }, options || {}));
+  const text = await resp.text();
+  let data = null;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    const snippet = text.replace(/\s+/g, " ").trim().slice(0, 140);
+    throw new Error("HTTP " + resp.status + (snippet ? " - " + snippet : " - raspuns gol"));
+  }
+  if (data.status !== "success") {
+    throw new Error(data.message || ("HTTP " + resp.status));
+  }
+  return data;
+}
+
 async function runUpdate() {
   try {
     showToast("Verific versiunea disponibila...");
-    const resp = await fetch("api/update.php?check=1");
-    const data = await resp.json();
-    if (data.status !== "success") throw new Error(data.message || "Eroare verificare update");
+    const data = await fetchJsonNoStore("api/update.php?check=1");
 
     if (!data.updateAvailable) {
       appAlert("Ai deja ultima versiune (" + data.latest + ").");
@@ -1878,13 +1894,11 @@ function promptUpdateParola() {
   openNumericPrompt("PAROLA UPDATE", async (parola) => {
     try {
       showToast("Se descarca si se instaleaza actualizarea...");
-      const resp = await fetch("api/update.php", {
+      const res = await fetchJsonNoStore("api/update.php", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "apply", parola: parola })
       });
-      const res = await resp.json();
-      if (res.status !== "success") throw new Error(res.message);
       appAlert(res.message, () => location.reload());
     } catch (err) {
       appAlert("Eroare update: " + err.message);

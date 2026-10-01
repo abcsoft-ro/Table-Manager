@@ -14,6 +14,9 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/print_common.php';
 
+// Raspunsurile nu se memoreaza in cache (check/apply trebuie sa fie mereu proaspete).
+header('Cache-Control: no-store, no-cache, must-revalidate');
+
 define('UPDATE_REPO', 'abcsoft-ro/Table-Manager');
 define('UPDATE_BRANCH', 'main');
 
