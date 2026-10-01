@@ -286,6 +286,16 @@ function updateIsIgnored($rel) {
 }
 
 /**
+ * Fisiere protejate suplimentar: `api/db.php` este tratat ca fisier de
+ * configurare local (poate contine credențialele) cat timp nu exista
+ * `api/db.local.php`. Daca `db.local.php` exista, `db.php` este cod obisnuit
+ * si se actualizeaza normal.
+ */
+function updatePreserveExtra($rel, $root) {
+    return ($rel === 'api/db.php' && !is_file($root . '/api/db.local.php'));
+}
+
+/**
  * Copiaza un fisier sursa in $target, atomic (tmp + rename).
  */
 function updateWriteFile($source, $target) {
@@ -491,7 +501,7 @@ foreach ($it as $file) {
     if ($rel === '' || strpos($rel, '..') !== false) {
         continue;
     }
-    if (updateIsIgnored($rel)) {
+    if (updateIsIgnored($rel) || updatePreserveExtra($rel, $UPDATE_ROOT)) {
         $preserved[$rel] = true;
         continue;
     }
