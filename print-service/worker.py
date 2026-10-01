@@ -15,6 +15,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from cleanup import run_cleanup
 from config import printer_target
 from escpos import EscposBuilder, transliterate
 from targets import TargetError, deliver
@@ -365,8 +366,18 @@ def run_loop(cfg_provider, stop_event, wake_event):
     Setari > Imprimante sa se aplice fara repornirea serviciului."""
     get_cfg = cfg_provider if callable(cfg_provider) else (lambda: cfg_provider)
     log("Worker pornit. API: %s" % get_cfg()["api_base"], get_cfg())
+    next_cleanup = 0.0
     while not stop_event.is_set():
         cfg = get_cfg()
+
+        if time.time() >= next_cleanup:
+            try:
+                run_cleanup(cfg, lambda msg, c=cfg: log(msg, c))
+            except Exception as exc:  # noqa: BLE001 - curatarea nu opreste tiparirea
+                log("Eroare la curatare: %s" % exc, cfg)
+            hours = float(cfg.get("cleanup_interval_hours", 24) or 24)
+            next_cleanup = time.time() + max(1.0, hours) * 3600
+
         try:
             worked = process_once(cfg)
         except Exception as exc:  # noqa: BLE001

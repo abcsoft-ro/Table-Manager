@@ -7,8 +7,10 @@
  * Convenție: câmp gol = parola nu este cerută.
  */
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/print_common.php';
 
 $conn = getDBConnection();
+ensureParolaUpdateColumn($conn);
 
 $ID = 1;
 
@@ -17,11 +19,12 @@ $CAMPURI = [
     'ParolaRapoarte'   => 20,
     'ParolaStornare'   => 20,
     'ParolaDiscount'   => 20,
-    'ParolaExit'       => 20
+    'ParolaExit'       => 20,
+    'ParolaUpdate'     => 20
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    $sql = "SELECT Id, ParolaProgramare, ParolaRapoarte, ParolaStornare, ParolaDiscount, ParolaExit
+    $sql = "SELECT Id, ParolaProgramare, ParolaRapoarte, ParolaStornare, ParolaDiscount, ParolaExit, ParolaUpdate
             FROM tblParola WHERE Id = ?";
     $stmt = sqlsrv_query($conn, $sql, [$ID]);
     if (!$stmt) {
@@ -61,14 +64,15 @@ switch ($action) {
             $values[$col] = ($val === '' ? null : $val);
         }
 
-        $sql = "UPDATE tblParola SET
-                    ParolaProgramare = ?, ParolaRapoarte = ?, ParolaStornare = ?,
-                    ParolaDiscount = ?, ParolaExit = ?
-                WHERE Id = ?";
-        $params = [
-            $values['ParolaProgramare'], $values['ParolaRapoarte'], $values['ParolaStornare'],
-            $values['ParolaDiscount'], $values['ParolaExit'], $ID
-        ];
+        $sets = [];
+        $params = [];
+        foreach ($CAMPURI as $col => $len) {
+            $sets[] = "$col = ?";
+            $params[] = $values[$col];
+        }
+        $params[] = $ID;
+
+        $sql = "UPDATE tblParola SET " . implode(", ", $sets) . " WHERE Id = ?";
         $stmt = sqlsrv_query($conn, $sql, $params);
         if (!$stmt) {
             sendJsonResponse(["status" => "error", "message" => "Eroare actualizare parole: " . sqlsrv_errors()[0]['message']], 500);

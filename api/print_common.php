@@ -73,6 +73,21 @@ function ensureBillDiscountMotiveColumn($conn) {
 }
 
 /**
+ * Adauga coloana tblParola.ParolaUpdate daca lipseste (deploy fara pasi
+ * manuali). Parola care protejeaza modulul de actualizare din GitHub.
+ */
+function ensureParolaUpdateColumn($conn) {
+    static $done = false;
+    if ($done) { return; }
+    @sqlsrv_query(
+        $conn,
+        "IF COL_LENGTH('dbo.tblParola','ParolaUpdate') IS NULL
+             ALTER TABLE dbo.tblParola ADD ParolaUpdate nvarchar(20) NULL"
+    );
+    $done = true;
+}
+
+/**
  * Creeaza tabela tblPrintQueue daca nu exista (deploy fara pasi manuali).
  */
 function ensurePrintQueueTable($conn) {

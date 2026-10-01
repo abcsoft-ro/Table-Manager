@@ -93,8 +93,8 @@ GO
 ------------------------------------------------------------ tblParola (1 randuri)
 DELETE FROM dbo.[tblParola];
 GO
-INSERT INTO dbo.[tblParola] ([Id], [ParolaProgramare], [ParolaRapoarte], [ParolaStornare], [ParolaDiscount], [ParolaExit]) VALUES
-(1, N'', N'', N'', N'', N'');
+INSERT INTO dbo.[tblParola] ([Id], [ParolaProgramare], [ParolaRapoarte], [ParolaStornare], [ParolaDiscount], [ParolaExit], [ParolaUpdate]) VALUES
+(1, N'', N'', N'', N'', N'', N'');
 GO
 
 ------------------------------------------------------------ tblOsp (5 randuri)

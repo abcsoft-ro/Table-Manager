@@ -32,6 +32,13 @@ DEFAULTS = {
     "log_file": "logs/print-service.log",
     "kitchen_title": "BON COMANDA",
     "nota_title": "NOTA DE PLATA",
+    # Curatare periodica: fisierele din spool/preview mai vechi de N zile sunt
+    # sterse, iar logul este scurtat cand depaseste log_max_mb.
+    "cleanup_days": 30,
+    "preview_cleanup_days": 30,
+    "cleanup_interval_hours": 24,
+    "log_max_mb": 5,
+    "log_keep_mb": 1,
 }
 
 

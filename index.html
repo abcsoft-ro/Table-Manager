@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TableManager 2.1C - Modern Web POS (MSSQL Rual)</title>
+  <title>TableManager 2.1C - Modern Web POS</title>
   <link rel="stylesheet" href="css/pos.css?v=20260929a">
   <script>
     /* Scalare UI libera pe AMBELE axe, plecand de la canvasul minim 1024x768.
@@ -308,6 +308,7 @@
         <button class="prog-btn" onclick="progAction('Cote TVA')">Cote TVA</button>
         <button class="prog-btn" onclick="progAction('Conectare server')">Conectare server</button>
         <button class="prog-btn" id="prog-btn-sync" onclick="progAction('Sincronizare produse')">Sincronizare produse</button>
+        <button class="prog-btn" id="prog-btn-update" onclick="progAction('Update')">Update</button>
         <button class="prog-btn" onclick="openPrintQueue()">Coada printare</button>
         <button class="prog-btn" onclick="openSendQueue()">Coada export</button>
       </div>
@@ -588,6 +589,13 @@
             <div class="tva-field-row">
               <input type="text" id="par-exit" class="tva-input" maxlength="20">
               <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('par-exit', 'PAROLA INCHIDERE')">123</button>
+            </div>
+          </div>
+          <div class="tva-field">
+            <label>Parola update</label>
+            <div class="tva-field-row">
+              <input type="text" id="par-update" class="tva-input" maxlength="20">
+              <button class="act-btn fkb-mini" onclick="openNumericKeyboardFor('par-update', 'PAROLA UPDATE')">123</button>
             </div>
           </div>
         </div>

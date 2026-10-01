@@ -84,7 +84,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function initApp() {
   try {
-    showToast("Conectare la MSSQL Rual...");
+    showToast("Conectare la baza de date a aplicației...");
     // 1. Incarcam meniul si produsele din MSSQL
     await loadMenu();
     // 1b. Restauram sesiunea de ospatar (doar daca Mod_logare = 1)
@@ -94,7 +94,7 @@ async function initApp() {
     selectLastAndScroll();
     // 3. Incarcam starea celor 80 de mese
     await loadTables();
-    showToast("Conectat la baza de date Rual!");
+    showToast("Conectat la baza de date a aplicației!");
 
     // Mod FastFood: pornim direct in ecranul de marcare (fara selectie de mese).
     if (isFastFood()) {
@@ -1800,6 +1800,10 @@ function progAction(nume) {
     syncProducts();
     return;
   }
+  if (nume === "Update") {
+    runUpdate();
+    return;
+  }
   showToast("Programare: " + nume);
 }
 
@@ -1841,6 +1845,51 @@ async function doSyncProducts() {
   } catch (err) {
     appAlert("Eroare sincronizare produse: " + err.message);
   }
+}
+
+// --------------------------------------------------------------------------
+// UPDATE: descarca ultima versiune din GitHub (api/update.php)
+// Fisierele de configurare locale (config.json, db.local.php) nu sunt atinse.
+// --------------------------------------------------------------------------
+async function runUpdate() {
+  try {
+    showToast("Verific versiunea disponibila...");
+    const resp = await fetch("api/update.php?check=1");
+    const data = await resp.json();
+    if (data.status !== "success") throw new Error(data.message || "Eroare verificare update");
+
+    if (!data.updateAvailable) {
+      appAlert("Ai deja ultima versiune (" + data.latest + ").");
+      return;
+    }
+
+    appConfirm(
+      "Exista o versiune noua (" + data.latest + "). Configurarile locale nu sunt afectate. Actualizati acum?",
+      () => promptUpdateParola(),
+      "Da",
+      "Nu"
+    );
+  } catch (err) {
+    appAlert("Eroare verificare update: " + err.message);
+  }
+}
+
+function promptUpdateParola() {
+  openNumericPrompt("PAROLA UPDATE", async (parola) => {
+    try {
+      showToast("Se descarca si se instaleaza actualizarea...");
+      const resp = await fetch("api/update.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "apply", parola: parola })
+      });
+      const res = await resp.json();
+      if (res.status !== "success") throw new Error(res.message);
+      appAlert(res.message, () => location.reload());
+    } catch (err) {
+      appAlert("Eroare update: " + err.message);
+    }
+  });
 }
 
 // --------------------------------------------------------------------------
@@ -3991,7 +4040,8 @@ const PAROLE_FIELDS = [
   { key: "ParolaRapoarte",   id: "par-rapoarte" },
   { key: "ParolaStornare",   id: "par-stornare" },
   { key: "ParolaDiscount",   id: "par-discount" },
-  { key: "ParolaExit",       id: "par-exit" }
+  { key: "ParolaExit",       id: "par-exit" },
+  { key: "ParolaUpdate",     id: "par-update" }
 ];
 
 function openProgParole() {

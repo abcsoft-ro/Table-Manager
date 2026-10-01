@@ -102,7 +102,8 @@ CREATE TABLE dbo.[tblParola] (
     [ParolaRapoarte] nvarchar(20) NULL,
     [ParolaStornare] nvarchar(20) NULL,
     [ParolaDiscount] nvarchar(20) NULL,
-    [ParolaExit] nvarchar(20) NULL
+    [ParolaExit] nvarchar(20) NULL,
+    [ParolaUpdate] nvarchar(20) NULL
 );
 END
 GO
