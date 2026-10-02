@@ -3,6 +3,8 @@
 -- Generat automat dintr-un script local de dezvoltare, apoi sanitizat.
 -- NU contine date reale: parolele, credențialele si datele firmei sunt demo.
 -- Se ruleaza dupa db/schema.sql, pe o baza de date goala.
+-- Numele bazei de date (Rual) este un implicit, configurabil la generare cu
+-- --db=<nume>; aplicatia foloseste numele din api/db.local.php.
 -- ============================================================================
 
 USE [Rual];

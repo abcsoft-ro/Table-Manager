@@ -1,7 +1,8 @@
 # Baza de date - reconstrucție
 
-Aplicația folosește baza de date MSSQL `Rual`. Acest director conține tot ce este
-necesar pentru a o reconstrui de la zero.
+Aplicația folosește o bază de date MSSQL (implicit `Rual`; numele real se
+configurează în `api/db.local.php`). Acest director conține tot ce este necesar
+pentru a o reconstrui de la zero.
 
 | Fișier | Rol |
 |---|---|
@@ -15,8 +16,9 @@ necesar pentru a o reconstrui de la zero.
 
 ## Reconstrucție în 3 pași
 
-1. **Creați structura** — rulați `schema.sql`. Scriptul creează baza `Rual` dacă nu
-   există, apoi tabelele, indecșii, constrângerile, cheile străine și procedurile.
+1. **Creați structura** — rulați `schema.sql`. Scriptul creează baza de date (implicit
+   `Rual`, sau numele dat la generare cu `--db=<nume>`) dacă nu există, apoi tabelele,
+   indecșii, constrângerile, cheile străine și procedurile.
 2. **Adăugați datele de referință** — rulați `seed.sql` (după `schema.sql`, pe o bază
    goală). Aduce setările, cotele TVA, formele de plată, secțiile, mesele, șablonul de
    notă, un casier demo și un meniu demo, astfel încât aplicația să pornească imediat.

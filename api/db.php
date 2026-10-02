@@ -1,15 +1,16 @@
 <?php
 /**
- * Modul de conectare la baza de date MSSQL Rual
+ * Modul de conectare la baza de date MSSQL.
  */
 
 /**
- * Credentialele reale stau in api/db.local.php (ignorat de git).
- * Daca fisierul nu exista se folosesc valorile de mai jos.
+ * Credentialele reale (server, baza de date, user, parola) stau in
+ * api/db.local.php (ignorat de git). Daca fisierul nu exista se folosesc
+ * valorile de mai jos, care sunt doar niste substituenti (placeholder).
  */
 $DB_CONFIG = [
-    'Server' => 'FUJITSU-PC',
-    'Database' => 'Rual',
+    'Server' => 'SERVER-NAME',
+    'Database' => 'Database',
     'UID' => 'sa',
     'PWD' => '',
 ];
@@ -54,7 +55,8 @@ function getDBConnection() {
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode([
         "status" => "error",
-        "message" => "Nu s-a putut conecta la baza de date MSSQL Rual: " . $errMsg
+        "message" => "Nu s-a putut conecta la baza de date MSSQL (server: "
+            . $DB_CONFIG['Server'] . ", baza: " . $DB_CONFIG['Database'] . "): " . $errMsg
     ]);
     exit;
 }

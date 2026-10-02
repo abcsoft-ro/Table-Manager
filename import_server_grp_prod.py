@@ -10,7 +10,7 @@ Comportamentul cand exista linii in tblNoteD este controlat de parametrul
     --if-notes=skip  sare peste import daca tblNoteD are linii (se ruleaza
                      dupa raportul Z)
 
-Se conecteaza direct la baza locala Rual cu pyodbc. Credentialele locale sunt
+Se conecteaza direct la baza locala cu pyodbc. Credentialele locale sunt
 citite din api/db.local.php (aceeasi sursa ca PHP); configuratia sursei externe
 se citeste din tblConectare (ID = 1).
 

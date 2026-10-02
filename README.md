@@ -147,7 +147,7 @@ schimbarea notei si dupa inchiderea bonului); se poate sterge cu butonul „Fara
 ## Cerinte
 
 - **Apache** cu **PHP** si extensia **`php_sqlsrv`** incarcata.
-- **Microsoft SQL Server** (baza de date `Rual`).
+- **Microsoft SQL Server** (baza de date configurabilă în `api/db.local.php`, implicit `Rual`).
 - **Python 3.12** (Windows) pentru componentele Python (`print-service/`, `sync-service/`,
   `import_server_grp_prod.py`) — optional, doar daca folositi una dintre ele. Toate ruleaza
   **dintr-un mediu virtual comun** `.venv` din radacina proiectului, creat o singura data cu

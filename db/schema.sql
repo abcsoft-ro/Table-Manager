@@ -2,6 +2,8 @@
 -- TableManager 2.1C - schema bazei de date
 -- Generat automat dintr-un script local de dezvoltare (nu editati manual).
 -- Contine doar tabelele si procedurile folosite de aplicatie.
+-- Numele bazei de date (Rual) este un implicit, configurabil la generare cu
+-- --db=<nume>; aplicatia foloseste numele din api/db.local.php.
 -- ============================================================================
 
 SET ANSI_NULLS ON;

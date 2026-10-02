@@ -1,5 +1,5 @@
 /**
- * TableManager 2.1C - Client Logic conectat direct la MSSQL Rual
+ * TableManager 2.1C - Client Logic conectat direct la MSSQL
  * Afisare produse direct pe panoul albastru (Poz, BackColor, FontColor, Bold)
  * Suport pentru BackColor = 0 (fond negru) cu FontColor alb
  */

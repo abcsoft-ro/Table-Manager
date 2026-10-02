@@ -1,7 +1,7 @@
 <?php
 /**
  * API: Operatii pe comanda (Adaugare produs, modificare cantitate, cook, inchidere)
- * Compatibil MSSQL Rual (ECRID si DocID coloane IDENTITY)
+ * Compatibil MSSQL (ECRID si DocID coloane IDENTITY)
  */
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/print_common.php';

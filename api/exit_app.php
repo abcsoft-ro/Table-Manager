@@ -18,12 +18,18 @@ function posExitKillKioskBrowser() {
     if (stripos(PHP_OS, 'WIN') !== 0 || !function_exists('exec')) {
         return false;
     }
+    // Numele folderului proiectului, dedus din locatia acestui fisier
+    // (merge si daca folderul este redenumit). Doar caractere sigure.
+    $folder = preg_replace('/[^A-Za-z0-9_.-]/', '', basename(dirname(__DIR__)));
     $script = "Get-CimInstance Win32_Process | Where-Object { " .
         "(\$_.Name -eq 'chrome.exe' -or \$_.Name -eq 'msedge.exe') -and " .
-        "(\$_.CommandLine -like '*TableManagerKiosk*' -or " .
-        "\$_.CommandLine -like '*127.0.0.1/rual*' -or " .
-        "\$_.CommandLine -like '*localhost/rual*') " .
-        "} | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }";
+        "(\$_.CommandLine -like '*TableManagerKiosk*'";
+    if ($folder !== '') {
+        $script .= " -or " .
+            "\$_.CommandLine -like '*127.0.0.1/" . $folder . "*' -or " .
+            "\$_.CommandLine -like '*localhost/" . $folder . "*'";
+    }
+    $script .= ") } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }";
     $encoded = base64_encode(mb_convert_encoding($script, 'UTF-16LE', 'UTF-8'));
     $cmd = 'powershell.exe -NoProfile -NonInteractive -EncodedCommand ' . $encoded;
     $out = [];
