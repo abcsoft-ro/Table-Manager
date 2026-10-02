@@ -165,23 +165,26 @@ schimbarea notei si dupa inchiderea bonului); se poate sterge cu butonul „Fara
    copiati `api/db.local.example.php` in `api/db.local.php` si completati serverul,
    baza de date, utilizatorul si parola.
 4. (Optional, dar obligatoriu daca folositi componentele Python) Rulati `setup-venv.bat`
-   din radacina proiectului: creeaza mediul virtual `.venv` si instaleaza dependintele din
-   `requirements.txt`. Se ruleaza o singura data (sau dupa reinstalarea Python-ului).
+   din radacina proiectului: creeaza mediul virtual `.venv`, instaleaza dependintele din
+   `requirements.txt` si creeaza shortcut-urile: cele doua servicii in `Startup` (pornire
+   automata la login) si `TableManager POS` pe Desktop, cu iconita `img/abcicon.ico`.
+   Se ruleaza o singura data (sau dupa reinstalarea Python-ului); shortcut-urile sunt
+   (re)create de fiecare data de `tools/create-shortcuts.vbs`.
 5. (Optional) Porniti serviciul de printare: `print-service/start-print-service.bat`
    (sau `start-print-service-hidden.vbs` pentru rulare in fundal, fara consola).
-   Adaugati un shortcut in `shell:startup` pentru pornire automata. Serviciul asculta
+   Shortcut-ul in `Startup` este creat automat de `setup-venv.bat`. Serviciul asculta
    doar pe `127.0.0.1:8756`. Destinatiile fizice (sectii si tintele globale Nota/Rapoarte/
    Fiscal) se configureaza din **Setari → Imprimante sectii**, cu butoane de test; modificarile
    se aplica instant (hot-reload), fara repornirea serviciului.
 6. (Optional) Porniti serviciul de export catre server: `sync-service/start-sync-service.bat`
-   (sau `start-sync-service-hidden.vbs` pentru rulare in fundal, fara consola). Adaugati un
-   shortcut in `shell:startup` pentru pornire automata. Serviciul asculta doar pe `127.0.0.1:8757`,
+   (sau `start-sync-service-hidden.vbs` pentru rulare in fundal, fara consola). Shortcut-ul in
+   `Startup` este creat automat de `setup-venv.bat`. Serviciul asculta doar pe `127.0.0.1:8757`,
    citeste serverul/baza/credentialele din `tblConectare` (ID = 1) si executa pe acel server
    comenzile scrise in `temp_Send_Sql`.
 7. (Optional) Folositi `Pornire-POS-Kiosk.vbs` (in radacina proiectului sau pe Desktop) pentru a
    deschide aplicatia in mod kiosc fullscreen, fara fereastra DOS. La pornire, acelasi launcher
    ruleaza si `import_server_grp_prod.py` (importul produselor/grupelor de pe server, cand
-   `tblSet.Server = 1`); se poate pune un shortcut in `shell:startup` pentru pornire automata.
+   `tblSet.Server = 1`); shortcut-ul de pe Desktop este creat automat de `setup-venv.bat`.
    Varianta cu fereastra vizibila ramane `Pornire-POS-Kiosk.bat`.
 
 ## Reconstructie baza de date
@@ -230,7 +233,8 @@ Pornire-POS-Kiosk.vbs   lansator kiosc ascuns (fara fereastra DOS) + import prod
 Pornire-POS-Kiosk.bat   lansator kiosc cu fereastra vizibila (aceeasi logica)
 import_server_grp_prod.py  import produse/grupe de pe server (dbo.ImportProd)
 requirements.txt        dependintele Python (pyodbc, pywin32) pentru mediul virtual
-setup-venv.bat          creeaza .venv si instaleaza dependintele (o singura data)
+setup-venv.bat          creeaza .venv, instaleaza dependintele si creeaza shortcut-urile (o singura data)
+tools/create-shortcuts.vbs  creeaza shortcut-urile: serviciile in Startup + POS pe Desktop (img/abcicon.ico)
 .venv/                  mediul virtual Python (creat local, ignorat de git)
 sync.sh                 commit + push catre GitHub (doar cand exista modificari)
 ```

@@ -40,6 +40,11 @@ if errorlevel 1 (
     exit /b 1
 )
 
+rem Shortcut-uri: serviciile in Startup (pornire automata) + lansatorul POS pe Desktop.
+echo.
+echo Creare shortcut-uri (Startup + Desktop) ...
+cscript //B //Nologo "%~dp0tools\create-shortcuts.vbs"
+
 echo.
 echo Mediul virtual este pregatit: "%VENV%"
 pause
