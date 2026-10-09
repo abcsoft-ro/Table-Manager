@@ -89,7 +89,7 @@ INSERT INTO dbo.[tblSet] ([Setting], [Value], [Descriere], [Grup]) VALUES
 (N'Server', N'1', N'0 = aplicatia functioneaza independent; 1 = aplicatia incarca grupele si produsele de pe un server extern, aplicatia exporta vanzarile catre serverul extern prin serviciul python sync-service.', N'ODBC'),
 (N'SiteUrlApi', N'', NULL, N'web'),
 (N'Storno_parola', N'0', NULL, N'General'),
-(N'TipCasaMarcat', N'FiscalWire', N'Tipul casei de marcat fiscale: FiscalWire, FiscalNet sau Tremol.', N'Casa'),
+(N'TipCasaMarcat', N'FiscalWire', N'Tipul casei de marcat fiscale: FiscalWire, FiscalNet, Fisco sau fprwin. Fisco si fprwin sunt in curs de implementare.', N'Casa'),
 (N'TipVanz', N'0', N'Tipul de vanzare: 0 = Restaurant (ecran de mese, comanda la sectie, nota de plata); 1 = FastFood (fara ecran de mese, comanda nu pleaca la sectie, doar bon fiscal).', N'General'),
 (N'TransferMasa', N'1', NULL, N'General');
 GO

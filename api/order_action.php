@@ -27,9 +27,10 @@ function getTipVanz($conn) {
 }
 
 /**
- * Tipul casei de marcat fiscale (tblSet.TipCasaMarcat): "fiscalwire", "fiscalnet"
- * sau "tremol". Implicit "fiscalwire" cand setarea lipseste sau este necunoscuta.
- * Determina formatul fisierului de comenzi scris pentru casa de marcat.
+ * Tipul casei de marcat fiscale (tblSet.TipCasaMarcat): "fiscalwire", "fiscalnet",
+ * "fisco" sau "fprwin". Implicit "fiscalwire" cand setarea lipseste sau este
+ * necunoscuta. "fisco" si "fprwin" sunt inca in curs de implementare (se comporta
+ * ca FiscalWire). Determina formatul fisierului de comenzi scris pentru casa de marcat.
  */
 function getTipCasaMarcat($conn) {
     static $cache = null;
@@ -41,7 +42,8 @@ function getTipCasaMarcat($conn) {
         if ($row) {
             $v = mb_strtolower(trim((string)$row['Value']));
             if ($v === 'fiscalnet') { $cache = "fiscalnet"; }
-            elseif ($v === 'tremol') { $cache = "tremol"; }
+            elseif ($v === 'fisco' || $v === 'tremol') { $cache = "fisco"; }
+            elseif ($v === 'fprwin') { $cache = "fprwin"; }
         }
     }
     return $cache;
@@ -841,8 +843,8 @@ function enqueueBillPrintJobs($conn, $docId, $bon, $plati, $cui = '', $skipFisca
     $tipCasa = getTipCasaMarcat($conn);
     $fiscalItems = getBonFiscalDiscStorno($conn) ? $data['fiscalItems'] : $data['fiscalItemsNet'];
     $fiscalLines = buildFiscalText($fiscalItems, $data['plati'], $tipCasa, getTvaNrMap($conn), $cui);
-    // FiscalWire foloseste fisiere .inp, FiscalNet/Tremol .txt.
-    $fiscalExt = in_array($tipCasa, ['fiscalnet', 'tremol'], true) ? '.txt' : '.inp';
+    // FiscalWire (si Fisco/fprwin, inca neimplementate) folosesc fisiere .inp, FiscalNet .txt.
+    $fiscalExt = ($tipCasa === 'fiscalnet') ? '.txt' : '.inp';
     $fiscalPayload = [
         "lines" => $fiscalLines,
         "filename" => "doc" . (int)$docId . "_" . date('YmdHis') . $fiscalExt

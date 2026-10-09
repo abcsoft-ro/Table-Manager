@@ -2150,7 +2150,7 @@ function setariField(row) {
   if (row.Setting === "AsteaptaRaspunsCasa") {
     return setariDaNuField(row.Setting, row.Value, row.Descriere, true);
   }
-  // Tipul casei de marcat fiscale: lista FiscalWire / FiscalNet / Tremol.
+  // Tipul casei de marcat fiscale: lista FiscalWire / FiscalNet / Fisco / fprwin.
   if (row.Setting === "TipCasaMarcat") {
     return setariTipCasaMarcatField(row);
   }
@@ -2428,7 +2428,7 @@ function setariTipCasaMarcatField(row) {
   select.className = "tva-input setari-input";
   select.id = "setari-inp-" + row.Setting;
 
-  const opts = ["FiscalWire", "FiscalNet", "Tremol"];
+  const opts = ["FiscalWire", "FiscalNet", "Fisco", "fprwin"];
   const cur = String(row.Value === null || row.Value === undefined ? "" : row.Value).trim();
   opts.forEach(val => {
     const opt = document.createElement("option");

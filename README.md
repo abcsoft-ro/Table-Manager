@@ -132,6 +132,7 @@ Tipul casei se alege din **Setari → Casa Marcat** (`tblSet.TipCasaMarcat`):
   - `S^NUME^PRET^CANT^buc^GRTVA^1`, `DV^valoare` / `MV^valoare` pentru discount/majorare,
     `VS^...` pentru stornare, `ST^` subtotal, `P^COD_PLATA^SUMA` incasare;
   - `CF^RO12345678` cod fiscal client, inainte de prima vanzare.
+- **Fisco**, **fprwin** — in curs de implementare.
 
 Codurile de plata se iau direct din `tblFP.FPID` (0 = Numerar, 1 = Card, 2 = CEC, 3 = Tichet,
 4 = OP, 5 = Voucher): la FiscalWire se scrie `FPID`, la FiscalNet `FPID + 1` (driver-ul foloseste

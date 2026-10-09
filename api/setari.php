@@ -161,11 +161,16 @@ function ensureSetariMeta($conn) {
 
     // Casa de marcat fiscala: tipul casei + caile fisierelor de comenzi/raspuns.
     ensureSetariValue($conn, 'TipCasaMarcat', 'FiscalWire',
-        "Tipul casei de marcat fiscale: FiscalWire, FiscalNet sau Tremol.", 'Casa');
-    // Migrare: vechea valoare "Datecs" (tot driver FiscalWire) devine "FiscalWire".
+        "Tipul casei de marcat fiscale: FiscalWire, FiscalNet, Fisco sau fprwin. Fisco si fprwin sunt in curs de implementare.", 'Casa');
+    // Migrare: vechea valoare "Datecs" (tot driver FiscalWire) devine "FiscalWire",
+    // iar "Tremol" devine "Fisco".
     @sqlsrv_query(
         $conn,
         "UPDATE tblSet SET Value = 'FiscalWire' WHERE Setting = 'TipCasaMarcat' AND Value = 'Datecs'"
+    );
+    @sqlsrv_query(
+        $conn,
+        "UPDATE tblSet SET Value = 'Fisco' WHERE Setting = 'TipCasaMarcat' AND Value = 'Tremol'"
     );
     ensureSetariValue($conn, 'CaleFisierComenziECR', 'C:\\POS\\fiscal\\bonuri',
         "Folderul in care se scriu fisierele de comenzi catre casa de marcat fiscala.", 'Casa');
