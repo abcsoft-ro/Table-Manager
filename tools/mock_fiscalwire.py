@@ -38,9 +38,25 @@ DEFAULT_COMENZI = os.path.join(PROJECT_DIR, "logs", "mock_fiscal", "comenzi")
 DEFAULT_RASPUNS = os.path.join(PROJECT_DIR, "logs", "mock_fiscal", "raspuns")
 DEFAULT_STATE = os.path.join(PROJECT_DIR, "logs", "mock_fiscal", "state.json")
 
+# Fisierul de log (setat in main). Scriem si in el, nu doar in consola, ca sa
+# putem diagnostica si daca fereastra de consola se inchide.
+LOG_FILE = None
+
 
 def log(msg):
-    print("[%s] %s" % (time.strftime("%Y-%m-%d %H:%M:%S"), msg), flush=True)
+    line = "[%s] %s" % (time.strftime("%Y-%m-%d %H:%M:%S"), msg)
+    # print() nu trebuie NICIODATA sa arunce (consola inchisa / codepage), altfel
+    # un esec in handler-ul de erori ar opri tot mock-ul.
+    try:
+        print(line, flush=True)
+    except Exception:  # noqa: BLE001
+        pass
+    if LOG_FILE:
+        try:
+            with open(LOG_FILE, "a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+        except OSError:
+            pass
 
 
 def load_state(path, z0, nr0):
@@ -194,7 +210,6 @@ def process_command(path, state, args):
 
     out_base = write_response(args.raspuns, cmd_name, txt, nrb)
     log("Comanda %s -> %s (.txt%s)" % (cmd_name, out_base, ", .nrb" if nrb else ""))
-    save_state(args.state, state)
 
 
 def main():
@@ -229,39 +244,47 @@ def main():
     state = load_state(args.state, args.z, args.nr)
     processed = set(state.get("processed", []))
 
+    global LOG_FILE
+    LOG_FILE = os.path.join(PROJECT_DIR, "logs", "mock_fiscalwire.log")
+
     log("Mock FiscalWire pornit (mod=%s, comenzi=%s, raspuns=%s)."
         % (args.mode, args.comenzi, args.raspuns))
     log("Comanda noua -> raspuns in folderul de raspuns (trebuie sa fie acelasi "
         "cu tblSet.CaleFisierRaspunsECR din Setari).")
 
     while True:
-        found = False
-        for path in sorted(glob.glob(os.path.join(args.comenzi, "pos_tm_*.inp"))):
-            name = os.path.basename(path)
-            if name in processed:
-                continue
-            processed.add(name)
-            state["processed"] = sorted(processed)
-            try:
-                process_command(path, state, args)
-            except Exception as exc:  # noqa: BLE001 - un comanda defecta nu opreste mock-ul
-                log("Eroare la procesarea %s: %s" % (name, exc))
-                import traceback
-                traceback.print_exc()
-            else:
+        # Bucla nu trebuie sa se opreasca din nicio eroare neprevazuta.
+        try:
+            found = False
+            for path in sorted(glob.glob(os.path.join(args.comenzi, "pos_tm_*.inp"))):
+                name = os.path.basename(path)
+                if name in processed:
+                    continue
+                try:
+                    process_command(path, state, args)
+                except Exception as exc:  # noqa: BLE001 - o comanda defecta nu opreste mock-ul
+                    log("Eroare la procesarea %s: %s" % (name, exc))
+                    continue  # NU marcam procesat -> se reincearca
+                # Marcam procesat (si salvam starea) doar dupa ce raspunsul a fost scris.
+                processed.add(name)
+                state["processed"] = sorted(processed)
+                save_state(args.state, state)
                 # FiscalWire muta/sterge fisierul de comanda dupa procesare.
                 if not args.keep:
                     try:
                         os.remove(path)
                     except OSError as exc:
                         log("Nu pot sterge comanda %s: %s" % (name, exc))
-            found = True
-            if args.once:
-                return
-        if args.once and not found:
+                found = True
+                if args.once:
+                    return
+            if args.once and not found:
+                time.sleep(args.poll)
+                continue
             time.sleep(args.poll)
-            continue
-        time.sleep(args.poll)
+        except Exception as exc:  # noqa: BLE001 - mock-ul nu trebuie sa moara
+            log("Eroare neasteptata in bucla: %s" % exc)
+            time.sleep(args.poll)
 
 
 if __name__ == "__main__":

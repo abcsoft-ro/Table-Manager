@@ -293,8 +293,8 @@ if ($stmtPb) {
 }
 
 // 4f5. Asteapta raspunsul casei de marcat (tblSet.AsteaptaRaspunsCasa): 1 = DA
-//      (la inchiderea notei POS-ul asteapta confirmarea bonului fiscal, doar
-//      FiscalWire), 0 = NU (implicit, tiparire asincrona ca pana acum).
+//      (la inchiderea notei POS-ul asteapta confirmarea bonului fiscal, FiscalWire
+//      sau FiscalNet), 0 = NU (implicit, tiparire asincrona ca pana acum).
 $asteaptaRaspunsCasa = 0;
 $stmtAR = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'AsteaptaRaspunsCasa'");
 if ($stmtAR) {

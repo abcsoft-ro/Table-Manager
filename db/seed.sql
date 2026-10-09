@@ -54,7 +54,7 @@ DELETE FROM dbo.[tblSet];
 GO
 INSERT INTO dbo.[tblSet] ([Setting], [Value], [Descriere], [Grup]) VALUES
 (N'AfiseajClient', N'1', N'Afisaj client activ: 1 = DA, 0 = NU.', N'Afiseaj'),
-(N'AsteaptaRaspunsCasa', N'0', N'Asteapta raspunsul casei de marcat la inchiderea notei (doar FiscalWire): 1 = DA (nota se inchide doar dupa confirmarea bonului fiscal), 0 = NU (implicit, tiparire asincrona ca pana acum).', N'Casa'),
+(N'AsteaptaRaspunsCasa', N'0', N'Asteapta raspunsul casei de marcat la inchiderea notei (FiscalWire sau FiscalNet): 1 = DA (nota se inchide doar dupa confirmarea bonului fiscal), 0 = NU (implicit, tiparire asincrona ca pana acum).', N'Casa'),
 (N'AsteptareCasaSec', N'30', N'Durata maxima (secunde) cat POS-ul asteapta raspunsul casei de marcat cand AsteaptaRaspunsCasa = 1. Implicit 30.', N'Casa'),
 (N'BaudRateAfisaj', N'9600', NULL, N'Afiseaj'),
 (N'CaleDriverAfiseajClient', N'', N'Calea catre driverul/executabilul afisajului client.', N'Afiseaj'),

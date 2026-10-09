@@ -143,29 +143,37 @@ si preturile nete (o linie per produs, cu cantitatea neta dupa stornari). Setare
 `tblSet.BonFiscalDiscStorno = 1` activeaza modul detaliat (linii de discount/majorare `C`/`DV`/`MV`
 si linii de stornare `VS`).
 
-### Asteptarea raspunsului casei de marcat (FiscalWire)
+### Asteptarea raspunsului casei de marcat (FiscalWire / FiscalNet)
 
 Setarea `AsteaptaRaspunsCasa` (Setari → Casa Marcat, implicit **NU**) schimba fluxul de mai sus:
-cand este **DA** si tipul casei este **FiscalWire**, la inchiderea notei POS-ul scrie fisierul de
-comenzi `.inp` direct in `tblSet.CaleFisierComenziECR` (nume `pos_tm_<DocID>_<dataora>.inp`) si
-**asteapta** pana la `AsteptareCasaSec` secunde (implicit 30) confirmarea in
-`tblSet.CaleFisierRaspunsECR`, inainte de a inchide nota:
+cand este **DA** si tipul casei este **FiscalWire** sau **FiscalNet**, la inchiderea notei POS-ul
+scrie fisierul de comenzi direct in `tblSet.CaleFisierComenziECR` (`pos_tm_<DocID>_<dataora>.inp`
+la FiscalWire, `.txt` la FiscalNet) si **asteapta** pana la `AsteptareCasaSec` secunde (implicit 30)
+confirmarea in `tblSet.CaleFisierRaspunsECR`, inainte de a inchide nota:
 
-- fisierul `.nrb` (prima linie `OK;Z=..|NR=..|...|BF=..`) confirma bonul; `NrBon` (`NR`) si `NrZ`
-  (`Z`) reale sunt trimise mai departe serviciului de export (`EmitBon_Ext_*`);
-- `CANCELED` sau orice linie cu status `Er` in fisierul `.txt`, ori lipsa raspunsului (timeout),
-  inseamna ca nota **nu** se inchide: se afiseaza mesajul, ecranul de plata revine la starea
-  initiala si se poate reincerca cu OK;
-- in orice caz de esec, POS-ul **sterge fisierul de comenzi** `.inp`, ca FiscalWire sa nu
-  tipareasca ulterior un bon abandonat (desincronizat de nota inca deschisa); inainte de fiecare
-  trimitere se curata si fisierele `pos_tm_*.inp` abandonate (cazul unei opriri bruste);
+- **FiscalWire**: fisierul `.nrb` (prima linie `OK;Z=..|NR=..|...|BF=..`) confirma bonul; `NrBon`
+  (`NR`) si `NrZ` (`Z`) reale sunt trimise mai departe serviciului de export (`EmitBon_Ext_*`);
+  `CANCELED` sau orice linie cu status `Er` in fisierul `.txt` blocheaza inchiderea;
+- **FiscalNet**: fisierul de raspuns (acelasi nume ca al comenzii) contine `BONOK=1` + `NRBON=<nr>`
+  la succes, sau `BONOK=0` + `ERRCODE`/`ERRINFO` la eroare, sau `BONOK=-1` (nu s-a identificat
+  raspunsul terminalului bancar);
+- lipsa raspunsului (timeout) inseamna ca nota **nu** se inchide: se afiseaza mesajul, ecranul de
+  plata revine la starea initiala si se poate reincerca cu OK;
+- in orice caz de esec, POS-ul **sterge fisierul de comenzi**, ca driverul sa nu tipareasca ulterior
+  un bon abandonat (desincronizat de nota inca deschisa); inainte de fiecare trimitere se curata si
+  fisierele `pos_tm_*.inp`/`pos_tm_*.txt` abandonate (cazul unei opriri bruste);
 - fiecare esec se scrie in `logs/fiscal_wait.log`.
 
 Pentru testare, `tools/mock_fiscalwire.py` (pornit cu `tools/mock_fiscalwire.bat`, din `.venv`)
-simuleaza driverul: scrie raspunsurile `.txt`/`.nrb` in folderul configurat (in modurile
-`ok` / `err` / `canceled` / `silent` / `random`) si **sterge** fisierul de comanda dupa procesare, ca
-FiscalWire (se poate pastra cu `--keep`). Se seteaza temporar folderele `CaleFisierComenziECR` /
+simuleaza driverul FiscalWire: scrie raspunsurile `.txt`/`.nrb` in folderul configurat (in modurile
+`ok` / `err` / `canceled` / `silent` / `random`) si **sterge** fisierul de comanda dupa procesare
+(se poate pastra cu `--keep`). Se seteaza temporar folderele `CaleFisierComenziECR` /
 `CaleFisierRaspunsECR` la `logs/mock_fiscal/comenzi` / `logs/mock_fiscal/raspuns`.
+
+`tools/mock_fiscalnet.py` (cu `tools/mock_fiscalnet.bat`) simuleaza driverul FiscalNet: scrie
+raspunsul cu acelasi nume ca al comenzii in folderul de raspuns (modurile `ok` / `err` / `pos` /
+`silent` / `random`, mod implicit `ok`), pornind folderele `logs/mock_fiscal_net/comenzi` /
+`logs/mock_fiscal_net/raspuns`.
 
 CUI-ul se introduce dintr-un popup deschis cu butonul **CUI** de pe ecranul de plata, este
 validat cu cifra de control ANAF (algoritmul CUI/CIF) si tinut per nota (se goleste la

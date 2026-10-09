@@ -519,21 +519,24 @@ function closeBill($conn, $docId, $plati = [], $cui = '', $opts = []) {
         return ["status" => "success", "message" => "Nota goala a fost stearsa", "docId" => $docId, "sters" => true];
     }
 
-    // Asteptarea raspunsului casei de marcat (doar FiscalWire si doar cand
-    // tblSet.AsteaptaRaspunsCasa = 1): scriem fisierul de comenzi si asteptam
-    // confirmarea INAINTE de tranzactia de inchidere, ca sa nu tinem lock-uri DB
-    // in timpul asteptarii. Daca registrul nu raspunde / refuza / da eroare,
-    // nota rămâne deschisa si nu se scrie nimic in cozi.
+    // Asteptarea raspunsului casei de marcat (cand tblSet.AsteaptaRaspunsCasa = 1
+    // si tipul casei este FiscalWire sau FiscalNet): scriem fisierul de comenzi
+    // si asteptam confirmarea INAINTE de tranzactia de inchidere, ca sa nu tinem
+    // lock-uri DB in timpul asteptarii. Daca registrul nu raspunde / refuza / da
+    // eroare, nota rămâne deschisa si nu se scrie nimic in cozi.
     $fiscalInfo = null;
     $skipFiscal = !empty($opts['skipFiscal']);
-    if (!$skipFiscal && getAsteaptaRaspunsCasa($conn) === 1 && getTipCasaMarcat($conn) === 'fiscalwire') {
+    $tipCasa = getTipCasaMarcat($conn);
+    if (!$skipFiscal
+        && getAsteaptaRaspunsCasa($conn) === 1
+        && in_array($tipCasa, ['fiscalwire', 'fiscalnet'], true)) {
         $data = buildBillPrintData($conn, $docId, $bon, $plati, "NOTA DE PLATA");
         if ($data === false) {
             return ["status" => "error", "message" => "Eroare construire date bon fiscal", "http" => 500];
         }
         $fiscalItems = getBonFiscalDiscStorno($conn) ? $data['fiscalItems'] : $data['fiscalItemsNet'];
-        $fiscalLines = buildFiscalText($fiscalItems, $data['plati'], 'fiscalwire', getTvaNrMap($conn), $cui);
-        $wait = fiscalWireSendAndWait($conn, $docId, $bon, $fiscalLines);
+        $fiscalLines = buildFiscalText($fiscalItems, $data['plati'], $tipCasa, getTvaNrMap($conn), $cui);
+        $wait = fiscalSendAndWait($conn, $docId, $bon, $tipCasa, $fiscalLines);
         if (!$wait['ok']) {
             return ["status" => "error", "message" => $wait['message'], "http" => 409];
         }
@@ -1096,7 +1099,7 @@ function fiscalWireCleanupStale($dir, $minAgeSec) {
         if ($f === '.' || $f === '..') { continue; }
         if (strncmp($f, 'pos_tm_', 7) !== 0) { continue; }
         $ext = strtolower(pathinfo($f, PATHINFO_EXTENSION));
-        if ($ext !== 'inp' && $ext !== 'tmp') { continue; }
+        if ($ext !== 'inp' && $ext !== 'tmp' && $ext !== 'txt') { continue; }
         $full = $dir . DIRECTORY_SEPARATOR . $f;
         if (!is_file($full)) { continue; }
         $mtime = @filemtime($full);
@@ -1238,12 +1241,86 @@ function fiscalWireWaitResponse($raspunsDir, $cmdBase, $cmdName, $sentAt, $timeo
 }
 
 /**
- * Trimite bonul fiscal catre FiscalWire si asteapta confirmarea. Se apeleaza
- * inainte de tranzactia de inchidere a notei, ca sa nu tinem lock-uri DB in
- * timpul asteptarii. Scrie in log la orice esec.
- * Intoarce ['ok'=>true,'z','nr','bf','comanda'] sau ['ok'=>false,'reason','message','comanda'].
+ * Parseaza fisierul de raspuns FiscalNet (acelasi nume ca al comenzii, in
+ * directorul de raspuns). Liniile: "BONOK=1" (ok) / "BONOK=0" (eroare) /
+ * "BONOK=-1" (nu s-a putut identifica raspunsul terminalului bancar), apoi
+ * "NRBON=<nr>" (la succes) sau "ERRCODE=<cod>" + "ERRINFO=<info>" (la eroare).
+ * Intoarce ['ok'=>true,'z','nr','bf','raw'] sau ['ok'=>false,'reason','message'].
  */
-function fiscalWireSendAndWait($conn, $docId, $bon, $fiscalLines) {
+function fiscalNetParseResponse($raw) {
+    $text = str_replace("\r", "", (string)$raw);
+    $map = [];
+    foreach (explode("\n", $text) as $line) {
+        $line = trim($line);
+        if ($line === '') { continue; }
+        $pos = strpos($line, '=');
+        if ($pos === false) { continue; }
+        $map[strtoupper(trim(substr($line, 0, $pos)))] = trim(substr($line, $pos + 1));
+    }
+
+    $bonok = $map['BONOK'] ?? null;
+    if ($bonok === '1') {
+        $nr = (isset($map['NRBON']) && $map['NRBON'] !== '') ? (int)$map['NRBON'] : null;
+        return ['ok' => true, 'z' => null, 'nr' => $nr, 'bf' => null, 'raw' => (string)$raw];
+    }
+    if ($bonok === '-1') {
+        return ['ok' => false, 'reason' => 'eroare',
+                'message' => 'Casa de marcat nu a putut identifica raspunsul terminalului bancar (BONOK=-1).'];
+    }
+    if ($bonok === '0') {
+        $err = trim(($map['ERRCODE'] ?? '') . ' ' . ($map['ERRINFO'] ?? ''));
+        return ['ok' => false, 'reason' => 'eroare',
+                'message' => 'Casa de marcat a raportat o eroare: ' . ($err !== '' ? $err : 'bon incorect')];
+    }
+    return ['ok' => false, 'reason' => 'eroare',
+            'message' => 'Raspuns necunoscut al casei de marcat: ' . trim($text)];
+}
+
+/**
+ * Asteapta in folderul de raspuns fisierul generat de FiscalNet pentru comanda
+ * noastra (acelasi nume, corelat dupa prefixul numelui comenzii).
+ */
+function fiscalNetWaitResponse($raspunsDir, $cmdBase, $sentAt, $timeoutSec) {
+    $timeoutSec = max(1, (int)$timeoutSec);
+    $deadline = microtime(true) + $timeoutSec;
+    $dir = rtrim($raspunsDir, "\\/");
+
+    while (true) {
+        $files = @scandir($dir);
+        if ($files !== false) {
+            foreach ($files as $f) {
+                if ($f === '.' || $f === '..') { continue; }
+                $ext = strtolower(pathinfo($f, PATHINFO_EXTENSION));
+                if ($ext !== 'txt') { continue; }
+                if (strncmp($f, $cmdBase, strlen($cmdBase)) !== 0) { continue; }
+                $full = $dir . DIRECTORY_SEPARATOR . $f;
+                if (!is_file($full)) { continue; }
+                $mtime = @filemtime($full);
+                if ($mtime !== false && $mtime + 5 < $sentAt) { continue; }
+                $raw = @file_get_contents($full);
+                if ($raw === false || $raw === '') { continue; }
+                // Fisierul poate fi scris incremental: asteptam linia BONOK=.
+                if (stripos($raw, 'BONOK=') === false) { continue; }
+                return fiscalNetParseResponse($raw);
+            }
+        }
+        if (microtime(true) >= $deadline) { break; }
+        usleep(300000);
+    }
+
+    return ['ok' => false, 'reason' => 'timeout',
+            'message' => 'Casa de marcat nu a raspuns in ' . $timeoutSec
+                       . ' secunde (nu s-a generat fisierul de raspuns).'];
+}
+
+/**
+ * Trimite bonul fiscal catre casa de marcat (FiscalWire sau FiscalNet) si
+ * asteapta confirmarea. Se apeleaza inainte de tranzactia de inchidere a notei,
+ * ca sa nu tinem lock-uri DB in timpul asteptarii. Scrie in log la orice esec.
+ * Intoarce ['ok'=>true,'z','nr','bf','raw','comanda'] sau
+ * ['ok'=>false,'reason','message','comanda'].
+ */
+function fiscalSendAndWait($conn, $docId, $bon, $tipCasa, $fiscalLines) {
     // Asteptarea poate depasi max_execution_time implicit; o permitem explicit
     // (ca la api/pos_banca.php).
     @set_time_limit(0);
@@ -1263,8 +1340,9 @@ function fiscalWireSendAndWait($conn, $docId, $bon, $fiscalLines) {
         return ['ok' => false, 'reason' => 'eroare', 'message' => $msg, 'comanda' => ''];
     }
 
+    $fiscalnet = ($tipCasa === 'fiscalnet');
     $cmdBase = 'pos_tm_' . (int)$docId . '_' . date('YmdHis');
-    $cmdName = $cmdBase . '.inp';
+    $cmdName = $cmdBase . ($fiscalnet ? '.txt' : '.inp');
     $sentAt = time();
 
     // Curatam intai comenzile abandonate (ramase de la un crash / reboot / o
@@ -1277,20 +1355,25 @@ function fiscalWireSendAndWait($conn, $docId, $bon, $fiscalLines) {
         return ['ok' => false, 'reason' => 'eroare', 'message' => $msg, 'comanda' => $cmdName];
     }
 
-    $result = fiscalWireWaitResponse($raspunsDir, $cmdBase, $cmdName, $sentAt, getAsteptareCasaSec($conn));
+    $timeout = getAsteptareCasaSec($conn);
+    $result = $fiscalnet
+        ? fiscalNetWaitResponse($raspunsDir, $cmdBase, $sentAt, $timeout)
+        : fiscalWireWaitResponse($raspunsDir, $cmdBase, $cmdName, $sentAt, $timeout);
     $result['comanda'] = $cmdName;
 
     // La timeout mai acordam o scurta perioada de gratie (un raspuns poate veni
     // chiar la limita), inainte de a sterge comanda. Daca si atunci e timeout,
     // pastram rezultatul initial, ca mesajul sa arate timeout-ul configurat.
     if (!$result['ok'] && ($result['reason'] ?? '') === 'timeout') {
-        $grace = fiscalWireWaitResponse($raspunsDir, $cmdBase, $cmdName, $sentAt, 2);
+        $grace = $fiscalnet
+            ? fiscalNetWaitResponse($raspunsDir, $cmdBase, $sentAt, 2)
+            : fiscalWireWaitResponse($raspunsDir, $cmdBase, $cmdName, $sentAt, 2);
         $grace['comanda'] = $cmdName;
         if ($grace['ok']) { $result = $grace; }
     }
 
     if (!$result['ok']) {
-        // Nota nu se inchide: stergem fisierul de comenzi ca FiscalWire sa nu
+        // Nota nu se inchide: stergem fisierul de comenzi ca driverul sa nu
         // gaseasca mai tarziu comanda si sa tipareasca un bon abandonat
         // (desincronizare fata de POS-ul care are nota inca deschisa).
         $stearsa = fiscalWireRemoveCommand($comenziDir, $cmdName);

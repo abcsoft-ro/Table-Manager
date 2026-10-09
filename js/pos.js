@@ -53,8 +53,11 @@ const POS_STATE = {
   selectedItemIndex: 0,
   // Forme de plata (tblFP) si platile inregistrate pe ecranul de inchidere:
   // paymentForms = [{FPID, Denumire, Status}], payments = { FPID: valoare }
+  // payments = sumele APLICATE notei (nu sumele tastate), plafonate la total;
+  // rest = diferenta tastata in plus (schimb de dat la numerar).
   paymentForms: [],
   payments: {},
+  rest: 0,
   activePaymentFp: null,
   
   // Mod panou dreapta: "groups" sau "products"
@@ -970,6 +973,7 @@ function syncPaymentScreen() {
 
   // Resetam platile si incarcam formele de plata din tblFP
   POS_STATE.payments = {};
+  POS_STATE.rest = 0;
   POS_STATE.activePaymentFp = null;
   const input = document.getElementById("pay-amount-input");
   input.value = total;
@@ -1135,14 +1139,24 @@ async function finalizePaymentTransaction() {
     return;
   }
 
-  // Inregistram suma pe forma de plata selectata (plata mixta)
+  // Inregistram suma pe forma de plata selectata (plata mixta). Suma se
+  // plafoneaza la cat mai e de plata: in `payments` intra doar suma APLICATA
+  // notei, iar diferenta tastata in plus (ex. 200 la o nota de 100) este rest
+  // (schimb de dat) doar la NUMERAR (FPID = 0); la card/cecul etc. excesul se
+  // ignora (nu se poate da rest pe card, iar terminalul e taxat exact cat trebuie).
   const fp = POS_STATE.activePaymentFp;
-  POS_STATE.payments[fp] = (POS_STATE.payments[fp] || 0) + amount;
+  const paidBefore = Object.values(POS_STATE.payments).reduce((a, b) => a + b, 0);
+  const remaining = Math.max(0, total - paidBefore);
+  const applied = Math.min(amount, remaining);
+  POS_STATE.payments[fp] = (POS_STATE.payments[fp] || 0) + applied;
+  if (fp === 0) {
+    POS_STATE.rest = (POS_STATE.rest || 0) + (amount - applied);
+  }
 
   const totalPaid = Object.values(POS_STATE.payments).reduce((a, b) => a + b, 0);
 
   // Nu s-a acoperit totalul: asteptam inca o forma de plata
-  if (totalPaid < total) {
+  if (totalPaid < total - 0.001) {
     input.value = (total - totalPaid).toFixed(2);
     input.dataset.fresh = "true";
     updatePaymentProgress();
@@ -1150,7 +1164,7 @@ async function finalizePaymentTransaction() {
     return;
   }
 
-  const rest = totalPaid - total;
+  const rest = POS_STATE.rest || 0;
 
   // Comunicarea cu POS-ul bancar: cand exista plata pe card (FPID = 1) si
   // terminalul e activ, se cere aprobarea inainte de a inchide nota. La Cancel
@@ -1215,7 +1229,9 @@ async function finalizePaymentTransaction() {
       }
     }
     if (res.fiscal) {
-      msg += `\nCasa de marcat: NR ${res.fiscal.nr} / Z ${res.fiscal.z}`;
+      let casaLinie = `\nCasa de marcat: NR ${res.fiscal.nr != null ? res.fiscal.nr : "-"}`;
+      if (res.fiscal.z != null) { casaLinie += ` / Z ${res.fiscal.z}`; }
+      msg += casaLinie;
     }
 
     appAlert(msg);
@@ -1364,6 +1380,7 @@ function hideFiscalWait() {
 // Readuce ecranul de plata la starea initiala (fara plati inregistrate).
 function resetPaymentScreen() {
   POS_STATE.payments = {};
+  POS_STATE.rest = 0;
   POS_STATE.activePaymentFp = null;
   const total = parseFloat(document.getElementById("val-total").innerText) || 0;
   const input = document.getElementById("pay-amount-input");

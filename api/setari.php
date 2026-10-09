@@ -176,7 +176,7 @@ function ensureSetariMeta($conn) {
     // si asteapta confirmarea bonului (.nrb) inainte de a inchide nota. Nota nu
     // se inchide daca registrul nu raspunde, refuza (CANCELED) sau da eroare.
     ensureSetariValue($conn, 'AsteaptaRaspunsCasa', '0',
-        "Asteapta raspunsul casei de marcat la inchiderea notei (doar FiscalWire): 1 = DA (nota se inchide doar dupa confirmarea bonului fiscal), 0 = NU (implicit, tiparire asincrona ca pana acum).", 'Casa');
+        "Asteapta raspunsul casei de marcat la inchiderea notei (FiscalWire sau FiscalNet): 1 = DA (nota se inchide doar dupa confirmarea bonului fiscal), 0 = NU (implicit, tiparire asincrona ca pana acum).", 'Casa');
     ensureSetariValue($conn, 'AsteptareCasaSec', '30',
         "Durata maxima (secunde) cat POS-ul asteapta raspunsul casei de marcat cand AsteaptaRaspunsCasa = 1. Implicit 30.", 'Casa');
     ensureSetariValue($conn, 'BonFiscalDiscStorno', '0',
