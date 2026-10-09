@@ -27,14 +27,14 @@ function getTipVanz($conn) {
 }
 
 /**
- * Tipul casei de marcat fiscale (tblSet.TipCasaMarcat): "datecs", "fiscalnet"
- * sau "tremol". Implicit "datecs" cand setarea lipseste sau este necunoscuta.
+ * Tipul casei de marcat fiscale (tblSet.TipCasaMarcat): "fiscalwire", "fiscalnet"
+ * sau "tremol". Implicit "fiscalwire" cand setarea lipseste sau este necunoscuta.
  * Determina formatul fisierului de comenzi scris pentru casa de marcat.
  */
 function getTipCasaMarcat($conn) {
     static $cache = null;
     if ($cache !== null) { return $cache; }
-    $cache = "datecs";
+    $cache = "fiscalwire";
     $stmt = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'TipCasaMarcat'");
     if ($stmt) {
         $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
@@ -78,6 +78,57 @@ function getCaleFisierComenziECR($conn) {
     if ($stmt) {
         $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
         if ($row) { $cache = trim((string)$row['Value']); }
+    }
+    return $cache;
+}
+
+/**
+ * Folderul in care casa de marcat scrie fisierele de raspuns
+ * (tblSet.CaleFisierRaspunsECR). Folosit la asteptarea confirmarii bonului.
+ */
+function getCaleFisierRaspunsECR($conn) {
+    static $cache = null;
+    if ($cache !== null) { return $cache; }
+    $cache = '';
+    $stmt = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'CaleFisierRaspunsECR'");
+    if ($stmt) {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        if ($row) { $cache = trim((string)$row['Value']); }
+    }
+    return $cache;
+}
+
+/**
+ * Daca POS-ul asteapta raspunsul casei de marcat la inchiderea notei
+ * (tblSet.AsteaptaRaspunsCasa): 1 = DA, 0 = NU (implicit).
+ */
+function getAsteaptaRaspunsCasa($conn) {
+    static $cache = null;
+    if ($cache !== null) { return $cache; }
+    $cache = 0;
+    $stmt = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'AsteaptaRaspunsCasa'");
+    if ($stmt) {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        if ($row && trim((string)$row['Value']) === '1') { $cache = 1; }
+    }
+    return $cache;
+}
+
+/**
+ * Durata maxima de asteptare a raspunsului casei de marcat
+ * (tblSet.AsteptareCasaSec). Implicit 30 secunde cand lipseste/invalid.
+ */
+function getAsteptareCasaSec($conn) {
+    static $cache = null;
+    if ($cache !== null) { return $cache; }
+    $cache = 30;
+    $stmt = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'AsteptareCasaSec'");
+    if ($stmt) {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        if ($row && trim((string)$row['Value']) !== '') {
+            $v = (int)trim((string)$row['Value']);
+            if ($v > 0) { $cache = $v; }
+        }
     }
     return $cache;
 }
@@ -435,9 +486,10 @@ function printKitchen($conn, $docId) {
  * de plata si nu este folosita nicaieri.
  * Returneaza un array cu status/mesaj/docId (cheia 'http' = codul HTTP dorit).
  */
-function closeBill($conn, $docId, $plati = [], $cui = '') {
+function closeBill($conn, $docId, $plati = [], $cui = '', $opts = []) {
     $docId = (int)$docId;
     if (!is_array($plati)) { $plati = []; }
+    if (!is_array($opts)) { $opts = []; }
     $cui = normalizeCui($cui);
     // Codul fiscal e optional, dar daca e completat trebuie sa fie valid.
     if ($cui !== '' && !validateCui($cui)) {
@@ -465,6 +517,32 @@ function closeBill($conn, $docId, $plati = [], $cui = '') {
             return ["status" => "error", "message" => "Eroare stergere nota: " . sqlsrv_errors()[0]['message'], "http" => 500];
         }
         return ["status" => "success", "message" => "Nota goala a fost stearsa", "docId" => $docId, "sters" => true];
+    }
+
+    // Asteptarea raspunsului casei de marcat (doar FiscalWire si doar cand
+    // tblSet.AsteaptaRaspunsCasa = 1): scriem fisierul de comenzi si asteptam
+    // confirmarea INAINTE de tranzactia de inchidere, ca sa nu tinem lock-uri DB
+    // in timpul asteptarii. Daca registrul nu raspunde / refuza / da eroare,
+    // nota rămâne deschisa si nu se scrie nimic in cozi.
+    $fiscalInfo = null;
+    $skipFiscal = !empty($opts['skipFiscal']);
+    if (!$skipFiscal && getAsteaptaRaspunsCasa($conn) === 1 && getTipCasaMarcat($conn) === 'fiscalwire') {
+        $data = buildBillPrintData($conn, $docId, $bon, $plati, "NOTA DE PLATA");
+        if ($data === false) {
+            return ["status" => "error", "message" => "Eroare construire date bon fiscal", "http" => 500];
+        }
+        $fiscalItems = getBonFiscalDiscStorno($conn) ? $data['fiscalItems'] : $data['fiscalItemsNet'];
+        $fiscalLines = buildFiscalText($fiscalItems, $data['plati'], 'fiscalwire', getTvaNrMap($conn), $cui);
+        $wait = fiscalWireSendAndWait($conn, $docId, $bon, $fiscalLines);
+        if (!$wait['ok']) {
+            return ["status" => "error", "message" => $wait['message'], "http" => 409];
+        }
+        $skipFiscal = true;
+        $opts['fiscalNr'] = $wait['nr'];
+        $opts['fiscalZ'] = $wait['z'];
+        $opts['fiscalBf'] = $wait['bf'];
+        $opts['fiscalRaw'] = (string)($wait['raw'] ?? '');
+        $fiscalInfo = ["z" => $wait['z'], "nr" => $wait['nr'], "bf" => $wait['bf'], "comanda" => $wait['comanda']];
     }
 
     // Inchidem nota si salvam platile (forme de plata + sume) in trelDocIDFpID,
@@ -499,7 +577,7 @@ function closeBill($conn, $docId, $plati = [], $cui = '') {
     // Scriem in coada de tiparire nota de plata (nefiscala) + fisierul fiscal.
     // Totul in aceeasi tranzactie cu inchiderea notei: intentia de tiparire nu
     // se poate pierde chiar daca serviciul de tiparire / imprimanta e oprita.
-    $printResult = enqueueBillPrintJobs($conn, $docId, $bon, $plati, $cui);
+    $printResult = enqueueBillPrintJobs($conn, $docId, $bon, $plati, $cui, $skipFiscal);
     if ($printResult === false) {
         $printErr = sqlsrv_errors();
         sqlsrv_rollback($conn);
@@ -510,7 +588,15 @@ function closeBill($conn, $docId, $plati = [], $cui = '') {
     // Scriem, tot in aceeasi tranzactie, comanda de export catre serverul extern
     // (temp_Send_Sql, Preluat = 0). Serviciul Python (sync-service) o executa pe
     // serverul din tblConectare si marcheaza Preluat = 1.
-    $sendResult = enqueueBillSendSql($conn, $docId, $bon, $plati);
+    $sendResult = enqueueBillSendSql(
+        $conn,
+        $docId,
+        $bon,
+        $plati,
+        array_key_exists('fiscalNr', $opts) ? $opts['fiscalNr'] : null,
+        array_key_exists('fiscalZ', $opts) ? $opts['fiscalZ'] : null,
+        array_key_exists('fiscalRaw', $opts) ? $opts['fiscalRaw'] : null
+    );
     if ($sendResult === false) {
         $sendErr = sqlsrv_errors();
         sqlsrv_rollback($conn);
@@ -529,7 +615,8 @@ function closeBill($conn, $docId, $plati = [], $cui = '') {
         "message" => "Bonul a fost inchis",
         "docId" => $docId,
         "print" => $printResult,
-        "send" => $sendResult
+        "send" => $sendResult,
+        "fiscal" => $fiscalInfo
     ];
 }
 
@@ -726,7 +813,7 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title, $isProforma = f
  * casei de marcat. Ruleaza in tranzactia apelantului (closeBill) si nu face
  * commit. Intoarce array-ul cu JobID-uri sau false la eroare.
  */
-function enqueueBillPrintJobs($conn, $docId, $bon, $plati, $cui = '') {
+function enqueueBillPrintJobs($conn, $docId, $bon, $plati, $cui = '', $skipFiscal = false) {
     $fastfood = (getTipVanz($conn) === "fastfood");
 
     $data = buildBillPrintData($conn, $docId, $bon, $plati, "NOTA DE PLATA");
@@ -739,14 +826,20 @@ function enqueueBillPrintJobs($conn, $docId, $bon, $plati, $cui = '') {
         if ($notaJob === false) { return false; }
     }
 
+    // Bonul fiscal a fost deja emis direct de casa de marcat (cand
+    // AsteaptaRaspunsCasa = 1): nu se mai pune in coada un job fiscal.
+    if ($skipFiscal) {
+        return ["nota" => $notaJob, "fiscal" => null];
+    }
+
     // Implicit bonul fiscal nu arata discountul si nici stornarea: se folosesc
     // cantitatile/preturile nete (fara comenzi de discount, fara linii de
     // storno). Setarea tblSet.BonFiscalDiscStorno = 1 reactiveaza modul detaliat.
     $tipCasa = getTipCasaMarcat($conn);
     $fiscalItems = getBonFiscalDiscStorno($conn) ? $data['fiscalItems'] : $data['fiscalItemsNet'];
     $fiscalLines = buildFiscalText($fiscalItems, $data['plati'], $tipCasa, getTvaNrMap($conn), $cui);
-    // Datecs foloseste fisiere .inp (driver FiscalWire), FiscalNet .txt.
-    $fiscalExt = ($tipCasa === 'datecs') ? '.inp' : '.txt';
+    // FiscalWire foloseste fisiere .inp, FiscalNet/Tremol .txt.
+    $fiscalExt = in_array($tipCasa, ['fiscalnet', 'tremol'], true) ? '.txt' : '.inp';
     $fiscalPayload = [
         "lines" => $fiscalLines,
         "filename" => "doc" . (int)$docId . "_" . date('YmdHis') . $fiscalExt
@@ -939,14 +1032,271 @@ function buildFiscalTextDatecs($items, $platiArr, $tvaMap = [], $cui = '') {
 
 /**
  * Construieste liniile de text pentru driver-ul casei de marcat.
- * Datecs = formatul .inp (buildFiscalTextDatecs), FiscalNet = formatul dedicat
+ * FiscalWire = formatul .inp (buildFiscalTextDatecs), FiscalNet = formatul dedicat
  * (buildFiscalTextFiscalNet, conform FiscalNet.pdf).
  */
-function buildFiscalText($items, $platiArr, $tipCasa = 'datecs', $tvaMap = [], $cui = '') {
+function buildFiscalText($items, $platiArr, $tipCasa = 'fiscalwire', $tvaMap = [], $cui = '') {
     if ($tipCasa === 'fiscalnet') {
         return buildFiscalTextFiscalNet($items, $platiArr, $tvaMap, $cui);
     }
     return buildFiscalTextDatecs($items, $platiArr, $tvaMap, $cui);
+}
+
+// --------------------------------------------------------------------------
+// Asteptarea raspunsului casei de marcat FiscalWire (AsteaptaRaspunsCasa = 1)
+// --------------------------------------------------------------------------
+
+/**
+ * Scrie fisierul de comenzi in folderul monitorizat de driverul FiscalWire.
+ * Scriere atomica (tmp + rename), codificare Windows-1250 (fallback ASCII),
+ * linii separate cu CRLF, ca sa nu fie citit un fisier partial de catre driver.
+ */
+function fiscalWireWriteCommand($dir, $filename, $lines) {
+    $text = implode("\r\n", $lines);
+    $encoded = @iconv('UTF-8', 'Windows-1250//TRANSLIT', $text);
+    if ($encoded === false) {
+        $encoded = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $text);
+        if ($encoded === false) { $encoded = $text; }
+    }
+
+    $path = rtrim($dir, "\\/") . DIRECTORY_SEPARATOR . $filename;
+    $tmp = $path . '.tmp';
+    if (@file_put_contents($tmp, $encoded) === false) { return false; }
+    if (!@rename($tmp, $path)) { @unlink($tmp); return false; }
+    return true;
+}
+
+/**
+ * Sterge fisierul de comenzi scris de noi (si eventualul .tmp ramas). Se foloseste
+ * cand inchiderea notei esueaza (casa nu raspunde / eroare / refuz), ca FiscalWire
+ * sa nu gaseasca mai tarziu comanda si sa tipareasca un bon abandonat.
+ * Intoarce true daca fisierul principal nu mai exista dupa operatie.
+ */
+function fiscalWireRemoveCommand($dir, $filename) {
+    $path = rtrim($dir, "\\/") . DIRECTORY_SEPARATOR . $filename;
+    @unlink($path . '.tmp');
+    @unlink($path);
+    return !is_file($path);
+}
+
+/**
+ * Curata comenzile abandonate (ramase dupa crash / reboot / oprire brusca a
+ * PHP-ului in timpul asteptarii). Sterge fisierele pos_tm_*.inp (si .tmp) mai
+ * vechi de $minAgeSec secunde, ca un bon abandonat sa nu ajunga la registru
+ * cand FiscalWire porneste ulterior. Best-effort.
+ */
+function fiscalWireCleanupStale($dir, $minAgeSec) {
+    $minAgeSec = max(0, (int)$minAgeSec);
+    $dir = rtrim($dir, "\\/");
+    if ($dir === '' || !is_dir($dir)) { return; }
+    $now = time();
+    $files = @scandir($dir);
+    if ($files === false) { return; }
+    foreach ($files as $f) {
+        if ($f === '.' || $f === '..') { continue; }
+        if (strncmp($f, 'pos_tm_', 7) !== 0) { continue; }
+        $ext = strtolower(pathinfo($f, PATHINFO_EXTENSION));
+        if ($ext !== 'inp' && $ext !== 'tmp') { continue; }
+        $full = $dir . DIRECTORY_SEPARATOR . $f;
+        if (!is_file($full)) { continue; }
+        $mtime = @filemtime($full);
+        if ($mtime !== false && ($now - $mtime) >= $minAgeSec) {
+            @unlink($full);
+        }
+    }
+}
+
+/**
+ * Log best-effort (doar esecuri) in logs/fiscal_wait.log: casa de marcat nu a
+ * raspuns (timeout), a refuzat bonul (CANCELED) sau a dat eroare (linii Er).
+ * $comandaStearsa = true/false cand stim daca am sters fisierul de comenzi.
+ */
+function fiscalWaitLog($docId, $bon, $comanda, $rezultat, $detaliu, $comandaStearsa = null) {
+    $dir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'logs';
+    if (!is_dir($dir)) { @mkdir($dir, 0777, true); }
+    $line = sprintf(
+        "[%s] DocID=%d NrDoc=%s comanda=%s rezultat=%s detaliu=\"%s\"",
+        date('Y-m-d H:i:s'),
+        (int)$docId,
+        (string)($bon['NrDoc'] ?? ''),
+        ($comanda === '' ? '-' : $comanda),
+        $rezultat,
+        str_replace(["\r", "\n", '"'], [' ', ' ', "'"], (string)$detaliu)
+    );
+    if ($comandaStearsa !== null) {
+        $line .= " comanda_stearsa=" . ($comandaStearsa ? 'da' : 'nu');
+    }
+    @file_put_contents($dir . DIRECTORY_SEPARATOR . 'fiscal_wait.log', $line . "\n", FILE_APPEND | LOCK_EX);
+}
+
+/**
+ * Parseaza fisierul de confirmare .nrb emis de FiscalWire. Prima linie are
+ * forma: OK;Z=<z>|NR=<nr>|UNIQUE_ID=<fisier>|<dataora>|BF=<bf> sau CANCELED;...
+ * Intoarce ['ok'=>true,'z','nr','bf'] sau ['ok'=>false,'reason','message'].
+ */
+function fiscalWireParseNrb($raw) {
+    $text = str_replace("\r", "", (string)$raw);
+    $parts = explode("\n", $text, 2);
+    $firstLine = $parts[0] ?? '';
+    $status = strtoupper(trim((string)strtok($firstLine, ';')));
+
+    if ($status === 'CANCELED') {
+        return ['ok' => false, 'reason' => 'refuz', 'message' => 'Casa de marcat a anulat bonul (CANCELED).'];
+    }
+    if ($status !== 'OK') {
+        return ['ok' => false, 'reason' => 'eroare',
+                'message' => 'Raspuns necunoscut al casei de marcat: ' . trim($firstLine)];
+    }
+
+    $z = null; $nr = null; $bf = null;
+    if (preg_match('/Z=(\d+)/', $firstLine, $m)) { $z = (int)$m[1]; }
+    if (preg_match('/NR=(\d+)/', $firstLine, $m)) { $nr = (int)$m[1]; }
+    if (preg_match('/BF=(\d+)/', $firstLine, $m)) { $bf = (int)$m[1]; }
+    if ($nr === null) {
+        return ['ok' => false, 'reason' => 'eroare',
+                'message' => 'Fisierul de confirmare nu contine numarul bonului fiscal (NR).'];
+    }
+    // Pastram continutul brut al .nrb (pentru audit / export / POS bancar).
+    return ['ok' => true, 'z' => $z, 'nr' => $nr, 'bf' => $bf, 'raw' => (string)$raw];
+}
+
+/**
+ * Detecteaza prima linie cu status "Er" din fisierul de raspuns .txt (copie a
+ * bonului cu statusul fiecarei linii). Intoarce detaliul erorii sau null.
+ */
+function fiscalWireTxtError($raw) {
+    $text = str_replace("\r", "", (string)$raw);
+    foreach (explode("\n", $text) as $line) {
+        if ($line === '') { continue; }
+        if (preg_match('/,\s*Er\s*[;,$]/i', $line) || preg_match('/,\s*Er\s*$/i', $line)) {
+            $pos = strpos($line, ';');
+            $rest = ($pos !== false) ? substr($line, $pos + 1) : '';
+            $chunks = array_values(array_filter(array_map('trim', explode(';', $rest)), function ($s) {
+                return $s !== '';
+            }));
+            $code = !empty($chunks) ? (string)end($chunks) : '';
+            $code = trim($code, " ,;\t");
+            return ($code !== '') ? $code : 'linie de comanda respinsa';
+        }
+    }
+    return null;
+}
+
+/**
+ * Asteapta in folderul de raspuns fisierul generat de FiscalWire pentru comanda
+ * noastra (corelare dupa prefixul numelui comenzii si UNIQUE_ID din .nrb).
+ * Gata de testat cu tools/mock_fiscalwire.py.
+ */
+function fiscalWireWaitResponse($raspunsDir, $cmdBase, $cmdName, $sentAt, $timeoutSec) {
+    $timeoutSec = max(1, (int)$timeoutSec);
+    $deadline = microtime(true) + $timeoutSec;
+    $dir = rtrim($raspunsDir, "\\/");
+
+    while (true) {
+        $txtErr = null;
+        $files = @scandir($dir);
+        if ($files !== false) {
+            foreach ($files as $f) {
+                if ($f === '.' || $f === '..') { continue; }
+                $ext = strtolower(pathinfo($f, PATHINFO_EXTENSION));
+                if ($ext !== 'nrb' && $ext !== 'txt') { continue; }
+                // Corelare: numele raspunsului incepe cu numele comenzii fara ext.
+                if (strncmp($f, $cmdBase, strlen($cmdBase)) !== 0) { continue; }
+                $full = $dir . DIRECTORY_SEPARATOR . $f;
+                if (!is_file($full)) { continue; }
+                $mtime = @filemtime($full);
+                if ($mtime !== false && $mtime + 5 < $sentAt) { continue; }
+
+                if ($ext === 'nrb') {
+                    $raw = @file_get_contents($full);
+                    if ($raw === false || $raw === '') { continue; }
+                    if (strpos($raw, 'UNIQUE_ID=' . $cmdName) === false
+                        && strpos($raw, 'UNIQUE_ID=' . $cmdBase) === false) {
+                        continue;
+                    }
+                    return fiscalWireParseNrb($raw);
+                }
+
+                $raw = @file_get_contents($full);
+                if ($raw === false) { continue; }
+                $err = fiscalWireTxtError($raw);
+                if ($err !== null) { $txtErr = $err; }
+            }
+        }
+
+        if ($txtErr !== null) {
+            return ['ok' => false, 'reason' => 'eroare',
+                    'message' => 'Casa de marcat a raportat o eroare: ' . $txtErr];
+        }
+        if (microtime(true) >= $deadline) { break; }
+        usleep(300000);
+    }
+
+    return ['ok' => false, 'reason' => 'timeout',
+            'message' => 'Casa de marcat nu a raspuns in ' . $timeoutSec
+                       . ' secunde (nu s-a generat fisierul de confirmare).'];
+}
+
+/**
+ * Trimite bonul fiscal catre FiscalWire si asteapta confirmarea. Se apeleaza
+ * inainte de tranzactia de inchidere a notei, ca sa nu tinem lock-uri DB in
+ * timpul asteptarii. Scrie in log la orice esec.
+ * Intoarce ['ok'=>true,'z','nr','bf','comanda'] sau ['ok'=>false,'reason','message','comanda'].
+ */
+function fiscalWireSendAndWait($conn, $docId, $bon, $fiscalLines) {
+    // Asteptarea poate depasi max_execution_time implicit; o permitem explicit
+    // (ca la api/pos_banca.php).
+    @set_time_limit(0);
+    @ignore_user_abort(true);
+
+    $comenziDir = getCaleFisierComenziECR($conn);
+    $raspunsDir = getCaleFisierRaspunsECR($conn);
+
+    if ($comenziDir === '' || !is_dir($comenziDir)) {
+        $msg = "Folderul de comenzi al casei de marcat nu este configurat sau nu exista: " . $comenziDir;
+        fiscalWaitLog($docId, $bon, '', 'eroare', $msg);
+        return ['ok' => false, 'reason' => 'eroare', 'message' => $msg, 'comanda' => ''];
+    }
+    if ($raspunsDir === '' || !is_dir($raspunsDir)) {
+        $msg = "Folderul de raspuns al casei de marcat nu este configurat sau nu exista: " . $raspunsDir;
+        fiscalWaitLog($docId, $bon, '', 'eroare', $msg);
+        return ['ok' => false, 'reason' => 'eroare', 'message' => $msg, 'comanda' => ''];
+    }
+
+    $cmdBase = 'pos_tm_' . (int)$docId . '_' . date('YmdHis');
+    $cmdName = $cmdBase . '.inp';
+    $sentAt = time();
+
+    // Curatam intai comenzile abandonate (ramase de la un crash / reboot / o
+    // oprire brusca a PHP-ului), ca sa nu fie tiparite la pornirea registrului.
+    fiscalWireCleanupStale($comenziDir, max(getAsteptareCasaSec($conn), 120));
+
+    if (!fiscalWireWriteCommand($comenziDir, $cmdName, $fiscalLines)) {
+        $msg = "Nu pot scrie fisierul de comenzi al casei de marcat: " . $cmdName;
+        fiscalWaitLog($docId, $bon, $cmdName, 'eroare', $msg);
+        return ['ok' => false, 'reason' => 'eroare', 'message' => $msg, 'comanda' => $cmdName];
+    }
+
+    $result = fiscalWireWaitResponse($raspunsDir, $cmdBase, $cmdName, $sentAt, getAsteptareCasaSec($conn));
+    $result['comanda'] = $cmdName;
+
+    // La timeout mai acordam o scurta perioada de gratie (un raspuns poate veni
+    // chiar la limita), inainte de a sterge comanda. Daca si atunci e timeout,
+    // pastram rezultatul initial, ca mesajul sa arate timeout-ul configurat.
+    if (!$result['ok'] && ($result['reason'] ?? '') === 'timeout') {
+        $grace = fiscalWireWaitResponse($raspunsDir, $cmdBase, $cmdName, $sentAt, 2);
+        $grace['comanda'] = $cmdName;
+        if ($grace['ok']) { $result = $grace; }
+    }
+
+    if (!$result['ok']) {
+        // Nota nu se inchide: stergem fisierul de comenzi ca FiscalWire sa nu
+        // gaseasca mai tarziu comanda si sa tipareasca un bon abandonat
+        // (desincronizare fata de POS-ul care are nota inca deschisa).
+        $stearsa = fiscalWireRemoveCommand($comenziDir, $cmdName);
+        fiscalWaitLog($docId, $bon, $cmdName, $result['reason'], $result['message'], $stearsa);
+    }
+    return $result;
 }
 
 /**

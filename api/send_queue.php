@@ -42,7 +42,7 @@ if ($isGet) {
            SET Stare = 'sending', Attempts = Attempts + 1,
                NextAttempt = DATEADD(minute, 5, GETDATE())
         OUTPUT inserted.Id, inserted.DocID, inserted.str_sql,
-               inserted.Attempts;";
+               inserted.Attempts, inserted.RaspunsCasa;";
 
         $stmt = sqlsrv_query($conn, $sql);
         if ($stmt === false) {
@@ -58,7 +58,8 @@ if ($isGet) {
                 "Id" => (int)$job['Id'],
                 "DocID" => $job['DocID'] === null ? null : (int)$job['DocID'],
                 "str_sql" => (string)($job['str_sql'] ?? ''),
-                "Attempts" => (int)$job['Attempts']
+                "Attempts" => (int)$job['Attempts'],
+                "RaspunsCasa" => (string)($job['RaspunsCasa'] ?? '')
             ],
             "db" => getConectareDb($conn)
         ]);
@@ -85,7 +86,7 @@ if ($isGet) {
     if ($action === 'get') {
         $id = (int)($_GET['id'] ?? 0);
         $stmt = sqlsrv_query($conn, "SELECT Id, DocID, str_sql, Preluat, Stare, Attempts,
-                                            NextAttempt, LastError, CreatedAt, SentAt
+                                            NextAttempt, LastError, CreatedAt, SentAt, RaspunsCasa
                                      FROM temp_Send_Sql WHERE Id = ?", [$id]);
         $r = $stmt ? sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC) : null;
         if (!$r) { sendJsonResponse(["status" => "error", "message" => "Rand inexistent"], 404); }
@@ -93,6 +94,7 @@ if ($isGet) {
             "Id" => (int)$r['Id'],
             "DocID" => $r['DocID'] === null ? null : (int)$r['DocID'],
             "str_sql" => (string)($r['str_sql'] ?? ''),
+            "RaspunsCasa" => (string)($r['RaspunsCasa'] ?? ''),
             "Preluat" => ((int)$r['Preluat'] === 1),
             "Stare" => trim((string)($r['Stare'] ?? '')),
             "Attempts" => (int)$r['Attempts'],

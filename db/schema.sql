@@ -480,7 +480,8 @@ CREATE TABLE dbo.[temp_Send_Sql] (
     [NextAttempt] datetime2(7) NULL,
     [LastError] nvarchar(500) NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_temp_Send_Sql_Created] DEFAULT (sysdatetime()),
-    [SentAt] datetime2(7) NULL
+    [SentAt] datetime2(7) NULL,
+    [RaspunsCasa] nvarchar(max) NULL
 );
 END
 GO

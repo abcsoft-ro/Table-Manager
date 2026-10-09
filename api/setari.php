@@ -160,12 +160,25 @@ function ensureSetariMeta($conn) {
     );
 
     // Casa de marcat fiscala: tipul casei + caile fisierelor de comenzi/raspuns.
-    ensureSetariValue($conn, 'TipCasaMarcat', 'Datecs',
-        "Tipul casei de marcat fiscale: Datecs, FiscalNet sau Tremol.", 'Casa');
+    ensureSetariValue($conn, 'TipCasaMarcat', 'FiscalWire',
+        "Tipul casei de marcat fiscale: FiscalWire, FiscalNet sau Tremol.", 'Casa');
+    // Migrare: vechea valoare "Datecs" (tot driver FiscalWire) devine "FiscalWire".
+    @sqlsrv_query(
+        $conn,
+        "UPDATE tblSet SET Value = 'FiscalWire' WHERE Setting = 'TipCasaMarcat' AND Value = 'Datecs'"
+    );
     ensureSetariValue($conn, 'CaleFisierComenziECR', 'C:\\POS\\fiscal\\bonuri',
         "Folderul in care se scriu fisierele de comenzi catre casa de marcat fiscala.", 'Casa');
     ensureSetariValue($conn, 'CaleFisierRaspunsECR', 'C:\\POS\\fiscal\\raspuns',
         "Folderul in care casa de marcat fiscala scrie fisierele de raspuns.", 'Casa');
+    // Asteptarea raspunsului casei de marcat la inchiderea notei (implementat
+    // pentru driver-ul FiscalWire): cand e DA, POS-ul scrie fisierul de comenzi
+    // si asteapta confirmarea bonului (.nrb) inainte de a inchide nota. Nota nu
+    // se inchide daca registrul nu raspunde, refuza (CANCELED) sau da eroare.
+    ensureSetariValue($conn, 'AsteaptaRaspunsCasa', '0',
+        "Asteapta raspunsul casei de marcat la inchiderea notei (doar FiscalWire): 1 = DA (nota se inchide doar dupa confirmarea bonului fiscal), 0 = NU (implicit, tiparire asincrona ca pana acum).", 'Casa');
+    ensureSetariValue($conn, 'AsteptareCasaSec', '30',
+        "Durata maxima (secunde) cat POS-ul asteapta raspunsul casei de marcat cand AsteaptaRaspunsCasa = 1. Implicit 30.", 'Casa');
     ensureSetariValue($conn, 'BonFiscalDiscStorno', '0',
         "Afiseaza discountul si stornarea pe bonul fiscal: 1 = DA, 0 = NU (implicit). La 0 bonul contine doar cantitatile si preturile nete, fara comenzi de discount si fara linii de storno.", 'Casa');
 
@@ -183,7 +196,7 @@ function ensureSetariMeta($conn) {
     ensureSetariValue($conn, 'CaleDriverCantar', '',
         "Calea catre driverul/executabilul cantarului electronic.", 'Cantar');
     ensureSetariValue($conn, 'CaleFisierRaspunsCantar', '',
-        "Folderul in care cantarul electronic scrie fisierele de raspuns.", 'Cantar');
+        "Calea catre fisierul de raspuns al cantarului.", 'Cantar');
 
     // POS bancar: activare + driver + folder raspuns.
     ensureSetariValue($conn, 'PoSbanca', '0',
@@ -200,7 +213,7 @@ function ensureSetariMeta($conn) {
            AND NOT EXISTS (SELECT 1 FROM tblSet t2 WHERE t2.Setting = 'CaleFisierRaspunsPoSbanca')"
     );
     ensureSetariValue($conn, 'CaleFisierRaspunsPoSbanca', '',
-        "Fisierul in care POS-ul bancar scrie raspunsul.", 'PoSbanca');
+        "Calea catre fisierul in care POS-ul bancar scrie raspunsul.", 'PoSbanca');
     @sqlsrv_query($conn, "DELETE FROM tblSet WHERE Setting = 'CaleFisierComenziPoSbanca'");
 
     // Chei legacy, fara efect in aplicatie: se sterg din tblSet daca exista

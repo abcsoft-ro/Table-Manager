@@ -45,6 +45,10 @@ const POS_STATE = {
   // POS bancar activ (tblSet.PoSbanca): cand e 1, la inchiderea unei note cu
   // plata pe card se apeleaza terminalul bancar prin api/pos_banca.php.
   posBanca: 0,
+  // Asteapta raspunsul casei de marcat la inchiderea notei
+  // (tblSet.AsteaptaRaspunsCasa, doar FiscalWire): cand e 1, dupa plata se
+  // asteapta confirmarea bonului fiscal inainte de a inchide nota.
+  asteaptaRaspunsCasa: 0,
   reducereProcent: 0,
   selectedItemIndex: 0,
   // Forme de plata (tblFP) si platile inregistrate pe ecranul de inchidere:
@@ -164,6 +168,7 @@ async function loadMenu() {
   POS_STATE.procentDiscountFix = (pf >= 0 && pf <= 100) ? pf : 10;
   POS_STATE.server = (data.server == 1) ? 1 : 0;
   POS_STATE.posBanca = (data.posBanca == 1) ? 1 : 0;
+  POS_STATE.asteaptaRaspunsCasa = (data.asteaptaRaspunsCasa == 1) ? 1 : 0;
   POS_STATE.parolaDiscount = (data.parolaDiscount == 1) ? 1 : 0;
   POS_STATE.parolaStornare = (data.parolaStornare == 1) ? 1 : 0;
 
@@ -1160,7 +1165,9 @@ async function finalizePaymentTransaction() {
     }
   }
 
+  const asteaptaCasa = (POS_STATE.asteaptaRaspunsCasa === 1);
   try {
+    if (asteaptaCasa) { showFiscalWait(); }
     const resp = await fetch("api/order_action.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1203,9 +1210,12 @@ async function finalizePaymentTransaction() {
     if (res.print) {
       if (res.print.nota) {
         msg += `\nTiparire: nota #${res.print.nota}, fiscal #${res.print.fiscal}`;
-      } else {
+      } else if (res.print.fiscal) {
         msg += `\nTiparire: fiscal #${res.print.fiscal}`;
       }
+    }
+    if (res.fiscal) {
+      msg += `\nCasa de marcat: NR ${res.fiscal.nr} / Z ${res.fiscal.z}`;
     }
 
     appAlert(msg);
@@ -1217,6 +1227,11 @@ async function finalizePaymentTransaction() {
     navigateToScreen("screen-mese");
   } catch (err) {
     appAlert("Eroare la inchiderea bonului: " + err.message);
+    // Nota nu s-a inchis: readucem ecranul de plata la starea initiala, ca o
+    // noua apasare pe OK sa reia de la zero (fara dublarea sumelor deja introduse).
+    if (asteaptaCasa) { resetPaymentScreen(); }
+  } finally {
+    if (asteaptaCasa) { hideFiscalWait(); }
   }
 }
 
@@ -1332,6 +1347,17 @@ function showBankPosWait() {
 
 function hideBankPosWait() {
   const modal = document.getElementById("modal-pos-banca-wait");
+  if (modal) modal.classList.remove("active");
+}
+
+// Asteptarea raspunsului casei de marcat (FiscalWire) la inchiderea notei.
+function showFiscalWait() {
+  const modal = document.getElementById("modal-fiscal-wait");
+  if (modal) modal.classList.add("active");
+}
+
+function hideFiscalWait() {
+  const modal = document.getElementById("modal-fiscal-wait");
   if (modal) modal.classList.remove("active");
 }
 
@@ -2044,7 +2070,7 @@ function renderSetariTabs() {
 // Cele care nu apar in lista raman dupa ele, in ordinea primita de la server.
 const SETARI_ORDINE = {
   "discount": ["RED", "TipDiscount", "ProcentDiscountFix", "MotivDiscount"],
-  "casa": ["TipCasaMarcat", "BonFiscalDiscStorno", "CaleFisierComenziECR", "CaleFisierRaspunsECR"],
+  "casa": ["TipCasaMarcat", "AsteaptaRaspunsCasa", "AsteptareCasaSec", "BonFiscalDiscStorno", "CaleFisierComenziECR", "CaleFisierRaspunsECR"],
   "afiseaj": ["AfiseajClient", "PortComAfiseaj", "BaudRateAfisaj", "CaleDriverAfiseajClient", "CaleFisierComenziAfiseajClient"],
   "cantar": ["Cantar", "CaleDriverCantar", "CaleFisierRaspunsCantar", "Delay_cantar"],
   "posbanca": ["PoSbanca", "CaleDriverPoSbanca", "CaleFisierRaspunsPoSbanca"]
@@ -2103,7 +2129,11 @@ function setariField(row) {
   if (row.Setting === "TransferMasa") {
     return setariTransferMasaField(row);
   }
-  // Tipul casei de marcat fiscale: lista Datecs / FiscalNet / Tremol.
+  // Asteptarea raspunsului casei de marcat: lista DA / NU (implicit NU).
+  if (row.Setting === "AsteaptaRaspunsCasa") {
+    return setariDaNuField(row.Setting, row.Value, row.Descriere, true);
+  }
+  // Tipul casei de marcat fiscale: lista FiscalWire / FiscalNet / Tremol.
   if (row.Setting === "TipCasaMarcat") {
     return setariTipCasaMarcatField(row);
   }
@@ -2381,13 +2411,13 @@ function setariTipCasaMarcatField(row) {
   select.className = "tva-input setari-input";
   select.id = "setari-inp-" + row.Setting;
 
-  const opts = ["Datecs", "FiscalNet", "Tremol"];
+  const opts = ["FiscalWire", "FiscalNet", "Tremol"];
   const cur = String(row.Value === null || row.Value === undefined ? "" : row.Value).trim();
   opts.forEach(val => {
     const opt = document.createElement("option");
     opt.value = val;
     opt.textContent = val;
-    if (val === (opts.includes(cur) ? cur : "Datecs")) opt.selected = true;
+    if (val === (opts.includes(cur) ? cur : "FiscalWire")) opt.selected = true;
     select.appendChild(opt);
   });
   select.onchange = () => { setariDirty[row.Setting] = select.value; };
@@ -6766,7 +6796,12 @@ async function viewSendJob() {
     if (data.status !== "success") throw new Error(data.message || "Eroare");
     const docTxt = data.row.DocID != null ? " (doc " + data.row.DocID + ")" : "";
     document.getElementById("send-det-title").innerText = "COMANDA EXPORT #" + job.Id + docTxt;
-    document.getElementById("send-det-content").textContent = data.row.str_sql || "(comanda goala)";
+    let content = data.row.str_sql || "(comanda goala)";
+    const raspuns = (data.row.RaspunsCasa || "").trim();
+    if (raspuns) {
+      content += "\n\n--- RASPUNS CASA DE MARCAT ---\n" + data.row.RaspunsCasa;
+    }
+    document.getElementById("send-det-content").textContent = content;
     document.getElementById("modal-send-detail").classList.add("active");
   } catch (err) {
     appAlert("Eroare citire comanda: " + err.message);

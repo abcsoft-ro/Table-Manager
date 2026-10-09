@@ -67,7 +67,9 @@ function ensureBillDiscountMotiveColumn($conn) {
     @sqlsrv_query(
         $conn,
         "IF COL_LENGTH('dbo.tblBonCurent','MotivDiscount') IS NULL
-             ALTER TABLE dbo.tblBonCurent ADD MotivDiscount nvarchar(50) NULL"
+             ALTER TABLE dbo.tblBonCurent ADD MotivDiscount nvarchar(50) NULL",
+        null,
+        ['QueryTimeout' => 15]
     );
     $done = true;
 }
@@ -82,7 +84,9 @@ function ensureParolaUpdateColumn($conn) {
     @sqlsrv_query(
         $conn,
         "IF COL_LENGTH('dbo.tblParola','ParolaUpdate') IS NULL
-             ALTER TABLE dbo.tblParola ADD ParolaUpdate nvarchar(20) NULL"
+             ALTER TABLE dbo.tblParola ADD ParolaUpdate nvarchar(20) NULL",
+        null,
+        ['QueryTimeout' => 15]
     );
     $done = true;
 }
@@ -112,7 +116,7 @@ function ensurePrintQueueTable($conn) {
         );
         CREATE INDEX IX_tblPrintQueue_Stare ON dbo.tblPrintQueue (Stare, NextAttempt) INCLUDE (JobID);
     END";
-    @sqlsrv_query($conn, $sqlTable);
+    @sqlsrv_query($conn, $sqlTable, null, ['QueryTimeout' => 15]);
 
     $done = true;
 }

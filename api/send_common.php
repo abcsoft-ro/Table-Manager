@@ -42,11 +42,14 @@ function ensureSendSqlTable($conn) {
             NextAttempt DATETIME2     NULL,
             LastError   NVARCHAR(500) NULL,
             CreatedAt   DATETIME2     NOT NULL CONSTRAINT DF_temp_Send_Sql_Created DEFAULT (SYSDATETIME()),
-            SentAt      DATETIME2     NULL
+            SentAt      DATETIME2     NULL,
+            RaspunsCasa NVARCHAR(MAX) NULL
         );
         CREATE INDEX IX_temp_Send_Sql_Preluat ON dbo.temp_Send_Sql (Preluat, Stare, NextAttempt) INCLUDE (Id);
     END";
-    @sqlsrv_query($conn, $sqlTable);
+    // QueryTimeout: o migrare blocata de un lock sa nu tina cererea pana la
+    // max_execution_time (altfel browserul primeste un NetworkError).
+    @sqlsrv_query($conn, $sqlTable, null, ['QueryTimeout' => 15]);
 
     // Completeaza o tabela legacy cu coloanele care lipsesc.
     $columns = [
@@ -57,12 +60,15 @@ function ensureSendSqlTable($conn) {
         'LastError'   => "NVARCHAR(500) NULL",
         'CreatedAt'   => "DATETIME2 NULL",
         'SentAt'      => "DATETIME2 NULL",
+        'RaspunsCasa' => "NVARCHAR(MAX) NULL",
     ];
     foreach ($columns as $col => $def) {
         @sqlsrv_query(
             $conn,
             "IF COL_LENGTH('dbo.temp_Send_Sql','$col') IS NULL
-                 ALTER TABLE dbo.temp_Send_Sql ADD $col $def"
+                 ALTER TABLE dbo.temp_Send_Sql ADD $col $def",
+            null,
+            ['QueryTimeout' => 15]
         );
     }
 
@@ -72,7 +78,9 @@ function ensureSendSqlTable($conn) {
                         WHERE name = 'IX_temp_Send_Sql_Preluat'
                           AND object_id = OBJECT_ID('dbo.temp_Send_Sql'))
              CREATE INDEX IX_temp_Send_Sql_Preluat
-                 ON dbo.temp_Send_Sql (Preluat, Stare, NextAttempt) INCLUDE (Id)"
+                 ON dbo.temp_Send_Sql (Preluat, Stare, NextAttempt) INCLUDE (Id)",
+        null,
+        ['QueryTimeout' => 15]
     );
 
     $done = true;
@@ -152,10 +160,15 @@ function getConectareDb($conn) {
  * Procedura difera dupa TipVanz: Restaurant -> EmitBon_Ext_NOU,
  * FastFood -> EmitBon_Ext_2.
  *
+ * $nrBonOverride / $nrZOverride = numerele reale din raspunsul casei de marcat
+ * (cand AsteaptaRaspunsCasa = 1). $raspunsCasa = continutul brut al fisierului
+ * .nrb, pastrat in temp_Send_Sql.RaspunsCasa pentru audit / afisare si trimis ca
+ * ultim parametru al procedurii EmitBon_Ext_* (NULL la exportul clasic).
+ *
  * Se apeleaza in tranzactia de inchidere a bonului. Intoarce Id-ul randului,
  * null cand exportul este dezactivat (tblSet.Server <> 1) sau false la eroare.
  */
-function enqueueBillSendSql($conn, $docId, $bon, $plati = []) {
+function enqueueBillSendSql($conn, $docId, $bon, $plati = [], $nrBonOverride = null, $nrZOverride = null, $raspunsCasa = null) {
     // Exportul catre server este activat din tblSet.Server (1 = DA).
     if (getTblSetInt($conn, 'Server', 0) !== 1) {
         return null;
@@ -212,6 +225,9 @@ function enqueueBillSendSql($conn, $docId, $bon, $plati = []) {
     $total = $totRow ? (float)$totRow['Total'] : 0.0;
 
     // Urmatorul numar Z (cel care va fi atribuit acestei sesiuni la inchiderea Z).
+    // Cand casa de marcat confirma bonul (AsteaptaRaspunsCasa = 1), numarul Z si
+    // numarul bonului se preiau din raspunsul casei (.nrb): astfel exportul
+    // foloseste exact Z/NR reale ale registrului fiscal.
     $nrZ = 0;
     $stmtZ = sqlsrv_query($conn, "SELECT ISNULL(MAX(NrZ), 0) + 1 AS NrZ FROM tblNrZ");
     $zRow = $stmtZ ? sqlsrv_fetch_array($stmtZ, SQLSRV_FETCH_ASSOC) : null;
@@ -220,6 +236,10 @@ function enqueueBillSendSql($conn, $docId, $bon, $plati = []) {
     $statieId = getTblSetInt($conn, 'NrLogic', 0);
     $magId = getTblSetInt($conn, 'MagID', 0);
     $nrBon = (int)($bon['NrDoc'] ?? 0);
+
+    // Valorile reale din raspunsul casei de marcat au prioritate (daca exista).
+    if ($nrBonOverride !== null && (int)$nrBonOverride > 0) { $nrBon = (int)$nrBonOverride; }
+    if ($nrZOverride !== null && (int)$nrZOverride > 0) { $nrZ = (int)$nrZOverride; }
 
     // Data/ora pe serverul local. Procedurile EmitBon_Ext_* declara @Data char(10)
     // si fac SET DATEFORMAT dmy, deci data trebuie data ca dd/mm/yyyy (stil 103),
@@ -235,6 +255,11 @@ function enqueueBillSendSql($conn, $docId, $bon, $plati = []) {
     $tipVanz = getTblSetInt($conn, 'TipVanz', 0);
     $proc = ($tipVanz === 1) ? 'EmitBon_Ext_2' : 'EmitBon_Ext_NOU';
 
+    // Continutul brut al fisierului de confirmare .nrb al casei de marcat (cand
+    // AsteaptaRaspunsCasa = 1). null cand nu exista raspuns (export clasic).
+    $raspunsCasaVal = ($raspunsCasa === null || trim((string)$raspunsCasa) === '')
+        ? null : (string)$raspunsCasa;
+
     $strSql = "Execute " . $proc . " "
         . sendSqlStr($sData) . ','
         . sendSqlStr($sOra) . ','
@@ -247,11 +272,13 @@ function enqueueBillSendSql($conn, $docId, $bon, $plati = []) {
         . sendSqlNum($bon['NrOp'] ?? 0) . ','
         . sendSqlNum($total) . ','
         . sendSqlNum($bon['ClientID'] ?? 0) . ','
-        . sendSqlNum($statieId) . ';';
+        . sendSqlNum($statieId) . ','
+        // Ultimul parametru: raspunsul brut al casei de marcat (NULL la exportul clasic).
+        . ($raspunsCasaVal === null ? 'NULL' : sendSqlStr($raspunsCasaVal)) . ';';
 
-    $sql = "INSERT INTO temp_Send_Sql (DocID, str_sql, Preluat, Stare, Attempts, CreatedAt)
-            VALUES (?, ?, 0, 'pending', 0, SYSDATETIME()); SELECT SCOPE_IDENTITY() AS Id;";
-    $stmt = sqlsrv_query($conn, $sql, [$docId, $strSql]);
+    $sql = "INSERT INTO temp_Send_Sql (DocID, str_sql, Preluat, Stare, Attempts, CreatedAt, RaspunsCasa)
+            VALUES (?, ?, 0, 'pending', 0, SYSDATETIME(), ?); SELECT SCOPE_IDENTITY() AS Id;";
+    $stmt = sqlsrv_query($conn, $sql, [$docId, $strSql, $raspunsCasaVal]);
     if ($stmt === false) { return false; }
 
     sqlsrv_next_result($stmt);

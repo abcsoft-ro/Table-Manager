@@ -54,6 +54,8 @@ DELETE FROM dbo.[tblSet];
 GO
 INSERT INTO dbo.[tblSet] ([Setting], [Value], [Descriere], [Grup]) VALUES
 (N'AfiseajClient', N'1', N'Afisaj client activ: 1 = DA, 0 = NU.', N'Afiseaj'),
+(N'AsteaptaRaspunsCasa', N'0', N'Asteapta raspunsul casei de marcat la inchiderea notei (doar FiscalWire): 1 = DA (nota se inchide doar dupa confirmarea bonului fiscal), 0 = NU (implicit, tiparire asincrona ca pana acum).', N'Casa'),
+(N'AsteptareCasaSec', N'30', N'Durata maxima (secunde) cat POS-ul asteapta raspunsul casei de marcat cand AsteaptaRaspunsCasa = 1. Implicit 30.', N'Casa'),
 (N'BaudRateAfisaj', N'9600', NULL, N'Afiseaj'),
 (N'CaleDriverAfiseajClient', N'', N'Calea catre driverul/executabilul afisajului client.', N'Afiseaj'),
 (N'CaleDriverCantar', N'', N'Calea catre driverul/executabilul cantarului electronic.', N'Cantar'),
@@ -87,7 +89,7 @@ INSERT INTO dbo.[tblSet] ([Setting], [Value], [Descriere], [Grup]) VALUES
 (N'Server', N'1', N'0 = aplicatia functioneaza independent; 1 = aplicatia incarca grupele si produsele de pe un server extern, aplicatia exporta vanzarile catre serverul extern prin serviciul python sync-service.', N'ODBC'),
 (N'SiteUrlApi', N'', NULL, N'web'),
 (N'Storno_parola', N'0', NULL, N'General'),
-(N'TipCasaMarcat', N'Datecs', N'Tipul casei de marcat fiscale: Datecs, FiscalNet sau Tremol.', N'Casa'),
+(N'TipCasaMarcat', N'FiscalWire', N'Tipul casei de marcat fiscale: FiscalWire, FiscalNet sau Tremol.', N'Casa'),
 (N'TipVanz', N'0', N'Tipul de vanzare: 0 = Restaurant (ecran de mese, comanda la sectie, nota de plata); 1 = FastFood (fara ecran de mese, comanda nu pleaca la sectie, doar bon fiscal).', N'General'),
 (N'TransferMasa', N'1', NULL, N'General');
 GO

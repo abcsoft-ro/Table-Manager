@@ -54,7 +54,7 @@ function ensurePosBancaLogTable($conn) {
                 CreatedAt DATETIME NOT NULL DEFAULT (GETDATE()),
                 ResolvedAt DATETIME NULL
             )";
-    @sqlsrv_query($conn, $sql);
+    @sqlsrv_query($conn, $sql, null, ['QueryTimeout' => 15]);
 }
 
 /**

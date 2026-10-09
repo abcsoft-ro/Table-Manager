@@ -292,6 +292,16 @@ if ($stmtPb) {
     if ($pb && trim((string)$pb['Value']) === '1') { $posBanca = 1; }
 }
 
+// 4f5. Asteapta raspunsul casei de marcat (tblSet.AsteaptaRaspunsCasa): 1 = DA
+//      (la inchiderea notei POS-ul asteapta confirmarea bonului fiscal, doar
+//      FiscalWire), 0 = NU (implicit, tiparire asincrona ca pana acum).
+$asteaptaRaspunsCasa = 0;
+$stmtAR = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'AsteaptaRaspunsCasa'");
+if ($stmtAR) {
+    $ar = sqlsrv_fetch_array($stmtAR, SQLSRV_FETCH_ASSOC);
+    if ($ar && trim((string)$ar['Value']) === '1') { $asteaptaRaspunsCasa = 1; }
+}
+
 // 4g. Parola de discount (tblParola.ParolaDiscount): 1 daca este setata (deci
 //     discountul cere parola), 0 daca nu. Valoarea parolei NU se trimite.
 $parolaDiscount = 0;
@@ -356,6 +366,7 @@ sendJsonResponse([
     "procentDiscountFix" => $procentDiscountFix,
     "server" => $server,
     "posBanca" => $posBanca,
+    "asteaptaRaspunsCasa" => $asteaptaRaspunsCasa,
     "parolaDiscount" => $parolaDiscount,
     "parolaStornare" => $parolaStornare,
     "motivDiscount" => $motivDiscount,

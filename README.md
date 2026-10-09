@@ -28,10 +28,10 @@ regandit pentru fiabilitate, intretinere simpla si lipsa dependentelor grele.
   nota de plata, nota proforma si rapoarte, printr-o coada durabila; destinatiile fizice
   ale fiecarei sectii se configureaza din aplicatie, cu test de tiparire.
 - **Casa de marcat** — fisierul de comenzi pentru driverul fiscal, generat pentru
-  **Datecs/FiscalWire** (`.inp`) sau **FiscalNet** (`^`), in functie de `tblSet.TipCasaMarcat`,
+  **FiscalWire** (`.inp`) sau **FiscalNet** (`^`), in functie de `tblSet.TipCasaMarcat`,
   si copiat automat in folderul monitorizat de driver (`tblSet.CaleFisierComenziECR`).
 - **CUI (cod fiscal client)** — popup cu tastatura dedicata pe ecranul de plata; codul e validat
-  cu cifra de control ANAF si trimis pe bon (`K,...` la Datecs, `CF^...` la FiscalNet).
+  cu cifra de control ANAF si trimis pe bon (`K,...` la FiscalWire, `CF^...` la FiscalNet).
 - **Modul mobil** — pagina dedicata pentru tableta/telefon (`mobile.html`) pentru marcarea
   meselor, independenta de POS-ul desktop, dar folosind aceleasi API-uri.
 - **Export catre server** — la inchiderea fiecarei note se scrie o comanda `EXEC EmitBon_Ext_NOU`
@@ -39,6 +39,9 @@ regandit pentru fiabilitate, intretinere simpla si lipsa dependentelor grele.
   (`sync-service/`) o executa pe serverul din `tblConectare` si marcheaza `Preluat = 1`. Daca serverul
   e oprit sau locatia e offline, comanda ramane in coada si se reincearca **la infinit** (cu backoff),
   pana cand legatura revine; ecranul **Coada export** (Programare) arata starea si permite retry/stergere.
+  Cand `AsteaptaRaspunsCasa = 1`, randul de export pastreaza si raspunsul casei de marcat
+  (continutul `.nrb`) in coloana `RaspunsCasa`, vizibil in detaliul din „Coada export", si il
+  trimite ca **ultim parametru** procedurii `EmitBon_Ext_*` (`NULL` la exportul clasic).
 - **Import produse/grupe la pornire** — la deschiderea kiosc-ului, `Pornire-POS-Kiosk.bat`
   ruleaza `import_server_grp_prod.py`, care (doar cand `tblSet.Server = 1`) executa procedura
   stocata `dbo.ImportProd` pentru sincronizarea produselor si grupelor de pe serverul extern.
@@ -118,7 +121,7 @@ jobul se reincearca cu backoff, deci bonul nu se pierde.
 
 Tipul casei se alege din **Setari → Casa Marcat** (`tblSet.TipCasaMarcat`):
 
-- **Datecs** (driver FiscalWire) — fisier `.inp`:
+- **FiscalWire** (driver FiscalWire) — fisier `.inp`:
   - `H,1,______,_,__;` antet (fara linie `F` la final, ca in procedura veche);
   - `S,1,______,_,__;NUME;PRET;CANT;1;1;NrTVA;0;0;` vanzare (nume majuscule, completat/trunchiat
     la 22 de caractere; pret cu 2 zecimale; cantitate cu 3 zecimale; storno = cantitate negativa);
@@ -131,7 +134,7 @@ Tipul casei se alege din **Setari → Casa Marcat** (`tblSet.TipCasaMarcat`):
   - `CF^RO12345678` cod fiscal client, inainte de prima vanzare.
 
 Codurile de plata se iau direct din `tblFP.FPID` (0 = Numerar, 1 = Card, 2 = CEC, 3 = Tichet,
-4 = OP, 5 = Voucher): la Datecs se scrie `FPID`, la FiscalNet `FPID + 1` (driver-ul foloseste
+4 = OP, 5 = Voucher): la FiscalWire se scrie `FPID`, la FiscalNet `FPID + 1` (driver-ul foloseste
 coduri 1-based). Grupa de TVA se rezolva din `tblTVA` dupa cota liniei (`tblNoteD.TVAc` ->
 `tblTVA.Nr_TVA`), la fel ca `DLookup("Nr_TVA","tblTVA","Cota=" & TVAc)` din aplicatia veche.
 
@@ -139,6 +142,30 @@ Implicit, bonul fiscal **nu** afiseaza discountul si nici stornarea: se trimit d
 si preturile nete (o linie per produs, cu cantitatea neta dupa stornari). Setarea
 `tblSet.BonFiscalDiscStorno = 1` activeaza modul detaliat (linii de discount/majorare `C`/`DV`/`MV`
 si linii de stornare `VS`).
+
+### Asteptarea raspunsului casei de marcat (FiscalWire)
+
+Setarea `AsteaptaRaspunsCasa` (Setari → Casa Marcat, implicit **NU**) schimba fluxul de mai sus:
+cand este **DA** si tipul casei este **FiscalWire**, la inchiderea notei POS-ul scrie fisierul de
+comenzi `.inp` direct in `tblSet.CaleFisierComenziECR` (nume `pos_tm_<DocID>_<dataora>.inp`) si
+**asteapta** pana la `AsteptareCasaSec` secunde (implicit 30) confirmarea in
+`tblSet.CaleFisierRaspunsECR`, inainte de a inchide nota:
+
+- fisierul `.nrb` (prima linie `OK;Z=..|NR=..|...|BF=..`) confirma bonul; `NrBon` (`NR`) si `NrZ`
+  (`Z`) reale sunt trimise mai departe serviciului de export (`EmitBon_Ext_*`);
+- `CANCELED` sau orice linie cu status `Er` in fisierul `.txt`, ori lipsa raspunsului (timeout),
+  inseamna ca nota **nu** se inchide: se afiseaza mesajul, ecranul de plata revine la starea
+  initiala si se poate reincerca cu OK;
+- in orice caz de esec, POS-ul **sterge fisierul de comenzi** `.inp`, ca FiscalWire sa nu
+  tipareasca ulterior un bon abandonat (desincronizat de nota inca deschisa); inainte de fiecare
+  trimitere se curata si fisierele `pos_tm_*.inp` abandonate (cazul unei opriri bruste);
+- fiecare esec se scrie in `logs/fiscal_wait.log`.
+
+Pentru testare, `tools/mock_fiscalwire.py` (pornit cu `tools/mock_fiscalwire.bat`, din `.venv`)
+simuleaza driverul: scrie raspunsurile `.txt`/`.nrb` in folderul configurat (in modurile
+`ok` / `err` / `canceled` / `silent` / `random`) si **sterge** fisierul de comanda dupa procesare, ca
+FiscalWire (se poate pastra cu `--keep`). Se seteaza temporar folderele `CaleFisierComenziECR` /
+`CaleFisierRaspunsECR` la `logs/mock_fiscal/comenzi` / `logs/mock_fiscal/raspuns`.
 
 CUI-ul se introduce dintr-un popup deschis cu butonul **CUI** de pe ecranul de plata, este
 validat cu cifra de control ANAF (algoritmul CUI/CIF) si tinut per nota (se goleste la

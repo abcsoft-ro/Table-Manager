@@ -89,6 +89,14 @@ def _report_success(cfg, job):
         log("Nu pot raporta succesul randului %s: %s" % (job.get("Id"), exc), cfg)
 
 
+def _raspuns_casa_summary(raw):
+    """Rezumat pe o linie al raspunsului casei de marcat (.nrb), pentru log."""
+    if not raw:
+        return ""
+    first = str(raw).replace("\r", "").split("\n", 1)[0].strip()
+    return first[:180]
+
+
 def process_once(cfg):
     """Ridica si executa un singur rand. Intoarce True daca a fost unul."""
     try:
@@ -108,13 +116,15 @@ def process_once(cfg):
     job = res.get("job") or {}
     info = res.get("db") or {}
     job_id = job.get("Id")
+    casa = _raspuns_casa_summary(job.get("RaspunsCasa"))
+    casa_txt = (" | casa: %s" % casa) if casa else ""
 
     try:
         message = execute_statements(info, [job.get("str_sql")], cfg)
-        log("Rand %s (DocID %s) OK: %s" % (job_id, job.get("DocID"), message), cfg)
+        log("Rand %s (DocID %s) OK: %s%s" % (job_id, job.get("DocID"), message, casa_txt), cfg)
         _report_success(cfg, job)
     except (DbError, Exception) as exc:  # noqa: BLE001 - raportam orice esec
-        log("Rand %s (DocID %s) esuat: %s" % (job_id, job.get("DocID"), exc), cfg)
+        log("Rand %s (DocID %s) esuat: %s%s" % (job_id, job.get("DocID"), exc, casa_txt), cfg)
         log(traceback.format_exc(), cfg)
         _report_failure(cfg, job, exc)
     return True
