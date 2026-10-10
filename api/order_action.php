@@ -951,18 +951,14 @@ function validateCui($cui) {
 
 /**
  * Curata un text pentru fisierul de comenzi Datecs (.inp): elimina separatorul
- * ";" si caracterele de linie noua, il trece in majuscule, il limiteaza la
- * $len caractere si il completeaza cu spatii la dreapta pana la $len (in
- * procedura veche denumirea era un camp fixed-width citit cu Left(UCase(...)),
- * deci aparea completata cu spatii).
+ * ";" si caracterele de linie noua, il trece in majuscule si il limiteaza la
+ * $len caractere. NU se completeaza cu spatii (procedura veche folosea doar
+ * Left(UCase(...), N), fara padding), ca fisierul sa coincida cu cel real.
  */
-function fiscalDatecsText($text, $len = 22) {
+function fiscalDatecsText($text, $len = 32) {
     $t = trim((string)$text);
     $t = str_replace(["\r", "\n", ";", ","], [" ", " ", " ", " "], $t);
-    $t = mb_substr(mb_strtoupper($t), 0, $len);
-    $pad = $len - mb_strlen($t);
-    if ($pad > 0) { $t .= str_repeat(' ', $pad); }
-    return $t;
+    return mb_substr(mb_strtoupper($t), 0, $len);
 }
 
 /**
@@ -970,12 +966,14 @@ function fiscalDatecsText($text, $len = 22) {
  * FiscalWire (preluat din procedura veche SendtoDatecs):
  *   H,1,______,_,__;                                  (antet)
  *   S,1,______,_,__;DEN;PRET;CANT;1;1;NrTVA;0;0;      (vanzare; storno = cant negativa)
- *   C,1,______,_,__;1;PROCENT_X100;;;;                (discount pe linie)
- *   T,1,______,_,__;COD_PLATA;SUMA;;;;                (incasare)
+ *   C,1,______,_,__;1;PROCENT;;;;                    (discount pe linie)
+ *   T,1,______,_,__;COD_PLATA;;;;;                    (o forma de plata, fara suma)
+ *   T,1,______,_,__;COD_PLATA;SUMA;;;;                (mai multe forme, cu suma)
  * (linia F de subsol era comentata in procedura veche, deci nu se scrie)
  * PRET este pretul de catalog (PVC) cu 2 zecimale, CANT are 3 zecimale, iar
  * discountul se scrie ca procent simplu (ex. 5.00 = 5%), conform manualului
- * FiscalWire (pg. 22), nu procent * 100.
+ * FiscalWire (pg. 22), nu procent * 100. La o singura forma de plata suma NU se
+ * scrie: FiscalWire calculeaza singur totalul (ca in procedura veche).
  */
 function buildFiscalTextDatecs($items, $platiArr, $tvaMap = [], $cui = '') {
     $lines = [];
@@ -994,7 +992,7 @@ function buildFiscalTextDatecs($items, $platiArr, $tvaMap = [], $cui = '') {
 
         $pv = (float)$it['pret'];
         $pvc = (float)($it['pvc'] ?? $it['pret']);
-        $den = fiscalDatecsText($it['denumire'], 22);
+        $den = fiscalDatecsText($it['denumire'], 32);
         $nrTva = tvaNrFor($tvaMap, (float)$it['cota']);
         $pret = number_format($pvc, 2, '.', '');
         $q = number_format($cant, 3, '.', '');
@@ -1026,10 +1024,18 @@ function buildFiscalTextDatecs($items, $platiArr, $tvaMap = [], $cui = '') {
     usort($plati, function ($a, $b) {
         return fiscalPaymentCode($b) <=> fiscalPaymentCode($a);
     });
-    foreach ($plati as $p) {
-        $cod = fiscalPaymentCode($p);
-        $suma = number_format((float)$p['suma'], 2, '.', '');
-        $lines[] = "T,1,______,_,__;{$cod};{$suma};;;;";
+
+    if (count($plati) === 1) {
+        // O singura forma de plata: NU scriem suma, FiscalWire calculeaza singur
+        // totalul bonului (exact ca in procedura veche SendtoDatecs).
+        $lines[] = "T,1,______,_,__;" . fiscalPaymentCode($plati[0]) . ";;;;;";
+    } else {
+        // Mai multe forme de plata: cate o linie T cu suma fiecarei forme.
+        foreach ($plati as $p) {
+            $cod = fiscalPaymentCode($p);
+            $suma = number_format((float)$p['suma'], 2, '.', '');
+            $lines[] = "T,1,______,_,__;{$cod};{$suma};;;;";
+        }
     }
 
     return $lines;

@@ -123,11 +123,15 @@ Tipul casei se alege din **Setari → Casa Marcat** (`tblSet.TipCasaMarcat`):
 
 - **FiscalWire** (driver FiscalWire) — fisier `.inp`:
   - `H,1,______,_,__;` antet (fara linie `F` la final, ca in procedura veche);
-  - `S,1,______,_,__;NUME;PRET;CANT;1;1;NrTVA;0;0;` vanzare (nume majuscule, completat/trunchiat
-    la 22 de caractere; pret cu 2 zecimale; cantitate cu 3 zecimale; storno = cantitate negativa);
+  - `S,1,______,_,__;NUME;PRET;CANT;1;1;NrTVA;0;0;` vanzare (nume majuscule, trunchiat
+    la 32 de caractere, fara completare cu spatii; pret cu 2 zecimale; cantitate cu 3 zecimale;
+    storno = cantitate negativa);
   - `C,1,______,_,__;1;PROCENT;` discount pe linie (procent simplu, ex. `5.00` = 5%);
   - `K,1,______,_,__;RO12345678;` cod fiscal client, inainte de prima vanzare;
-  - `T,1,______,_,__;COD_PLATA;SUMA;` incasare (platile, descrescator dupa cod).
+  - `T,1,______,_,__;COD_PLATA;;;;;` incasare la o **singura** forma de plata (fara suma:
+    FiscalWire calculeaza singur totalul, ca in procedura veche); la mai multe forme de plata
+    se scrie cate o linie cu suma fiecarei forme (`T,1,______,_,__;COD_PLATA;SUMA;;;;`),
+    descrescator dupa cod.
 - **FiscalNet** — fisier `.txt` cu separator `^`:
   - `S^NUME^PRET^CANT^buc^GRTVA^1`, `DV^valoare` / `MV^valoare` pentru discount/majorare,
     `VS^...` pentru stornare, `ST^` subtotal, `P^COD_PLATA^SUMA` incasare;
