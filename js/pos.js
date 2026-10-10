@@ -1167,21 +1167,35 @@ async function finalizePaymentTransaction() {
   const rest = POS_STATE.rest || 0;
 
   // Comunicarea cu POS-ul bancar: cand exista plata pe card (FPID = 1) si
-  // terminalul e activ, se cere aprobarea inainte de a inchide nota. La Cancel
-  // nota ramane deschisa si ecranul de plata revine la starea initiala.
+  // terminalul e activ, se cere aprobarea INAINTE de a inchide nota (deci
+  // inainte de a intra in rutina casei de marcat). La Cancel nota ramane
+  // deschisa si ecranul de plata revine la starea initiala.
   const cardAmount = Number(POS_STATE.payments[1] || 0);
+  let bankApproved = true;
   if (POS_STATE.posBanca === 1 && cardAmount > 0) {
-    const aprobat = await runBankPosForPayment(cardAmount);
-    if (!aprobat) {
+    fiscFlowLog("banca: start (suma card " + cardAmount.toFixed(2) + ")");
+    bankApproved = await runBankPosForPayment(cardAmount);
+    fiscFlowLog("banca: rezultat=" + (bankApproved ? "verde" : "neaprobat") + " -> " + (bankApproved ? "continua" : "stop"));
+    if (!bankApproved) {
       resetPaymentScreen();
       showToast("Tranzactie bancara anulata");
       return;
     }
+  } else {
+    fiscFlowLog("banca: sarita (posBanca=" + POS_STATE.posBanca + ", sumaCard=" + cardAmount.toFixed(2) + ")");
+  }
+
+  // Poarta stricta: casa de marcat se contacteaza numai daca pasul bancar a
+  // fost aprobat (sau nu era cazul unui card cu terminal activ).
+  if (!bankApproved) {
+    resetPaymentScreen();
+    return;
   }
 
   const asteaptaCasa = (POS_STATE.asteaptaRaspunsCasa === 1);
   try {
     if (asteaptaCasa) { showFiscalWait(); }
+    fiscFlowLog("casa: start (asteaptaRaspunsCasa=" + (asteaptaCasa ? 1 : 0) + ")");
     const resp = await fetch("api/order_action.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1195,6 +1209,7 @@ async function finalizePaymentTransaction() {
 
     const res = await resp.json();
     if (res.status !== "success") throw new Error(res.message);
+    fiscFlowLog("casa: rezultat=ok" + (res.fiscal && res.fiscal.nr != null ? " (NR " + res.fiscal.nr + ")" : ""));
 
     // Bonul s-a inchis: CUI-ul nu mai apartine unei note deschise.
     POS_STATE.cui = "";
@@ -1242,6 +1257,7 @@ async function finalizePaymentTransaction() {
     await loadTables();
     navigateToScreen("screen-mese");
   } catch (err) {
+    fiscFlowLog("casa: rezultat=eroare (" + err.message + ")");
     appAlert("Eroare la inchiderea bonului: " + err.message);
     // Nota nu s-a inchis: readucem ecranul de plata la starea initiala, ca o
     // noua apasare pe OK sa reia de la zero (fara dublarea sumelor deja introduse).
@@ -1254,6 +1270,17 @@ async function finalizePaymentTransaction() {
 // --------------------------------------------------------------------------
 // 4b. COMUNICARE POS BANCAR (terminal card) la inchiderea notei
 // --------------------------------------------------------------------------
+
+// Jurnal de ordine pentru fluxul de plata: banca -> casa de marcat. Scrie in
+// consola browserului (F12) cu marca de timp, ca sa se poata verifica usor ca
+// rutina casei de marcat NU porneste inainte de aprobarea terminalului bancar.
+function fiscFlowLog(msg) {
+  try {
+    console.log("[plata " + new Date().toLocaleTimeString("ro-RO") + "] " + msg);
+  } catch (err) {
+    /* consola indisponibila: nu deranjam fluxul de plata */
+  }
+}
 
 // Trimite suma pe card la terminal si rezolva interactiv refuzul:
 //   true  = se poate inchide nota (aprobat sau Ignore)
@@ -2743,6 +2770,16 @@ async function saveSetari() {
     if (keys.indexOf("Server") !== -1) {
       POS_STATE.server = (String(setariDirty["Server"]).trim() === "1") ? 1 : 0;
       applyServerModeUI();
+    }
+
+    // POS bancar si asteptarea casei de marcat: se aplica imediat, pentru ca
+    // altfel un toggle facut in Setari nu se reflecta pana la reincarcarea
+    // paginii, iar pasul bancar ar fi sarit la inchiderea notei.
+    if (keys.indexOf("PoSbanca") !== -1) {
+      POS_STATE.posBanca = (String(setariDirty["PoSbanca"]).trim() === "1") ? 1 : 0;
+    }
+    if (keys.indexOf("AsteaptaRaspunsCasa") !== -1) {
+      POS_STATE.asteaptaRaspunsCasa = (String(setariDirty["AsteaptaRaspunsCasa"]).trim() === "1") ? 1 : 0;
     }
 
     setariDirty = {};
