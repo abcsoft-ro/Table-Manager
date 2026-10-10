@@ -1,2 +1,4 @@
 pyodbc>=5.0
 pywin32>=306 ; sys_platform == "win32"
+# Necesar pentru driverul POS bancar (CaleDriverPoSbanca -> ecr_client.py, transport serial)
+pyserial>=3.5

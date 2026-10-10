@@ -104,6 +104,17 @@ function posBancaResultReady($path) {
  */
 function posBancaFindPythonDir() {
     if (stripos(PHP_OS, 'WIN') !== 0) { return ''; }
+    // 1. Mediul virtual al proiectului (.venv): il preferam, ca driverul POS
+    //    bancar sa ruleze exact ca restul scripturilor Python ale aplicatiei.
+    //    Important: .venv are pyserial (vezi requirements.txt), deci merge cu
+    //    transportul serial (ecr_client.py). Fara el, driverul .bat cadea pe un
+    //    "python" fara pyserial si raporta eronat "Python sau script lipsa".
+    $venvPy = __DIR__ . '/../.venv/Scripts/python.exe';
+    if (is_file($venvPy)) {
+        $dir = realpath(dirname($venvPy));
+        if ($dir !== false) { return str_replace('/', '\\', $dir); }
+    }
+    // 2. Instalari Python uzuale (fallback).
     $patterns = [
         'C:\\Users\\*\\AppData\\Local\\Programs\\Python\\Python3*',
         'C:\\Python3*',
@@ -120,6 +131,20 @@ function posBancaFindPythonDir() {
         if (is_file($d . '\\python.exe')) { return $d; }
     }
     return '';
+}
+
+/**
+ * Ultimele linii din jurnalul driverului POS bancar (stdout+stderr), pentru
+ * diagnosticoane cand driverul nu scrie fisierul de rezultat (ex. Python fara
+ * un modul necesar). Intoarce string (eventual gol).
+ */
+function posBancaDriverTail($path, $maxBytes = 1500) {
+    if (!is_file($path)) { return ''; }
+    $data = @file_get_contents($path);
+    if ($data === false || $data === '') { return ''; }
+    $data = trim($data);
+    if (strlen($data) > $maxBytes) { $data = substr($data, -$maxBytes); }
+    return $data;
 }
 
 /**
@@ -291,16 +316,27 @@ $amountStr = posBancaFormatAmount($amount);
 set_time_limit(0);
 ignore_user_abort(true);
 
-$devNull = (stripos(PHP_OS, 'WIN') === 0) ? 'NUL' : '/dev/null';
-$descriptors = [
-    0 => ['pipe', 'r'],
-    1 => ['file', $devNull, 'a'],
-    2 => ['file', $devNull, 'a']
-];
+// Jurnal al driverului (stdout+stderr): esential pentru diagnostic cand
+// driverul .bat nu scrie fisierul de rezultat (ex. Python fara o dependinta,
+// cum ar fi pyserial pentru transportul serial).
+$driverLog = __DIR__ . '/../logs/pos_banca_driver.log';
+@mkdir(dirname($driverLog), 0777, true);
+
 $cmd = '"' . $batPath . '" ' . $amountStr . ' ' . $txId;
 $pythonDir = posBancaFindPythonDir();
 $childEnv = ($pythonDir !== '') ? posBancaChildEnv($pythonDir) : null;
 $childCwd = dirname($batPath);
+@file_put_contents(
+    $driverLog,
+    '[' . date('Y-m-d H:i:s') . '] cmd=' . $cmd
+        . ' | pythonDir=' . ($pythonDir !== '' ? $pythonDir : '(none)')
+        . ' | cwd=' . $childCwd . "\n"
+);
+$descriptors = [
+    0 => ['pipe', 'r'],
+    1 => ['file', $driverLog, 'a'],
+    2 => ['file', $driverLog, 'a']
+];
 $proc = @proc_open($cmd, $descriptors, $pipes, $childCwd, $childEnv);
 if (!is_resource($proc)) {
     $msg = "Nu pot lansa driverul PoS: " . $batPath;
@@ -331,6 +367,8 @@ if (is_resource($proc)) { @proc_close($proc); }
 
 if (!posBancaResultReady($resultPath)) {
     $msg = "PoS nu a returnat rezultat in timp util.";
+    $tail = posBancaDriverTail($driverLog, 400);
+    if ($tail !== '') { $msg .= " Detalii driver: " . $tail; }
     $logId = posBancaLogAttempt($conn, $docId, $nrDoc, $amount, $txId, 'TIMEOUT', $msg, false, null);
     sendJsonResponse([
         "status" => "success",
@@ -349,6 +387,13 @@ $fields = posBancaParseResult($content);
 
 $posStatus = $fields['STATUS'] ?? '';
 $posMessage = $fields['MESAJ'] ?? '';
+// Driverul .bat scrie "Python sau script lipsa" si cand de fapt scriptul a
+// crapat fara sa scrie rezultatul (ex. o exceptie Python). Completam mesajul
+// cu iesirea reala a driverului, ca diagnosticul sa fie util.
+if (stripos($posMessage, 'Python sau script lipsa') !== false) {
+    $tail = posBancaDriverTail($driverLog, 400);
+    if ($tail !== '') { $posMessage .= ' Detalii driver: ' . $tail; }
+}
 $resultTrxId = $fields['TRX_ID'] ?? '';
 if ($resultTrxId !== '') { $txId = $resultTrxId; }
 $emiteBon = (strtoupper($fields['EMITE_BON'] ?? '') === 'DA');

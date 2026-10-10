@@ -187,7 +187,7 @@ schimbarea notei si dupa inchiderea bonului); se poate sterge cu butonul „Fara
 - **Python 3.12** (Windows) pentru componentele Python (`print-service/`, `sync-service/`,
   `import_server_grp_prod.py`) — optional, doar daca folositi una dintre ele. Toate ruleaza
   **dintr-un mediu virtual comun** `.venv` din radacina proiectului, creat o singura data cu
-  `setup-venv.bat` (dependintele — `pyodbc`, `pywin32` — sunt in `requirements.txt`). Este
+  `setup-venv.bat` (dependintele — `pyodbc`, `pywin32`, `pyserial` — sunt in `requirements.txt`). Este
   nevoie si de un **ODBC Driver for SQL Server** instalat. Mediul virtual este obligatoriu:
   fara el, pornirea kiosc-ului si a serviciilor Python se opreste cu un mesaj care cere
   rularea `setup-venv.bat`.
@@ -268,7 +268,7 @@ db/                     reconstructia bazei de date
 Pornire-POS-Kiosk.vbs   lansator kiosc ascuns (fara fereastra DOS) + import produse la pornire
 Pornire-POS-Kiosk.bat   lansator kiosc cu fereastra vizibila (aceeasi logica)
 import_server_grp_prod.py  import produse/grupe de pe server (dbo.ImportProd)
-requirements.txt        dependintele Python (pyodbc, pywin32) pentru mediul virtual
+requirements.txt        dependintele Python (pyodbc, pywin32, pyserial) pentru mediul virtual
 setup-venv.bat          creeaza .venv, instaleaza dependintele si creeaza shortcut-urile (o singura data)
 tools/create-shortcuts.vbs  creeaza shortcut-urile: serviciile in Startup + POS pe Desktop (img/abcicon.ico)
 .venv/                  mediul virtual Python (creat local, ignorat de git)
