@@ -112,7 +112,11 @@ function posBancaFindPythonDir() {
     $venvPy = __DIR__ . '/../.venv/Scripts/python.exe';
     if (is_file($venvPy)) {
         $dir = realpath(dirname($venvPy));
-        if ($dir !== false) { return str_replace('/', '\\', $dir); }
+        if ($dir !== false) {
+            $dir = str_replace('/', '\\', $dir);
+            posBancaEnsurePyShim($dir);
+            return $dir;
+        }
     }
     // 2. Instalari Python uzuale (fallback).
     $patterns = [
@@ -131,6 +135,21 @@ function posBancaFindPythonDir() {
         if (is_file($d . '\\python.exe')) { return $d; }
     }
     return '';
+}
+
+/**
+ * Creeaza in folderul Python dat un launcher `py.bat` care redirectioneaza spre
+ * interpretorul din acelasi folder. Driverul POS bancar (`vanzare.bat`) prefera
+ * launcher-ul `py` daca `where py` reuseste; pe unele masini exista un `py.exe`
+ * care nu are niciun Python inregistrat si raspunde "No installed Python found!".
+ * Fiindca folderul `.venv\Scripts` este pus PRIMUL in PATH-ul procesului copil,
+ * un `py.bat` acolo face ca `where py` sa gaseasca launcher-ul nostru corect.
+ */
+function posBancaEnsurePyShim($dir) {
+    $shim = rtrim($dir, '\\/') . '\\py.bat';
+    if (is_file($shim)) { return; }
+    $batch = "@echo off\r\n\"%~dp0python.exe\" %*\r\n";
+    @file_put_contents($shim, $batch);
 }
 
 /**
