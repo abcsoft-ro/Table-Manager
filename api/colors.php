@@ -11,6 +11,9 @@
 /**
  * Mapeaza un index de culoare de sistem VBA la o culoare concreta.
  * Indexuri: SystemColorConstants (0x00..0x18). Implicit: gri neutru.
+ *
+ * @param int $index Indexul de culoare de sistem VBA.
+ * @return string Codul hex #rrggbb.
  */
 function vbaSystemColorToHex($index) {
     static $map = [
@@ -46,6 +49,9 @@ function vbaSystemColorToHex($index) {
 /**
  * Converteste o valoare de culoare stocata in baza la hex #rrggbb.
  * Intoarce null pentru null / string gol.
+ *
+ * @param mixed $colorVal Valoarea COLORREF (int, sau string/null).
+ * @return string|null Codul hex #rrggbb, sau null.
  */
 function winColorToHex($colorVal) {
     if ($colorVal === null || $colorVal === '') return null;

@@ -8,14 +8,24 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/print_common.php';
 
-/** Tipul de vanzare din tblSet.TipVanz: "fastfood" cand Value = 1, altfel "restaurant". */
+/**
+ * Tipul de vanzare din tblSet.TipVanz: "fastfood" cand Value = 1, altfel "restaurant".
+ *
+ * @param resource $conn Conexiunea SQL Server.
+ * @return string
+ */
 function setariTipVanz($conn) {
     $stmt = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'TipVanz'");
     $row = $stmt ? sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC) : null;
     return ($row && (int)trim((string)$row['Value']) === 1) ? "fastfood" : "restaurant";
 }
 
-/** Numarul de bonuri deschise (mese neinchise) din tblBonCurent. */
+/**
+ * Numarul de bonuri deschise (mese neinchise) din tblBonCurent.
+ *
+ * @param resource $conn Conexiunea SQL Server.
+ * @return int
+ */
 function setariOpenBills($conn) {
     $stmt = @sqlsrv_query($conn, "SELECT COUNT(*) AS c FROM tblBonCurent WHERE Stare IS NULL OR Stare <> 'I'");
     $row = $stmt ? sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC) : null;
@@ -26,6 +36,13 @@ function setariOpenBills($conn) {
  * Creeaza setarea (Setting, Value, Descriere, Grup) daca lipseste si ii
  * actualizeaza Descrierea daca s-a schimbat. Folosit pentru setarile noi, ca
  * sa apara si pe instalatiile existente, nu doar pe cele noi.
+ *
+ * @param resource $conn Conexiunea SQL Server.
+ * @param string $setting Cheia setarii.
+ * @param mixed $default Valoarea implicita la creare.
+ * @param string $desc Descrierea afisata in ecranul Setari.
+ * @param string $grup Grupul/tab-ul setarii.
+ * @return void
  */
 function ensureSetariValue($conn, $setting, $default, $desc, $grup) {
     $stmt = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = ?", [$setting]);
@@ -48,6 +65,9 @@ function ensureSetariValue($conn, $setting, $default, $desc, $grup) {
 /**
  * Descrierea canonica a setarii TipVanz. O scriem in tblSet la nevoie, ca sa
  * fie afisata corect in ecranul Setari si pe instalatiile existente.
+ *
+ * @param resource $conn Conexiunea SQL Server.
+ * @return void
  */
 function ensureSetariMeta($conn) {
     static $done = false;

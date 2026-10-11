@@ -26,6 +26,9 @@ require_once __DIR__ . '/db.php';
 
 /**
  * Citeste o setare din tblSet (cheie/valoare). Implicit $default cand lipseste.
+ *
+ * @param resource $conn
+ * @param string $setting
  */
 function posBancaSetting($conn, $setting, $default = '') {
     $stmt = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = ?", [$setting]);
@@ -38,6 +41,8 @@ function posBancaSetting($conn, $setting, $default = '') {
 
 /**
  * Creeaza tabela de audit daca nu exista.
+ *
+ * @param resource $conn
  */
 function ensurePosBancaLogTable($conn) {
     $sql = "IF OBJECT_ID('dbo.tblPosBancaLog','U') IS NULL
@@ -60,6 +65,8 @@ function ensurePosBancaLogTable($conn) {
 /**
  * Rezolva calea executabilului: daca $path este chiar .bat/.cmd/.exe se foloseste
  * ca atare, altfel se considera folder si se adauga numele implicit.
+ *
+ * @param string $path
  */
 function posBancaResolveBatPath($path) {
     $path = trim((string)$path);
@@ -71,6 +78,9 @@ function posBancaResolveBatPath($path) {
 /**
  * Calea fisierului de rezultat. Daca setarea e completata se foloseste (folder
  * -> se adauga numele implicit), altfel folderul driverului + rezultat_ecr.txt.
+ *
+ * @param string $batPath
+ * @param string $override
  */
 function posBancaResultPathFor($batPath, $override) {
     $override = trim((string)$override);
@@ -84,6 +94,9 @@ function posBancaResultPathFor($batPath, $override) {
     return rtrim($dir, "\\/") . '\\rezultat_ecr.txt';
 }
 
+/**
+ * @param mixed $v
+ */
 function posBancaFormatAmount($v) {
     return number_format((float)$v, 2, '.', '');
 }
@@ -92,6 +105,9 @@ function posBancaNewTrxId() {
     return 'TX' . date('YmdHis');
 }
 
+/**
+ * @param string $path
+ */
 function posBancaResultReady($path) {
     return is_file($path) && filesize($path) > 0;
 }
@@ -144,6 +160,8 @@ function posBancaFindPythonDir() {
  * care nu are niciun Python inregistrat si raspunde "No installed Python found!".
  * Fiindca folderul `.venv\Scripts` este pus PRIMUL in PATH-ul procesului copil,
  * un `py.bat` acolo face ca `where py` sa gaseasca launcher-ul nostru corect.
+ *
+ * @param string $dir
  */
 function posBancaEnsurePyShim($dir) {
     $shim = rtrim($dir, '\\/') . '\\py.bat';
@@ -156,6 +174,8 @@ function posBancaEnsurePyShim($dir) {
  * Ultimele linii din jurnalul driverului POS bancar (stdout+stderr), pentru
  * diagnosticoane cand driverul nu scrie fisierul de rezultat (ex. Python fara
  * un modul necesar). Intoarce string (eventual gol).
+ *
+ * @param string $path
  */
 function posBancaDriverTail($path, $maxBytes = 1500) {
     if (!is_file($path)) { return ''; }
@@ -169,6 +189,8 @@ function posBancaDriverTail($path, $maxBytes = 1500) {
 /**
  * Construieste environment-ul procesului copil cu folderul Python adaugat la
  * PATH. Intoarce null (mostenire) cand nu putem citi environment-ul curent.
+ *
+ * @param string $pythonDir
  */
 function posBancaChildEnv($pythonDir) {
     $env = getenv();
@@ -185,6 +207,8 @@ function posBancaChildEnv($pythonDir) {
 
 /**
  * Parseaza fisierul de rezultat (linii CHEIE=VALOARE, case-insensitive).
+ *
+ * @param string $content
  */
 function posBancaParseResult($content) {
     $out = [];
@@ -201,6 +225,16 @@ function posBancaParseResult($content) {
 
 /**
  * Persista o incercare de tranzactie. Returneaza Id-ul randului inserat.
+ *
+ * @param resource $conn
+ * @param int $docId
+ * @param int $nrDoc
+ * @param float $suma
+ * @param string $trxId
+ * @param string $status
+ * @param string $mesaj
+ * @param bool $emiteBon
+ * @param string $actiune
  */
 function posBancaLogAttempt($conn, $docId, $nrDoc, $suma, $trxId, $status, $mesaj, $emiteBon, $actiune) {
     $sql = "INSERT INTO tblPosBancaLog (DocID, NrDoc, Suma, TrxId, Status, Mesaj, EmiteBon, Actiune, CreatedAt)
@@ -224,6 +258,10 @@ function posBancaLogAttempt($conn, $docId, $nrDoc, $suma, $trxId, $status, $mesa
 }
 
 /** Numarul notei (tblBonCurent.NrDoc) pentru un DocID, sau null. */
+/**
+ * @param resource $conn
+ * @param int $docId
+ */
 function posBancaNrDoc($conn, $docId) {
     if ((int)$docId <= 0) { return null; }
     $stmt = sqlsrv_query($conn, "SELECT TOP 1 NrDoc FROM tblBonCurent WHERE DocID = ?", [(int)$docId]);

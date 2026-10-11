@@ -11,6 +11,8 @@ require_once __DIR__ . '/send_common.php';
  * Tipul de vanzare configurat in tblSet (TipVanz): "fastfood" cand valoarea
  * este 1, altfel "restaurant". In modul FastFood comanda nu se mai trimite la
  * sectie, iar la inchiderea notei se tipareste doar bonul fiscal (fara nota).
+ *
+ * @param resource $conn
  */
 function getTipVanz($conn) {
     static $cache = null;
@@ -31,6 +33,8 @@ function getTipVanz($conn) {
  * "fisco" sau "fprwin". Implicit "fiscalwire" cand setarea lipseste sau este
  * necunoscuta. "fisco" si "fprwin" sunt inca in curs de implementare (se comporta
  * ca FiscalWire). Determina formatul fisierului de comenzi scris pentru casa de marcat.
+ *
+ * @param resource $conn
  */
 function getTipCasaMarcat($conn) {
     static $cache = null;
@@ -54,6 +58,8 @@ function getTipCasaMarcat($conn) {
  * 1 = DA (se scriu comenzile de discount/majorare si liniile de storno),
  * 0 = NU (implicit; bonul contine doar cantitatile si preturile nete, fara
  * discount si fara stornare). Se aplica fisierului casei de marcat.
+ *
+ * @param resource $conn
  */
 function getBonFiscalDiscStorno($conn) {
     static $cache = null;
@@ -71,6 +77,8 @@ function getBonFiscalDiscStorno($conn) {
  * Folderul monitorizat de driverul casei de marcat (tblSet.CaleFisierComenziECR).
  * Fisierul de comenzi trebuie copiat aici ca sa fie procesat (FiscalNet,
  * FiscalWire sau alt driver).
+ *
+ * @param resource $conn
  */
 function getCaleFisierComenziECR($conn) {
     static $cache = null;
@@ -87,6 +95,8 @@ function getCaleFisierComenziECR($conn) {
 /**
  * Folderul in care casa de marcat scrie fisierele de raspuns
  * (tblSet.CaleFisierRaspunsECR). Folosit la asteptarea confirmarii bonului.
+ *
+ * @param resource $conn
  */
 function getCaleFisierRaspunsECR($conn) {
     static $cache = null;
@@ -103,6 +113,8 @@ function getCaleFisierRaspunsECR($conn) {
 /**
  * Daca POS-ul asteapta raspunsul casei de marcat la inchiderea notei
  * (tblSet.AsteaptaRaspunsCasa): 1 = DA, 0 = NU (implicit).
+ *
+ * @param resource $conn
  */
 function getAsteaptaRaspunsCasa($conn) {
     static $cache = null;
@@ -119,6 +131,8 @@ function getAsteaptaRaspunsCasa($conn) {
 /**
  * Durata maxima de asteptare a raspunsului casei de marcat
  * (tblSet.AsteptareCasaSec). Implicit 30 secunde cand lipseste/invalid.
+ *
+ * @param resource $conn
  */
 function getAsteptareCasaSec($conn) {
     static $cache = null;
@@ -138,6 +152,8 @@ function getAsteptareCasaSec($conn) {
 /**
  * Cantitatea maxima admisa pe o linie de nota (tblSet.CantMax). Implicit 1000
  * cand setarea lipseste sau este invalida. Protejeaza impotriva tastarii gresite.
+ *
+ * @param resource $conn
  */
 function getCantMax($conn) {
     static $cache = null;
@@ -157,6 +173,8 @@ function getCantMax($conn) {
 /**
  * Numarul de zecimale pentru cantitate (tblSet.NrZecCant): 0, 1 sau 2.
  * Implicit 1 cand setarea lipseste sau este invalida.
+ *
+ * @param resource $conn
  */
 function getNrZecCant($conn) {
     static $cache = null;
@@ -176,6 +194,8 @@ function getNrZecCant($conn) {
 /**
  * Discountul permis/interzis (tblSet.RED): 1 = permis, 0 = interzis.
  * Implicit 1 cand setarea lipseste sau este invalida.
+ *
+ * @param resource $conn
  */
 function getRed($conn) {
     static $cache = null;
@@ -194,6 +214,8 @@ function getRed($conn) {
 /**
  * Tipul discountului (tblSet.TipDiscount): 0 = complet, 1 = doar procent la
  * subtotal, 2 = procent fix la subtotal. Implicit 0 cand lipseste/invalid.
+ *
+ * @param resource $conn
  */
 function getTipDiscount($conn) {
     static $cache = null;
@@ -213,6 +235,8 @@ function getTipDiscount($conn) {
 /**
  * Procentul fix de discount (tblSet.ProcentDiscountFix) folosit cand
  * TipDiscount = 2. Implicit 10, limitat la 0..100.
+ *
+ * @param resource $conn
  */
 function getProcentDiscountFix($conn) {
     static $cache = null;
@@ -231,6 +255,8 @@ function getProcentDiscountFix($conn) {
 
 /**
  * Parola de discount din tblParola.ParolaDiscount (string; '' = nu se cere).
+ *
+ * @param resource $conn
  */
 function getDiscountParola($conn) {
     $stmt = @sqlsrv_query($conn, "SELECT TOP 1 ParolaDiscount FROM tblParola");
@@ -241,6 +267,8 @@ function getDiscountParola($conn) {
 /**
  * Parola de stornare din tblParola.ParolaStornare (string; '' = nu se cere).
  * Cand este goala, anularea liniilor trimise nu cere nici parola, nici motiv.
+ *
+ * @param resource $conn
  */
 function getStornoParola($conn) {
     $stmt = @sqlsrv_query($conn, "SELECT TOP 1 ParolaStornare FROM tblParola");
@@ -252,6 +280,9 @@ function getStornoParola($conn) {
  * Repartizeaza o suma (in centi) pe o lista de ponderi (in centi), folosind
  * metoda celui mai mare rest, astfel incat suma alocata sa fie exact $amount
  * si nicio alocare sa nu depaseasca ponderea corespunzatoare.
+ *
+ * @param int $amount
+ * @param array $weights
  */
 function distributeDiscountCents($amount, $weights) {
     $result = [];
@@ -287,6 +318,8 @@ function distributeDiscountCents($amount, $weights) {
  * (ProdID) si aceleasi moduri de preparare. Cantitatile se aduna, iar o
  * pozitie anulata integral (cantitate neta 0) dispare. Se pastreaza ordinea
  * primei aparitii.
+ *
+ * @param array $lines
  */
 function cumuleazaLiniiBucatarie($lines) {
     $byKey = [];
@@ -331,6 +364,9 @@ function cumuleazaLiniiBucatarie($lines) {
  * pierde o comanda daca serviciul de tiparire e oprit.
  *
  * Intoarce ["jobs" => nr joburi, "lines" => nr linii, "error" => mesaj|null].
+ *
+ * @param resource $conn
+ * @param int $docId
  */
 function printKitchen($conn, $docId) {
     $docId = (int)$docId;
@@ -481,6 +517,8 @@ function printKitchen($conn, $docId) {
 /**
  * Numele resursei de blocare (application lock) pentru inchiderea unei note.
  * Este per DocID, ca inchiderile aceleiasi note sa fie serializate.
+ *
+ * @param int $docId
  */
 function closeLockResource($docId) {
     return 'rual_closebill_' . (int)$docId;
@@ -491,6 +529,9 @@ function closeLockResource($docId) {
  * (@LockTimeout = 0). Intoarce true daca a fost obtinut, false altfel
  * (inclusiv la eroare de executie). Folosit ca sa nu se poata rula doua
  * inchideri concurente ale aceleiasi note (dublu-click, doua ferestre).
+ *
+ * @param resource $conn
+ * @param int $docId
  */
 function acquireCloseLock($conn, $docId) {
     $sql = "DECLARE @res INT;
@@ -513,6 +554,9 @@ function acquireCloseLock($conn, $docId) {
 
 /**
  * Elibereaza application lock-ul luat de acquireCloseLock pe nota.
+ *
+ * @param resource $conn
+ * @param int $docId
  */
 function releaseCloseLock($conn, $docId) {
     $stmt = @sqlsrv_query(
@@ -534,6 +578,9 @@ function releaseCloseLock($conn, $docId) {
  * Nota: coloana TipDoc (nvarchar(3)) nu este scrisa - nu incape numele metodei
  * de plata si nu este folosita nicaieri.
  * Returneaza un array cu status/mesaj/docId (cheia 'http' = codul HTTP dorit).
+ *
+ * @param resource $conn
+ * @param int $docId
  */
 function closeBill($conn, $docId, $plati = [], $cui = '', $opts = []) {
     $docId = (int)$docId;
@@ -559,6 +606,9 @@ function closeBill($conn, $docId, $plati = [], $cui = '', $opts = []) {
 /**
  * Corpul efectiv al inchiderii notei, apelat sub application lock-ul luat de
  * closeBill(). Vezi closeBill() pentru descriere.
+ *
+ * @param resource $conn
+ * @param int $docId
  */
 function closeBillLocked($conn, $docId, $plati = [], $cui = '', $opts = []) {
     $docId = (int)$docId;
@@ -708,6 +758,12 @@ function closeBillLocked($conn, $docId, $plati = [], $cui = '', $opts = []) {
  * Construieste datele de tiparire pentru o nota: payload-ul notei (nefiscale)
  * si liniile fiscale. $title difera intre nota de plata ("NOTA DE PLATA") si
  * proforma ("NOTA PROFORMA"). Intoarce array sau false la eroare.
+ *
+ * @param resource $conn
+ * @param int $docId
+ * @param array|null $bon
+ * @param array $plati
+ * @param string $title
  */
 function buildBillPrintData($conn, $docId, $bon, $plati, $title, $isProforma = false) {
     // 1. Randurile de header/footer ale notei (tblAntet): H1-H3 = antet, F1-F2 = subsol.
@@ -773,8 +829,9 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title, $isProforma = f
         $total += $val;
 
         $tva = $val - ($val / (1 + $cota / 100));
-        if (!isset($tvaByCota[$cota])) { $tvaByCota[$cota] = 0.0; }
-        $tvaByCota[$cota] += $tva;
+        $cotaKey = (string)$cota;
+        if (!isset($tvaByCota[$cotaKey])) { $tvaByCota[$cotaKey] = 0.0; }
+        $tvaByCota[$cotaKey] += $tva;
 
         $den = trim((string)$r['Denumire']);
         // O linie are discount "pe produs" (nu pe subtotal) daca are [Comment]
@@ -864,7 +921,7 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title, $isProforma = f
 
     $tvaList = [];
     foreach ($tvaByCota as $cota => $suma) {
-        $tvaList[] = ["cota" => $cota, "suma" => round($suma, 2)];
+        $tvaList[] = ["cota" => (float)$cota, "suma" => round($suma, 2)];
     }
 
     // 5. Payload nota (nefiscala; titlul difera la proforma)
@@ -896,6 +953,11 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title, $isProforma = f
  * Scrie in coada de tiparire nota de plata (nefiscala) si fisierul fiscal al
  * casei de marcat. Ruleaza in tranzactia apelantului (closeBill) si nu face
  * commit. Intoarce array-ul cu JobID-uri sau false la eroare.
+ *
+ * @param resource $conn
+ * @param int $docId
+ * @param array|null $bon
+ * @param array $plati
  */
 function enqueueBillPrintJobs($conn, $docId, $bon, $plati, $cui = '', $skipFiscal = false) {
     $fastfood = (getTipVanz($conn) === "fastfood");
@@ -942,6 +1004,8 @@ function enqueueBillPrintJobs($conn, $docId, $bon, $plati, $cui = '', $skipFisca
  * Harta cotei de TVA -> Nr_TVA pentru casa de marcat (tblTVA). In procedura
  * veche: Nr_TVA = DLookup("Nr_TVA","tblTVA","Cota=" & TVAc). Ex. la aceasta
  * instalare: 1 = 21%, 2 = 11%, 3 = 0%.
+ *
+ * @param resource $conn
  */
 function getTvaNrMap($conn) {
     static $cache = null;
@@ -959,6 +1023,9 @@ function getTvaNrMap($conn) {
 /**
  * Nr_TVA-ul casei de marcat pentru o cota de TVA. Fallback 1 (ca Nz(...,1)
  * din procedura veche) cand cota nu exista in tblTVA.
+ *
+ * @param array $tvaMap
+ * @param float $cota
  */
 function tvaNrFor($tvaMap, $cota) {
     $k = (string)(int)round((float)$cota);
@@ -982,6 +1049,8 @@ function fiscalPaymentCode(array $plata) {
 /**
  * Rezerva: codul de plata dedus din denumirea formei de plata, folosit doar
  * cand FPID-ul lipseste.
+ *
+ * @param string $denumire
  */
 function fiscalPaymentCodeByName($denumire) {
     $d = mb_strtolower((string)$denumire);
@@ -995,6 +1064,8 @@ function fiscalPaymentCodeByName($denumire) {
  * Normalizeaza codul fiscal al clientului (CUI): majuscule, fara spatii si
  * fara alte caractere decat litere/cifre (ex. "ro 12 345" -> "RO12345").
  * Intoarce '' cand nu ramane nimic valid.
+ *
+ * @param string $raw
  */
 function normalizeCui($raw) {
     $t = strtoupper(trim((string)$raw));
@@ -1005,6 +1076,8 @@ function normalizeCui($raw) {
 /**
  * Valideaza codul fiscal (CUI/CIF) prin cifra de control (algoritmul ANAF),
  * ignorand prefixul RO si caracterele non-numerice. Intoarce true/false.
+ *
+ * @param string $cui
  */
 function validateCui($cui) {
     $cui = preg_replace('/[^0-9]/', '', (string)$cui);
@@ -1033,6 +1106,8 @@ function validateCui($cui) {
  * ";" si caracterele de linie noua, il trece in majuscule si il limiteaza la
  * $len caractere. NU se completeaza cu spatii (procedura veche folosea doar
  * Left(UCase(...), N), fara padding), ca fisierul sa coincida cu cel real.
+ *
+ * @param string $text
  */
 function fiscalDatecsText($text, $len = 32) {
     $t = trim((string)$text);
@@ -1053,6 +1128,9 @@ function fiscalDatecsText($text, $len = 32) {
  * discountul se scrie ca procent simplu (ex. 5.00 = 5%), conform manualului
  * FiscalWire (pg. 22), nu procent * 100. La o singura forma de plata suma NU se
  * scrie: FiscalWire calculeaza singur totalul (ca in procedura veche).
+ *
+ * @param array $items
+ * @param array $platiArr
  */
 function buildFiscalTextDatecs($items, $platiArr, $tvaMap = [], $cui = '') {
     $lines = [];
@@ -1124,6 +1202,9 @@ function buildFiscalTextDatecs($items, $platiArr, $tvaMap = [], $cui = '') {
  * Construieste liniile de text pentru driver-ul casei de marcat.
  * FiscalWire = formatul .inp (buildFiscalTextDatecs), FiscalNet = formatul dedicat
  * (buildFiscalTextFiscalNet, conform FiscalNet.pdf).
+ *
+ * @param array $items
+ * @param array $platiArr
  */
 function buildFiscalText($items, $platiArr, $tipCasa = 'fiscalwire', $tvaMap = [], $cui = '') {
     if ($tipCasa === 'fiscalnet') {
@@ -1140,6 +1221,10 @@ function buildFiscalText($items, $platiArr, $tipCasa = 'fiscalwire', $tvaMap = [
  * Scrie fisierul de comenzi in folderul monitorizat de driverul FiscalWire.
  * Scriere atomica (tmp + rename), codificare Windows-1250 (fallback ASCII),
  * linii separate cu CRLF, ca sa nu fie citit un fisier partial de catre driver.
+ *
+ * @param string $dir
+ * @param string $filename
+ * @param array $lines
  */
 function fiscalWireWriteCommand($dir, $filename, $lines) {
     $text = implode("\r\n", $lines);
@@ -1161,6 +1246,9 @@ function fiscalWireWriteCommand($dir, $filename, $lines) {
  * cand inchiderea notei esueaza (casa nu raspunde / eroare / refuz), ca FiscalWire
  * sa nu gaseasca mai tarziu comanda si sa tipareasca un bon abandonat.
  * Intoarce true daca fisierul principal nu mai exista dupa operatie.
+ *
+ * @param string $dir
+ * @param string $filename
  */
 function fiscalWireRemoveCommand($dir, $filename) {
     $path = rtrim($dir, "\\/") . DIRECTORY_SEPARATOR . $filename;
@@ -1174,6 +1262,9 @@ function fiscalWireRemoveCommand($dir, $filename) {
  * PHP-ului in timpul asteptarii). Sterge fisierele pos_tm_*.inp (si .tmp) mai
  * vechi de $minAgeSec secunde, ca un bon abandonat sa nu ajunga la registru
  * cand FiscalWire porneste ulterior. Best-effort.
+ *
+ * @param string $dir
+ * @param int $minAgeSec
  */
 function fiscalWireCleanupStale($dir, $minAgeSec) {
     $minAgeSec = max(0, (int)$minAgeSec);
@@ -1200,6 +1291,12 @@ function fiscalWireCleanupStale($dir, $minAgeSec) {
  * Log best-effort (doar esecuri) in logs/fiscal_wait.log: casa de marcat nu a
  * raspuns (timeout), a refuzat bonul (CANCELED) sau a dat eroare (linii Er).
  * $comandaStearsa = true/false cand stim daca am sters fisierul de comenzi.
+ *
+ * @param int $docId
+ * @param array|null $bon
+ * @param string $comanda
+ * @param string $rezultat
+ * @param string $detaliu
  */
 function fiscalWaitLog($docId, $bon, $comanda, $rezultat, $detaliu, $comandaStearsa = null) {
     $dir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'logs';
@@ -1223,6 +1320,8 @@ function fiscalWaitLog($docId, $bon, $comanda, $rezultat, $detaliu, $comandaStea
  * Parseaza fisierul de confirmare .nrb emis de FiscalWire. Prima linie are
  * forma: OK;Z=<z>|NR=<nr>|UNIQUE_ID=<fisier>|<dataora>|BF=<bf> sau CANCELED;...
  * Intoarce ['ok'=>true,'z','nr','bf'] sau ['ok'=>false,'reason','message'].
+ *
+ * @param string $raw
  */
 function fiscalWireParseNrb($raw) {
     $text = str_replace("\r", "", (string)$raw);
@@ -1253,6 +1352,8 @@ function fiscalWireParseNrb($raw) {
 /**
  * Detecteaza prima linie cu status "Er" din fisierul de raspuns .txt (copie a
  * bonului cu statusul fiecarei linii). Intoarce detaliul erorii sau null.
+ *
+ * @param string $raw
  */
 function fiscalWireTxtError($raw) {
     $text = str_replace("\r", "", (string)$raw);
@@ -1276,6 +1377,12 @@ function fiscalWireTxtError($raw) {
  * Asteapta in folderul de raspuns fisierul generat de FiscalWire pentru comanda
  * noastra (corelare dupa prefixul numelui comenzii si UNIQUE_ID din .nrb).
  * Gata de testat cu tools/mock_fiscalwire.py.
+ *
+ * @param string $raspunsDir
+ * @param string $cmdBase
+ * @param string $cmdName
+ * @param int $sentAt
+ * @param int $timeoutSec
  */
 function fiscalWireWaitResponse($raspunsDir, $cmdBase, $cmdName, $sentAt, $timeoutSec) {
     $timeoutSec = max(1, (int)$timeoutSec);
@@ -1333,6 +1440,8 @@ function fiscalWireWaitResponse($raspunsDir, $cmdBase, $cmdName, $sentAt, $timeo
  * "BONOK=-1" (nu s-a putut identifica raspunsul terminalului bancar), apoi
  * "NRBON=<nr>" (la succes) sau "ERRCODE=<cod>" + "ERRINFO=<info>" (la eroare).
  * Intoarce ['ok'=>true,'z','nr','bf','raw'] sau ['ok'=>false,'reason','message'].
+ *
+ * @param string $raw
  */
 function fiscalNetParseResponse($raw) {
     $text = str_replace("\r", "", (string)$raw);
@@ -1366,6 +1475,11 @@ function fiscalNetParseResponse($raw) {
 /**
  * Asteapta in folderul de raspuns fisierul generat de FiscalNet pentru comanda
  * noastra (acelasi nume, corelat dupa prefixul numelui comenzii).
+ *
+ * @param string $raspunsDir
+ * @param string $cmdBase
+ * @param int $sentAt
+ * @param int $timeoutSec
  */
 function fiscalNetWaitResponse($raspunsDir, $cmdBase, $sentAt, $timeoutSec) {
     $timeoutSec = max(1, (int)$timeoutSec);
@@ -1406,6 +1520,12 @@ function fiscalNetWaitResponse($raspunsDir, $cmdBase, $sentAt, $timeoutSec) {
  * ca sa nu tinem lock-uri DB in timpul asteptarii. Scrie in log la orice esec.
  * Intoarce ['ok'=>true,'z','nr','bf','raw','comanda'] sau
  * ['ok'=>false,'reason','message','comanda'].
+ *
+ * @param resource $conn
+ * @param int $docId
+ * @param array|null $bon
+ * @param string $tipCasa
+ * @param array $fiscalLines
  */
 function fiscalSendAndWait($conn, $docId, $bon, $tipCasa, $fiscalLines) {
     // Asteptarea poate depasi max_execution_time implicit; o permitem explicit
@@ -1488,6 +1608,8 @@ function fiscalPaymentCodeFiscalNet(array $plata) {
  * Rezerva: codul de plata FiscalNet dedus din denumirea formei de plata,
  * folosit doar cand FPID-ul lipseste. 1 = Numerar, 2 = Card, 3 = Credit,
  * 4 = Tichet masa, 5 = Tichet valoric, 6 = Voucher.
+ *
+ * @param string $denumire
  */
 function fiscalPaymentCodeFiscalNetByName($denumire) {
     $d = mb_strtolower(trim((string)$denumire));
@@ -1504,6 +1626,9 @@ function fiscalPaymentCodeFiscalNetByName($denumire) {
  * Formateaza o valoare pentru casa de marcat FiscalNet: numar intreg fara
  * delimitator zecimal, scalat (ex. 10.00 RON -> 1000, 1 -> 1000, 4.15 -> 415).
  * $decimals = 2 pentru pret/discount/plata, 3 pentru cantitate.
+ *
+ * @param mixed $value
+ * @param int $decimals
  */
 function fiscalNetAmount($value, $decimals) {
     $factor = ($decimals === 3) ? 1000 : 100;
@@ -1513,6 +1638,8 @@ function fiscalNetAmount($value, $decimals) {
 /**
  * Curata un text destinat fisierului FiscalNet: elimina separatorul "^" si
  * caracterele de linie noua, care ar strica structura comenzii.
+ *
+ * @param string $text
  */
 function fiscalNetText($text) {
     $t = trim((string)$text);
@@ -1530,6 +1657,9 @@ function fiscalNetText($text) {
  *   P^TipPlata^Valoare                           (incasare)
  * Comenzile de discount/majorare se scriu obligatoriu imediat sub articolul la
  * care se aplica.
+ *
+ * @param array $items
+ * @param array $platiArr
  */
 function buildFiscalTextFiscalNet($items, $platiArr, $tvaMap = [], $cui = '') {
     $lines = [];

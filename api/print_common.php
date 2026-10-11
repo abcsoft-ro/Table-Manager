@@ -26,6 +26,8 @@ function nrBonDescription() {
 /**
  * Creeaza setarea tblSet.NrBon (contor pornit de la 0) daca lipseste si
  * completeaza Descrierea. Randul apare astfel in ecranul Setari.
+ *
+ * @param resource $conn
  */
 function ensureNrBonSetting($conn) {
     @sqlsrv_query(
@@ -42,6 +44,8 @@ function ensureNrBonSetting($conn) {
  * Incrementeaza atomic contorul bonurilor de sectie si intoarce noua valoare.
  * Se apeleaza in interiorul tranzactiei de tiparire, ca un esec sa nu consume
  * numarul (la ROLLBACK revine si contorul).
+ *
+ * @param resource $conn
  */
 function nextNrBon($conn) {
     ensureNrBonSetting($conn);
@@ -60,6 +64,8 @@ function nextNrBon($conn) {
  * Adauga coloana tblBonCurent.MotivDiscount daca lipseste (deploy fara pasi
  * manuali). Retine motivul discountului aplicat pe toata nota, distinct de
  * motivul discountului pe linie (care sta in tblNoteD.[Comment]).
+ *
+ * @param resource $conn
  */
 function ensureBillDiscountMotiveColumn($conn) {
     static $done = false;
@@ -77,6 +83,8 @@ function ensureBillDiscountMotiveColumn($conn) {
 /**
  * Adauga coloana tblParola.ParolaUpdate daca lipseste (deploy fara pasi
  * manuali). Parola care protejeaza modulul de actualizare din GitHub.
+ *
+ * @param resource $conn
  */
 function ensureParolaUpdateColumn($conn) {
     static $done = false;
@@ -93,6 +101,8 @@ function ensureParolaUpdateColumn($conn) {
 
 /**
  * Creeaza tabela tblPrintQueue daca nu exista (deploy fara pasi manuali).
+ *
+ * @param resource $conn
  */
 function ensurePrintQueueTable($conn) {
     static $done = false;
@@ -123,6 +133,12 @@ function ensurePrintQueueTable($conn) {
 
 /**
  * Adauga un job in coada. Intoarce JobID-ul nou sau false la eroare.
+ *
+ * @param resource $conn
+ * @param string $tip
+ * @param int $refDocId
+ * @param int $printerNr
+ * @param array $payload
  */
 function enqueuePrintJob($conn, $tip, $refDocId, $printerNr, $payload) {
     ensurePrintQueueTable($conn);
@@ -157,6 +173,8 @@ function wakePrintService() {
 
 /**
  * Formateaza o data venita din sqlsrv (ReturnDatesAsStrings = true) ca string.
+ *
+ * @param mixed $value
  */
 function printQueueDateToString($value) {
     if ($value === null || $value === '') { return null; }

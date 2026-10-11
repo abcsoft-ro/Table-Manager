@@ -61,6 +61,13 @@ function getDBConnection() {
     exit;
 }
 
+/**
+ * Trimite un raspuns JSON si opreste executia.
+ *
+ * @param mixed $data Datele de serializat in JSON.
+ * @param int $statusCode Codul HTTP al raspunsului.
+ * @return void
+ */
 function sendJsonResponse($data, $statusCode = 200) {
     http_response_code($statusCode);
     header('Content-Type: application/json; charset=utf-8');

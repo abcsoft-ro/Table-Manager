@@ -9,9 +9,14 @@ require_once __DIR__ . '/colors.php';
 
 $conn = getDBConnection();
 
-// Transforma o lista de valori separate prin punct si virgula intr-un array,
-// eliminand spatiile si intrarile goale (folosita pentru motivele de
-// discount/stornare din tblSet).
+/**
+ * Transforma o lista de valori separate prin punct si virgula intr-un array,
+ * eliminand spatiile si intrarile goale (folosita pentru motivele de
+ * discount/stornare din tblSet).
+ *
+ * @param mixed $value Lista de valori separate prin punct si virgula.
+ * @return array
+ */
 function parseMotiveList($value) {
     $out = [];
     foreach (explode(';', (string)$value) as $m) {

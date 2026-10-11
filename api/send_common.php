@@ -24,6 +24,8 @@ if (!defined('SYNC_SERVICE_BASE')) {
  *
  * In productie tabela poate exista deja intr-o forma legacy
  * (Id, str_sql, Data, Ora, Preluat), asa ca adaugam doar ce lipseste.
+ *
+ * @param resource $conn
  */
 function ensureSendSqlTable($conn) {
     static $done = false;
@@ -88,6 +90,9 @@ function ensureSendSqlTable($conn) {
 
 /**
  * Citeste o setare numerica din tblSet. Intoarce $default cand lipseste/goala.
+ *
+ * @param resource $conn
+ * @param string $setting
  */
 function getTblSetInt($conn, $setting, $default = 0) {
     $stmt = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = ?", [$setting]);
@@ -100,6 +105,8 @@ function getTblSetInt($conn, $setting, $default = 0) {
 /**
  * Formateaza un numar pentru sirul de vanzari (punct zecimal, fara zerouri
  * inutile), ca sa fie sigur indiferent de setarile locale ale serverului.
+ *
+ * @param mixed $v
  */
 function sendFmtNum($v) {
     $s = number_format((float)$v, 4, '.', '');
@@ -110,6 +117,8 @@ function sendFmtNum($v) {
 
 /**
  * Literal NVARCHAR escapat pentru sirul SQL (ex. N'...' cu '' pentru quotes).
+ *
+ * @param string $s
  */
 function sendSqlStr($s) {
     return "N'" . str_replace("'", "''", (string)$s) . "'";
@@ -117,6 +126,8 @@ function sendSqlStr($s) {
 
 /**
  * Literal numeric pentru sirul SQL: sirul dat daca e numeric, altfel 0.
+ *
+ * @param mixed $v
  */
 function sendSqlNum($v) {
     if (is_bool($v)) { return $v ? '1' : '0'; }
@@ -127,6 +138,8 @@ function sendSqlNum($v) {
 /**
  * Datele de conectare la serverul extern (tblConectare ID = 1), pregatite
  * pentru driver-ul Python (server cu instanta inclusa, baza, user, parola, TC).
+ *
+ * @param resource $conn
  */
 function getConectareDb($conn) {
     $stmt = sqlsrv_query(
@@ -167,6 +180,10 @@ function getConectareDb($conn) {
  *
  * Se apeleaza in tranzactia de inchidere a bonului. Intoarce Id-ul randului,
  * null cand exportul este dezactivat (tblSet.Server <> 1) sau false la eroare.
+ *
+ * @param resource $conn
+ * @param int $docId
+ * @param array|null $bon
  */
 function enqueueBillSendSql($conn, $docId, $bon, $plati = [], $nrBonOverride = null, $nrZOverride = null, $raspunsCasa = null) {
     // Exportul catre server este activat din tblSet.Server (1 = DA).
@@ -288,6 +305,8 @@ function enqueueBillSendSql($conn, $docId, $bon, $plati = [], $nrBonOverride = n
 
 /**
  * Formateaza o data venita din sqlsrv (ReturnDatesAsStrings = true) ca string.
+ *
+ * @param mixed $value
  */
 function sendQueueDateToString($value) {
     if ($value === null || $value === '') { return null; }

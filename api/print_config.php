@@ -14,7 +14,12 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/print_common.php';
 
-/** GET catre serviciul local de tiparire. Intoarce array sau null daca e jos. */
+/**
+ * GET catre serviciul local de tiparire. Intoarce array sau null daca e jos.
+ *
+ * @param string $path Calea relativa catre serviciu.
+ * @return array|null
+ */
 function printServiceGet($path, $timeout = 4) {
     $ctx = stream_context_create([
         'http' => ['method' => 'GET', 'timeout' => $timeout, 'ignore_errors' => true]
@@ -25,7 +30,13 @@ function printServiceGet($path, $timeout = 4) {
     return is_array($data) ? $data : null;
 }
 
-/** POST JSON catre serviciul local de tiparire. Intoarce array sau null. */
+/**
+ * POST JSON catre serviciul local de tiparire. Intoarce array sau null.
+ *
+ * @param string $path Calea relativa catre serviciu.
+ * @param mixed $payload Datele de trimis (serializate JSON).
+ * @return array|null
+ */
 function printServicePost($path, $payload, $timeout = 10) {
     $ctx = stream_context_create([
         'http' => [

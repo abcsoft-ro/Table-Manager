@@ -14,6 +14,9 @@ $SERII = ['H1', 'H2', 'H3', 'F1', 'F2', 'P1', 'P2'];
 /**
  * Creeaza liniile de footer suplimentare, valabile doar pentru nota proforma
  * (P1, P2), daca nu exista deja in tblAntet.
+ *
+ * @param resource $conn Conexiunea SQL Server.
+ * @return void
  */
 function ensureProformaFooter($conn) {
     foreach (['P1', 'P2'] as $s) {

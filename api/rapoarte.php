@@ -14,6 +14,8 @@ require_once __DIR__ . '/print_common.php';
 /**
  * Construieste datele raportului PLU, grupate pe sectii, cu subtotal pe sectie.
  * Interogarea de baza este cea data pentru raportul PLU.
+ *
+ * @param resource $conn
  */
 function buildPluReport($conn) {
     $sql = "SELECT s.Denumire AS Sectiune, p.Sectie AS SectieId, d.ProdID AS ProdID, p.Denumire AS Produs,
@@ -75,6 +77,8 @@ function buildPluReport($conn) {
 /**
  * Construieste datele raportului Grupe: incasarile din tblNoteD agregate pe
  * grupele de produse (tblGrp), listate in ordine alfabetica.
+ *
+ * @param resource $conn
  */
 function buildGrupeReport($conn) {
     $sql = "SELECT g.NrGrp AS GrupaId, g.Denumire AS Grupa,
@@ -114,6 +118,8 @@ function buildGrupeReport($conn) {
 /**
  * Construieste datele raportului Sectii: incasarile din tblNoteD agregate pe
  * sectiile de produse (tblSectii), listate in ordine alfabetica.
+ *
+ * @param resource $conn
  */
 function buildSectiiReport($conn) {
     $sql = "SELECT s.Sectie AS SectieId, s.Denumire AS Sectie,
@@ -154,6 +160,8 @@ function buildSectiiReport($conn) {
  * Construieste datele raportului Casieri: pentru fiecare casier (tblBonCurent.NrOp
  * -> tblOsp.NrOsp) numarul de bonuri, incasarile pe forme de plata (trelDocIDFpID
  * -> tblFP), reducerea acordata si valoarea stornarilor, calculate din tblNoteD.
+ *
+ * @param resource $conn
  */
 function buildCasieriReport($conn) {
     $sql = "SELECT b.NrOp AS NrOp, COALESCE(o.Nume, 'CASIER 1') AS Casier,
@@ -261,6 +269,8 @@ function buildCasieriReport($conn) {
 /**
  * Construieste datele raportului General: total general defalcat pe forme de
  * plata, TVA defalcat pe cote, total bonuri, discount, stornari si lista notelor.
+ *
+ * @param resource $conn
  */
 function buildGeneralReport($conn) {
     // 1. Totaluri generale (doar bonuri inchise).
@@ -366,6 +376,8 @@ function buildGeneralReport($conn) {
 
 /**
  * Formateaza o data/ora venita din sqlsrv (ReturnDatesAsStrings = true).
+ *
+ * @param mixed $value
  */
 function reportDateString($value) {
     if ($value === null || $value === '') { return ''; }
@@ -382,6 +394,8 @@ function reportDateString($value) {
  * note (numar, masa, ospatar, ora, motiv discount pe nota) + total, reducere,
  * stornari si formele de plata. Detaliile liniilor se incarca separat
  * (buildNoteDetail), la click pe rand.
+ *
+ * @param resource $conn
  */
 function buildNoteReport($conn) {
     ensureBillDiscountMotiveColumn($conn);
@@ -494,6 +508,9 @@ function buildNoteReport($conn) {
  * discount pe nota) + toate liniile (produse, moduri de preparare, stornari cu
  * motivul lor, discounturi pe linie cu motiv) + formele de plata.
  * Intoarce null daca nota nu exista (sau nu este inchisa).
+ *
+ * @param resource $conn
+ * @param int $docId
  */
 function buildNoteDetail($conn, $docId) {
     ensureBillDiscountMotiveColumn($conn);
@@ -608,6 +625,9 @@ function buildNoteDetail($conn, $docId) {
 
 /**
  * Aliniaza stanga/dreapta pe latimea bonului (aproximare pe lungime caractere).
+ *
+ * @param string $left
+ * @param string $right
  */
 function reportLr($left, $right, $width = 42) {
     $left = (string)$left;
@@ -624,6 +644,10 @@ function reportLr($left, $right, $width = 42) {
 /**
  * Construieste liniile de text pentru un raport grupat (sectii / grupe).
  * $labelKey este cheia din fiecare grupa ce contine denumirea (sectie/grupa).
+ *
+ * @param array $groups
+ * @param string $generat
+ * @param string $labelKey
  */
 function buildGroupedReportLines($groups, $generat, $labelKey) {
     $width = 42;
@@ -663,6 +687,9 @@ function buildGroupedReportLines($groups, $generat, $labelKey) {
 
 /**
  * Construieste liniile de text pentru tiparirea raportului PLU.
+ *
+ * @param array $data
+ * @param string $generat
  */
 function buildPluReportLines($data, $generat) {
     return buildGroupedReportLines($data["sectii"], $generat, "sectie");
@@ -671,6 +698,11 @@ function buildPluReportLines($data, $generat) {
 /**
  * Construieste liniile de text pentru un raport de tip lista (grupe / sectii):
  * doar denumire + valoare, in ordinea primita.
+ *
+ * @param array $items
+ * @param string $labelKey
+ * @param float $totalValoare
+ * @param string $generat
  */
 function buildSimpleReportLines($items, $labelKey, $totalValoare, $generat) {
     $width = 42;
@@ -695,6 +727,9 @@ function buildSimpleReportLines($items, $labelKey, $totalValoare, $generat) {
 /**
  * Construieste liniile de text pentru tiparirea raportului Grupe (doar grupe,
  * in ordine alfabetica, fara detalierea produselor).
+ *
+ * @param array $data
+ * @param string $generat
  */
 function buildGrupeReportLines($data, $generat) {
     return buildSimpleReportLines($data["grupe"], "grupa", $data["totalValoare"], $generat);
@@ -703,6 +738,9 @@ function buildGrupeReportLines($data, $generat) {
 /**
  * Construieste liniile de text pentru tiparirea raportului Sectii (doar sectii,
  * in ordine alfabetica, fara detalierea produselor).
+ *
+ * @param array $data
+ * @param string $generat
  */
 function buildSectiiReportLines($data, $generat) {
     return buildSimpleReportLines($data["sectii"], "sectie", $data["totalValoare"], $generat);
@@ -711,6 +749,9 @@ function buildSectiiReportLines($data, $generat) {
 /**
  * Construieste liniile de text pentru raportul Casieri (bonuri, forme de plata,
  * reducere si stornari pentru fiecare casier).
+ *
+ * @param array $data
+ * @param string $generat
  */
 function buildCasieriReportLines($data, $generat) {
     $width = 42;
@@ -745,6 +786,9 @@ function buildCasieriReportLines($data, $generat) {
 /**
  * Construieste liniile de text pentru raportul General: totaluri, forme de plata,
  * TVA pe cote si lista notelor.
+ *
+ * @param array $data
+ * @param string $generat
  */
 function buildGeneralReportLines($data, $generat) {
     $width = 42;
@@ -794,6 +838,9 @@ function buildGeneralReportLines($data, $generat) {
 
 /**
  * Titlul raportului.
+ *
+ * @param string $tab
+ * @param string $tip
  */
 function reportTitle($tab, $tip) {
     return "RAPORT " . strtoupper($tab) . " - " . strtoupper($tip);
@@ -802,6 +849,8 @@ function reportTitle($tab, $tip) {
 /**
  * Antetul rapoartelor = liniile H1-H2 din tblAntet, cu font/size/bold pastrate
  * pentru tiparire (aceeasi conventie ca la nota).
+ *
+ * @param resource $conn
  */
 function buildReportHeaderLines($conn) {
     $headerLines = [];
@@ -829,6 +878,9 @@ function buildReportHeaderLines($conn) {
  * Construieste datele unui raport dupa tip.
  * Intoarce ['key' => cheia listei de grupe, 'data' => datele] sau null la eroare.
  * Intoarce false daca tipul nu este inca implementat.
+ *
+ * @param resource $conn
+ * @param string $tip
  */
 function buildReportData($conn, $tip) {
     if ($tip === 'PLU') {
@@ -859,6 +911,8 @@ function buildReportData($conn, $tip) {
  * o (re)creeaza mereu din api/sql/z_procedure.sql prin CREATE OR ALTER. Astfel
  * instalatiile existente primesc automat modificarile procedurii (ex. resetarea
  * contorului de bonuri de sectie la Z).
+ *
+ * @param resource $conn
  */
 function ensureZProcedure($conn) {
     $file = __DIR__ . '/sql/z_procedure.sql';
@@ -875,6 +929,8 @@ function ensureZProcedure($conn) {
 /**
  * Verifica daca toate mesele sunt inchise (niciun bon cu Stare <> 'I').
  * Intoarce ['allowed' => bool, 'message' => string, 'nextZ' => int].
+ *
+ * @param resource $conn
  */
 function checkZAllowed($conn) {
     $open = 0;
@@ -901,6 +957,10 @@ function checkZAllowed($conn) {
 /**
  * Construieste liniile raportului Z: General Z urmat de rapoartele bifate
  * (PLU / Grupe / Sectii / Casieri). Datele trebuie citite INAINTE de golire.
+ *
+ * @param resource $conn
+ * @param string $generat
+ * @param array $tipuri
  */
 function buildZReportLines($conn, $generat, $tipuri) {
     $width = 42;

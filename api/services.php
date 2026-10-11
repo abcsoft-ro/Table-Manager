@@ -29,6 +29,9 @@ $SERVICES_DEF = [
 
 /**
  * Host + port pentru un serviciu, citite din config.json (cu fallback).
+ *
+ * @param string $root
+ * @param array $def
  */
 function servicesEndpoint($root, $def) {
     $host = '127.0.0.1';
@@ -44,6 +47,10 @@ function servicesEndpoint($root, $def) {
     return [$host, $port];
 }
 
+/**
+ * @param string $root
+ * @param array $def
+ */
 function servicesHealthUrl($root, $def) {
     list($host, $port) = servicesEndpoint($root, $def);
     return "http://$host:$port/health";
@@ -52,6 +59,8 @@ function servicesHealthUrl($root, $def) {
 /**
  * Cerere HTTP catre serviciile locale. Foloseste cURL daca exista, altfel
  * stream-urile PHP. Intoarce [body, cod, eroare].
+ *
+ * @param string $url
  */
 function servicesHttp($url, $method = 'GET', $timeout = 3) {
     if (function_exists('curl_init')) {
@@ -92,6 +101,10 @@ function servicesHttp($url, $method = 'GET', $timeout = 3) {
     return [$body, $code, null];
 }
 
+/**
+ * @param string $root
+ * @param array $def
+ */
 function servicesHealthInfo($root, $def) {
     list($body, $code) = servicesHttp(servicesHealthUrl($root, $def), 'GET', 2);
     if ($body === null || $code < 200 || $code >= 300) {
@@ -101,6 +114,9 @@ function servicesHealthInfo($root, $def) {
     return (is_array($json) && (($json['status'] ?? '') === 'ok')) ? $json : null;
 }
 
+/**
+ * @param string $healthUrl
+ */
 function servicesIsUp($healthUrl) {
     list($body, $code) = servicesHttp($healthUrl, 'GET', 2);
     if ($body === null || $code < 200 || $code >= 300) {
@@ -110,6 +126,10 @@ function servicesIsUp($healthUrl) {
     return is_array($json) && (($json['status'] ?? '') === 'ok');
 }
 
+/**
+ * @param string $root
+ * @param array $defs
+ */
 function servicesStatus($root, $defs) {
     $out = [];
     foreach ($defs as $key => $def) {
@@ -126,6 +146,9 @@ function servicesStatus($root, $defs) {
 
 /**
  * Porneste serviciul prin lansatorul .vbs ascuns. Intoarce null sau eroare.
+ *
+ * @param string $root
+ * @param array $def
  */
 function servicesStart($root, $def) {
     if (stripos(PHP_OS, 'WIN') !== 0 || !function_exists('exec')) {
@@ -143,6 +166,9 @@ function servicesStart($root, $def) {
 /**
  * Opreste serviciul: intai linistit prin /shutdown, apoi, daca tot raspunde,
  * forteaza procesul (dupa PID-ul raportat de /health). Intoarce eroare sau null.
+ *
+ * @param string $root
+ * @param array $def
  */
 function servicesStopService($root, $def) {
     $info = servicesHealthInfo($root, $def);
@@ -162,6 +188,10 @@ function servicesStopService($root, $def) {
 
 /**
  * Asteapta pana cand starea serviciului devine cea dorita.
+ *
+ * @param string $root
+ * @param array $def
+ * @param bool $wantUp
  */
 function servicesWait($root, $def, $wantUp, $seconds = 12) {
     list($host, $port) = servicesEndpoint($root, $def);

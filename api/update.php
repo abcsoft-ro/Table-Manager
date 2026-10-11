@@ -49,10 +49,16 @@ function updateIgnorePrefixes() {
     ];
 }
 
+/**
+ * @param string $sha
+ */
 function updateShort($sha) {
     return $sha ? substr($sha, 0, 7) : '';
 }
 
+/**
+ * @param string $stateFile
+ */
 function updateReadState($stateFile) {
     if (!is_file($stateFile)) {
         return [];
@@ -65,6 +71,11 @@ function updateReadState($stateFile) {
     return is_array($data) ? $data : [];
 }
 
+/**
+ * @param string $stateFile
+ * @param string $sha
+ * @param string $updatedAt
+ */
 function updateWriteState($stateFile, $sha, $updatedAt) {
     $dir = dirname($stateFile);
     if (!is_dir($dir)) {
@@ -77,6 +88,8 @@ function updateWriteState($stateFile, $sha, $updatedAt) {
 /**
  * Token GitHub optional (fisierul local github_api.txt), folosit doar ca sa
  * marim limita de apeluri API. Repo-ul este public, deci nu este obligatoriu.
+ *
+ * @param string $root
  */
 function updateGithubToken($root) {
     $file = $root . '/github_api.txt';
@@ -97,6 +110,8 @@ function updateGithubToken($root) {
 /**
  * GET HTTP. Foloseste cURL daca extensia e disponibila, altfel stream-urile
  * PHP (allow_url_fopen). Intoarce [body, cod_http, eroare].
+ *
+ * @param string $url
  */
 function updateHttpGet($url, $headers = [], $timeout = 20) {
     if (function_exists('curl_init')) {
@@ -155,6 +170,8 @@ function updateHttpGet($url, $headers = [], $timeout = 20) {
  * Ultimul SHA de pe branch. Intoarce [sha_complet, null] sau [null, eroare].
  * Repo-ul este public, deci daca tokenul optional (github_api.txt) este
  * invalid/expirat reincercam fara el.
+ *
+ * @param string $root
  */
 function updateGithubLatestSha($root) {
     $url = 'https://api.github.com/repos/' . UPDATE_REPO . '/commits/' . UPDATE_BRANCH;
@@ -192,6 +209,9 @@ function updateGithubLatestSha($root) {
 /**
  * Descarca un URL binar in $dest. Foloseste cURL daca e disponibil, altfel
  * stream-urile PHP. Intoarce null la succes sau mesaj de eroare.
+ *
+ * @param string $url
+ * @param string $dest
  */
 function updateDownload($url, $dest) {
     if (function_exists('curl_init')) {
@@ -272,6 +292,8 @@ function updateDownload($url, $dest) {
 
 /**
  * Verifica daca o cale relativa (cu /) este protejata.
+ *
+ * @param string $rel
  */
 function updateIsIgnored($rel) {
     if (in_array($rel, updateIgnoreExact(), true)) {
@@ -290,6 +312,9 @@ function updateIsIgnored($rel) {
  * configurare local (poate contine credențialele) cat timp nu exista
  * `api/db.local.php`. Daca `db.local.php` exista, `db.php` este cod obisnuit
  * si se actualizeaza normal.
+ *
+ * @param string $rel
+ * @param string $root
  */
 function updatePreserveExtra($rel, $root) {
     return ($rel === 'api/db.php' && !is_file($root . '/api/db.local.php'));
@@ -297,6 +322,9 @@ function updatePreserveExtra($rel, $root) {
 
 /**
  * Copiaza un fisier sursa in $target, atomic (tmp + rename).
+ *
+ * @param string $source
+ * @param string $target
  */
 function updateWriteFile($source, $target) {
     $dir = dirname($target);
@@ -323,6 +351,8 @@ function updateWriteFile($source, $target) {
 
 /**
  * Sterge recursiv un director temporar.
+ *
+ * @param string $dir
  */
 function updateRemoveDir($dir) {
     if (!is_dir($dir)) {
@@ -344,6 +374,9 @@ function updateRemoveDir($dir) {
 
 /**
  * Verifica parola de update. Intoarce true sau trimite raspunsul de eroare.
+ *
+ * @param resource $conn
+ * @param string $parola
  */
 function updateCheckParola($conn, $parola) {
     ensureParolaUpdateColumn($conn);

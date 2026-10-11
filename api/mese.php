@@ -7,6 +7,12 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/colors.php';
 
+/**
+ * Converteste o valoare in int, sau null cand e goala.
+ *
+ * @param mixed $v Valoarea de convertit.
+ * @return int|null
+ */
 function tblMeseIntOrNull($v) {
     $t = trim((string)$v);
     if ($t === '') return null;
