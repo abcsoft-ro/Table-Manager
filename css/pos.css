@@ -897,11 +897,12 @@ body {
 .serviciu-version {
   margin-top: 10px;
   padding: 8px 10px;
-  background: #0a0a0a20;
-  border: 1px solid #ffffff30;
+  background: #e8eefc;
+  border: 1px solid #b9c6e6;
   border-radius: 6px;
   font-size: 13px;
-  color: #ffffff;
+  font-weight: 600;
+  color: #1a2b52;
 }
 
 .prog-btn {

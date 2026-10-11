@@ -1,246 +1,174 @@
-# TableManager 2.1C
+# TableManager 1.5.0
 
-Aplicatie web de tip POS (Point of Sale) pentru restaurante, servita direct de Apache.
-Gestioneaza mesele, bonurile, ospatarii, meniul, discounturile, stornarile, platile
-si printarea catre bucatarie/bar/nota fiscala, plus rapoartele X si inchiderea Z.
+### POS complet pentru restaurante și fast-food — instalare automată, fiabilitate în exploatare, fără dependențe grele.
 
-Acest proiect **rescrie de la zero o aplicatie mai veche**, pastrand fluxurile de lucru
-cunoscute de operatori, dar reconstruind complet arhitectura pe tehnologii moderne,
-usoare si durabile. In loc sa caram mostenirea unui cod vechi, fiecare modul a fost
-regandit pentru fiabilitate, intretinere simpla si lipsa dependentelor grele.
+![Ecranul principal (Restaurant)](docs/img/01-hero-restaurant.png)
 
-## Functionalitati principale
+TableManager gestionează **mesele, bonurile, ospătarii, meniul, discounturile, stornările, plățile** (inclusiv plata cu cardul prin terminal bancar) și **tipărirea la bucătărie / bar / notă fiscală**, plus rapoartele X și închiderea Z.
 
-- **Mese si bonuri** — harta de 80 de mese, deschidere/inchidere bon, proprietar pe ospatar.
-- **Meniu** — grupe si produse cu preturi, culori, fonturi si dimensiuni configurabile; meniul zilei.
-- **Mod preparare (modificatori)** — text atasat unei linii, fara a afecta totalul.
-- **Discounturi** — pe linie sau pe bon, procentual sau valoric, distribuite corect pe cotele de TVA.
-- **Stornare (VD)** — anulare linii trimise, cu parola de manager si motiv; cantitatile nu pot fi depasite.
-- **Transfer produse** intre mese.
-- **Plata** — split pe mai multe forme de plata (numerar, card etc.), cu rest afisat.
-  Setarea `PlataCombinata` (DA/NU) controleaza acest flux: la **NU**, ecranul de inchidere
-  afiseaza doar formele de plata, fara numpad, iar un click pe o forma inchide nota integral
-  cu acea forma.
-- **POS bancar (terminal card)** — cand nota are plata pe card si `tblSet.PoSbanca = 1`,
-  la inchidere aplicatia comunica sincron cu terminalul bancar printr-un driver extern
-  (un folder cu `vanzare.bat`, sau direct un `.bat`/`.cmd`/`.exe`), cu timeout de 190 s,
-  dialog **Cancel / Retry / Ignore** la refuz (Cancel pastreaza nota deschisa, Ignore
-  inchide nota oricum) si audit al fiecarei incercari (suma, TRX_ID, status, mesaj) in
-  `tblPosBancaLog`.
-- **Printare** — bon de comanda pe sectii (cu numerotare proprie a bonurilor de sectie),
-  nota de plata, nota proforma si rapoarte, printr-o coada durabila; destinatiile fizice
-  ale fiecarei sectii se configureaza din aplicatie, cu test de tiparire.
-- **Casa de marcat** — fisierul de comenzi pentru driverul fiscal, generat pentru
-  **FiscalWire** (`.inp`) sau **FiscalNet** (`^`), in functie de `tblSet.TipCasaMarcat`,
-  si copiat automat in folderul monitorizat de driver (`tblSet.CaleFisierComenziECR`).
-- **CUI (cod fiscal client)** — popup cu tastatura dedicata pe ecranul de plata; codul e validat
-  cu cifra de control ANAF si trimis pe bon (`K,...` la FiscalWire, `CF^...` la FiscalNet).
-- **Modul mobil** — pagina dedicata pentru tableta/telefon (`mobile.html`) pentru marcarea
-  meselor, independenta de POS-ul desktop, dar folosind aceleasi API-uri.
-- **Export catre server** — la inchiderea fiecarei note se scrie o comanda `EXEC EmitBon_Ext_NOU`
-  (Restaurant) / `EmitBon_Ext_2` (FastFood) in coada durabila `temp_Send_Sql`; un serviciu Python
-  (`sync-service/`) o executa pe serverul din `tblConectare` si marcheaza `Preluat = 1`. Daca serverul
-  e oprit sau locatia e offline, comanda ramane in coada si se reincearca **la infinit** (cu backoff),
-  pana cand legatura revine; ecranul **Coada export** (Programare) arata starea si permite retry/stergere.
-  Cand `AsteaptaRaspunsCasa = 1`, randul de export pastreaza si raspunsul casei de marcat
-  (continutul `.nrb`) in coloana `RaspunsCasa`, vizibil in detaliul din „Coada export", si il
-  trimite ca **ultim parametru** procedurii `EmitBon_Ext_*` (`NULL` la exportul clasic).
-- **Import produse/grupe la pornire** — la deschiderea kiosc-ului, `Pornire-POS-Kiosk.bat`
-  ruleaza `import_server_grp_prod.py`, care (doar cand `tblSet.Server = 1`) executa procedura
-  stocata `dbo.ImportProd` pentru sincronizarea produselor si grupelor de pe serverul extern.
-  Comportamentul cand exista note deschise se alege din parametrul `--if-notes` (`run` implicit,
-  sau `skip` pentru a rula doar dupa raportul Z).
-- **Pornire kiosc si inchidere** — `Pornire-POS-Kiosk.vbs` (fara fereastra DOS) sau
-  `Pornire-POS-Kiosk.bat` (vizibil, in radacina proiectului si pe Desktop) deschide aplicatia in
-  mod kiosc fullscreen, cu profil dedicat de browser; parola de inchidere
-  (`tblParola.ParolaExit`, tastata in modalul de parola) inchide browserul POS.
-- **Rapoarte X** — PLU, Grupe, Sectii, Casieri, General si **Note** (bonurile inchise din
-  sesiune, cu detaliul fiecarei note), pe bonurile inchise din sesiunea curenta.
-- **Inchidere Z** — arhivare si golire atomica a zilei, cu raport General Z plus rapoartele selectate.
-- **Setari operationale** — cantitate maxima pe linie, numar de zecimale la cantitate,
-  permitere/respingere discount (cu parola optionala), permitere/respingere plata combinata,
-  contorul bonurilor de sectie, tipul
-  casei de marcat impreuna cu caile fisierelor de comenzi/raspuns, afisarea discountului si
-  stornarii pe bonul fiscal, plus listele de motive pentru discount si stornare.
-- **Programare** — setari, grupe, produse, sectii, mese, ospatari, moduri preparare, parole, TVA,
-  imprimante sectii (destinatie fizica pe tip de tinta si test de tiparire), forme de plata,
-  antet, nota, conectare server si sincronizare produse.
+Aceeași aplicație rulează în **două moduri** — **Restaurant** (comandă la masă) și **FastFood** (vânzare rapidă la tejghea) — alese dintr-o singură setare. Este rescrisă de la zero pe tehnologii moderne și ușoare, cu **cozi durabile**: *nu se pierde nicio comandă și niciun bon*.
 
-## Tehnologii si avantajele lor
+`Versiune 1.5.0` · `PHP 8.3 + MSSQL` · `Fără build step` · `Windows + Apache` · `Modul mobil inclus`
 
-**PHP + MSSQL (extensia `sqlsrv`)** — backend simplu, fara framework.
-Avantaje: apel direct de proceduri stocate, tranzactii ACID nativ pentru operatiuni
-critice (inchidere bon, marcare, raport Z), zero layer de abstractizare care sa ascunda
-comportamentul bazei de date, cod usor de citit si de intretinut.
+---
 
-**JavaScript si CSS pur (fara framework, fara build step)** — frontendul desktop este in
-`js/pos.js`, iar cel mobil in `js/mobile.js`.
-Avantaje: nicio dependenta externa, niciun toolchain de compilat, deploy = editi fisierul si
-reincarcati pagina; aplicatia porneste instant si nu se strica la un update de pachete.
+## De ce TableManager?
 
-**Aspectul scalat pe canvas** — design de baza 1024x768, scalat proporțional pe orice ecran.
-Avantaj: acelasi layout fix si previzibil pe monitoare si pe tablete, fara CSS fragil de tip vw/vh.
+- **Instalare automată „într-un pas"** — un installer dedicat configurează totul pe un Windows 11 curat: Apache, PHP, SQL Server Express, Python, serviciile și scurtăturile.
+- **Actualizare la un click**, cu **versionare** (versiune + build + commit), **backup automat** înainte de update și posibilitatea de a ști exact ce versiune rulează pe fiecare stație.
+- **Nu pierde niciodată o comandă sau un bon** — cozi durabile cu reîncercare automată; imprimanta sau serverul pot fi oprite, nimic nu se pierde.
+- **Funcționează offline** și exportă către server de îndată ce revine conexiunea.
+- **Fiscal + POS bancar + tipărire bucătărie integrate** — nu module externe scumpe.
+- **Un singur produs, două moduri:** Restaurant și FastFood.
+- **Modul mobil inclus** (tabletă/telefon), fără costuri suplimentare.
 
-**Coada de printare durabila (tabela `tblPrintQueue` in MSSQL)** — actiunea de business scrie
-doar un job in baza de date, in aceeasi tranzactie; un serviciu Python ridica jobul, il randeaza
-si il livreaza. Avantaje: printarea nu blocheaza vanzarea, iar daca imprimanta este oprita jobul
-ramane `pending` si este reincercat cu backoff pana revine — nimic nu se pierde.
+---
 
-**Serviciu de printare Python + ESC/POS** — `print-service/` randeaza bonurile si le trimite
-nativ catre imprimante (Windows raw sau retea :9100). Serviciul isi detine fisierul de configurare
-`config.json` (il valideaza, il scrie atomic si il reincarca la cald, fara repornire), iar POS-ul
-il editeaza printr-un proxy. Avantaj: decuplare totala fata de procesul de vanzare si suport pentru
-imprimante termice reale, cu un emulator inclus pentru testare.
+## Două moduri de operare: Restaurant și FastFood
 
-**Modul mobil separat (`mobile.html`)** — un al doilea client, pentru tableta/telefon, care
-reutilizeaza exact aceleasi API-uri PHP (fara backend duplicat). Avantaj: ospatarii pot marca de pe
-terminal propriu, fara sa atinga POS-ul desktop si fara cod sau rute suplimentare pe server.
+Alegerea se face din **Setări → General** (`TipVanz`). Aceeași bază de date, același meniu, aceeași interfață de programare.
 
-**Ruleaza pe HTTP** — aplicatia si serviciile Python folosesc `http://127.0.0.1` (nu este nevoie de
-HTTPS/certificat). La pornire, serviciile isi deduc singure URL-ul API din numele folderului de
-instalare (`http://127.0.0.1/<folder>/api`), deci functioneaza chiar daca proiectul e redenumit sau
-instalat in alt folder direct sub `htdocs`.
+### 🍽️ Restaurant — comandă la masă
 
-**Securitate** — interogari cu parametri (prepared statements), parole POS pentru programare,
-rapoarte, stornare, discount si iesire, autentificare pe fiecare ospatar cu blocare, iar
-credențialele bazei de date stau intr-un fisier local ignorat de git.
+![Harta meselor (Restaurant)](docs/img/02-mese.png)
 
-## Fiabilitate si siguranta in exploatare
+- Hartă de mese (80 de locuri), bon deschis pe masă, proprietar pe oștean.
+- **Bon de comandă** către bucătărie/bar, pe secții, cu numerotare proprie a bonurilor de secție.
+- **Notă de plată**, **notă proformă**, **transfer produse** între mese și **mod preparare**.
 
-Operatiunile critice (inchiderea bonului, marcarea catre bucatarie, inchiderea Z) se executa
-in tranzactii atomice, astfel incat un bon sau o zi nu poate ramane pe jumatate procesat(a).
-Printarea este asincrona si durabila: joburile sunt persistate in baza de date si reincercate
-automat, deci o imprimanta offline nu pierde si nu blocheaza nicio comanda. Raportul Z foloseste
-o procedura stocata care arhiveaza si goleste datele intr-o singura tranzactie cu rollback la
-eroare, iar toate accesarile la baza de date folosesc interogari parametrizate, ceea ce elimina
-injectia SQL.
+### 🍔 FastFood — vânzare rapidă la tejghea
 
-## Casa de marcat (fiscal)
+![Modul FastFood](docs/img/02-fastfood.png)
 
-La inchiderea notei (`close_bill`), in aceeasi tranzactie, se genereaza fisierul de comenzi
-pentru casa de marcat si se scrie in coada durabila de printare; serviciul Python il scrie in
-`spool/fiscal` si il **copiaza** in folderul monitorizat de driverul fiscal
-(`tblSet.CaleFisierComenziECR`), de unde casa il proceseaza. Daca folderul nu e disponibil,
-jobul se reincearca cu backoff, deci bonul nu se pierde.
+- Fără hartă de mese — aplicația pornește direct în ecranul de vânzare.
+- Fără bon de secție, fără notă proformă, fără transfer, fără mod preparare (ascunse automat).
+- La închidere se emite **doar bonul fiscal**; totalul și restul apar în panoul de vânzare.
 
-Tipul casei se alege din **Setari → Casa Marcat** (`tblSet.TipCasaMarcat`):
+> Un singur proiect, două fluxuri — nu două aplicații de întreținut.
 
-- **FiscalWire** (driver FiscalWire) — fisier `.inp`:
-  - `H,1,______,_,__;` antet (fara linie `F` la final, ca in procedura veche);
-  - `S,1,______,_,__;NUME;PRET;CANT;1;1;NrTVA;0;0;` vanzare (nume majuscule, trunchiat
-    la 32 de caractere, fara completare cu spatii; pret cu 2 zecimale; cantitate cu 3 zecimale;
-    storno = cantitate negativa);
-  - `C,1,______,_,__;1;PROCENT;` discount pe linie (procent simplu, ex. `5.00` = 5%);
-  - `K,1,______,_,__;RO12345678;` cod fiscal client, inainte de prima vanzare;
-  - `T,1,______,_,__;COD_PLATA;;;;;` incasare la o **singura** forma de plata (fara suma:
-    FiscalWire calculeaza singur totalul, ca in procedura veche); la mai multe forme de plata
-    se scrie cate o linie cu suma fiecarei forme (`T,1,______,_,__;COD_PLATA;SUMA;;;;`),
-    descrescator dupa cod.
-- **FiscalNet** — fisier `.txt` cu separator `^`:
-  - `S^NUME^PRET^CANT^buc^GRTVA^1`, `DV^valoare` / `MV^valoare` pentru discount/majorare,
-    `VS^...` pentru stornare, `ST^` subtotal, `P^COD_PLATA^SUMA` incasare;
-  - `CF^RO12345678` cod fiscal client, inainte de prima vanzare.
-- **Fisco**, **fprwin** — in curs de implementare.
+---
 
-Codurile de plata se iau direct din `tblFP.FPID` (0 = Numerar, 1 = Card, 2 = CEC, 3 = Tichet,
-4 = OP, 5 = Voucher): la FiscalWire se scrie `FPID`, la FiscalNet `FPID + 1` (driver-ul foloseste
-coduri 1-based). Grupa de TVA se rezolva din `tblTVA` dupa cota liniei (`tblNoteD.TVAc` ->
-`tblTVA.Nr_TVA`), la fel ca `DLookup("Nr_TVA","tblTVA","Cota=" & TVAc)` din aplicatia veche.
+## Funcționalități
 
-Implicit, bonul fiscal **nu** afiseaza discountul si nici stornarea: se trimit doar cantitatile
-si preturile nete (o linie per produs, cu cantitatea neta dupa stornari). Setarea
-`tblSet.BonFiscalDiscStorno = 1` activeaza modul detaliat (linii de discount/majorare `C`/`DV`/`MV`
-si linii de stornare `VS`).
+### Operare sală
+- **Mese și bonuri** — 80 de mese, deschidere/închidere bon, proprietar pe oștean (un oștean nu poate intra pe masa altuia).
+- **Meniu** — grupe și produse cu prețuri, culori, fonturi și dimensiuni configurabile; **Meniul Zilei**.
+- **Scanare cod** — caută după cod de bare sau cod produs.
 
-### Asteptarea raspunsului casei de marcat (FiscalWire / FiscalNet)
+![Meniu](docs/img/03-meniu.png)
 
-Setarea `AsteaptaRaspunsCasa` (Setari → Casa Marcat, implicit **NU**) schimba fluxul de mai sus:
-cand este **DA** si tipul casei este **FiscalWire** sau **FiscalNet**, la inchiderea notei POS-ul
-scrie fisierul de comenzi direct in `tblSet.CaleFisierComenziECR` (`pos_tm_<DocID>_<dataora>.inp`
-la FiscalWire, `.txt` la FiscalNet) si **asteapta** pana la `AsteptareCasaSec` secunde (implicit 30)
-confirmarea in `tblSet.CaleFisierRaspunsECR`, inainte de a inchide nota:
+### Comenzi & bucătărie
+- **Bon de comandă pe secții**, cu numerotare proprie a bonurilor de secție (contor dedicat, resetat la raportul Z).
+- **Mod preparare** — text atașat unei linii (ex. „fără ceapă"), care nu afectează totalul.
 
-- **FiscalWire**: fisierul `.nrb` (prima linie `OK;Z=..|NR=..|...|BF=..`) confirma bonul; `NrBon`
-  (`NR`) si `NrZ` (`Z`) reale sunt trimise mai departe serviciului de export (`EmitBon_Ext_*`);
-  `CANCELED` sau orice linie cu status `Er` in fisierul `.txt` blocheaza inchiderea;
-- **FiscalNet**: fisierul de raspuns (acelasi nume ca al comenzii) contine `BONOK=1` + `NRBON=<nr>`
-  la succes, sau `BONOK=0` + `ERRCODE`/`ERRINFO` la eroare, sau `BONOK=-1` (nu s-a identificat
-  raspunsul terminalului bancar);
-- lipsa raspunsului (timeout) inseamna ca nota **nu** se inchide: se afiseaza mesajul, ecranul de
-  plata revine la starea initiala si se poate reincerca cu OK;
-- in orice caz de esec, POS-ul **sterge fisierul de comenzi**, ca driverul sa nu tipareasca ulterior
-  un bon abandonat (desincronizat de nota inca deschisa); inainte de fiecare trimitere se curata si
-  fisierele `pos_tm_*.inp`/`pos_tm_*.txt` abandonate (cazul unei opriri bruste);
-- fiecare esec se scrie in `logs/fiscal_wait.log`.
+### Discount & stornare
+- **Discount** pe linie sau pe bon, procentual sau valoric, distribuit corect pe cotele de TVA.
+- Trei moduri configurabile: complet (produs/subtotal, procent/valoare, cu popup) · doar procent la subtotal · procent fix la subtotal, aplicat direct.
+- **Stornare (VD)** — anulare a liniilor deja trimise, cu parolă de manager și motiv; cantitățile nu pot fi depășite; liniile netrimise se anulează direct.
 
-Pentru testare, `tools/mock_fiscalwire.py` (pornit cu `tools/mock_fiscalwire.bat`, din `.venv`)
-simuleaza driverul FiscalWire: scrie raspunsurile `.txt`/`.nrb` in folderul configurat (in modurile
-`ok` / `err` / `canceled` / `silent` / `random`) si **sterge** fisierul de comanda dupa procesare
-(se poate pastra cu `--keep`). Se seteaza temporar folderele `CaleFisierComenziECR` /
-`CaleFisierRaspunsECR` la `logs/mock_fiscal/comenzi` / `logs/mock_fiscal/raspuns`.
+### Plăți
+- **Split** pe mai multe forme de plată (numerar, card, tichet etc.), cu rest afișat.
+- Setarea **plată combinată** (DA/NU): la *NU*, ecranul de închidere afișează doar formele de plată (fără numpad), iar un click pe o formă închide nota integral.
 
-`tools/mock_fiscalnet.py` (cu `tools/mock_fiscalnet.bat`) simuleaza driverul FiscalNet: scrie
-raspunsul cu acelasi nume ca al comenzii in folderul de raspuns (modurile `ok` / `err` / `pos` /
-`silent` / `random`, mod implicit `ok`), pornind folderele `logs/mock_fiscal_net/comenzi` /
-`logs/mock_fiscal_net/raspuns`.
+![Plată](docs/img/04-plata.png)
 
-CUI-ul se introduce dintr-un popup deschis cu butonul **CUI** de pe ecranul de plata, este
-validat cu cifra de control ANAF (algoritmul CUI/CIF) si tinut per nota (se goleste la
-schimbarea notei si dupa inchiderea bonului); se poate sterge cu butonul „Fara cod fiscal".
+- **POS bancar (terminal card)** — când nota are plată pe card și `tblSet.PoSbanca = 1`, aplicația comunică sincron cu terminalul printr-un driver extern, cu timeout de 190 s, dialog **Cancel / Retry / Ignore** la refuz (Cancel păstrează nota deschisă, Ignore o închide oricum) și **audit** al fiecărei încercări (sumă, TRX_ID, status, mesaj) în `tblPosBancaLog`.
 
-## Cerinte
+### Casa de marcat (fiscal)
+- Fișierul de comenzi pentru driverul fiscal, generat pentru **FiscalWire** (`.inp`) sau **FiscalNet** (separator `^`), în funcție de `tblSet.TipCasaMarcat`.
+- **CUI (cod fiscal client)** — popup cu tastatură dedicată, validat cu cifra de control ANAF și trimis pe bon.
 
-- **Apache** cu **PHP** si extensia **`php_sqlsrv`** incarcata.
-- **Microsoft SQL Server** (baza de date configurabilă în `api/db.local.php`, implicit `Rual`).
-- **Python 3.12** (Windows) pentru componentele Python (`print-service/`, `sync-service/`,
-  `import_server_grp_prod.py`) — optional, doar daca folositi una dintre ele. Toate ruleaza
-  **dintr-un mediu virtual comun** `.venv` din radacina proiectului, creat o singura data cu
-  `setup-venv.bat` (dependintele — `pyodbc`, `pywin32`, `pyserial` — sunt in `requirements.txt`). Este
-  nevoie si de un **ODBC Driver for SQL Server** instalat. Mediul virtual este obligatoriu:
-  fara el, pornirea kiosc-ului si a serviciilor Python se opreste cu un mesaj care cere
-  rularea `setup-venv.bat`.
+### Tipărire
+- **Coadă durabilă de tipărire** — bon de comanda pe secții, nota de plată, nota proformă și rapoarte.
+- Destinațiile fizice ale fiecărei secții (Windows raw, rețea :9100, fișier, preview) se configurează din aplicație, cu **test de tipărire**; modificările se aplică instant (hot-reload).
+- **Emulator de bon inclus** — previzualizare fără hardware.
 
-## Instalare si configurare
+![Bon de comandă (emulator)](docs/img/05-bon-sectie.png)
 
-1. Copiati proiectul in directorul servit de Apache (ex. `htdocs/rual`).
-2. Reconstruiti baza de date ruland `db/schema.sql` apoi `db/seed.sql`
-   (detalii in [db/README.md](db/README.md)).
-3. Configurati conexiunea la baza de date:
-   copiati `api/db.local.example.php` in `api/db.local.php` si completati serverul,
-   baza de date, utilizatorul si parola.
-4. (Optional, dar obligatoriu daca folositi componentele Python) Rulati `setup-venv.bat`
-   din radacina proiectului: creeaza mediul virtual `.venv`, instaleaza dependintele din
-   `requirements.txt` si creeaza shortcut-urile: cele doua servicii in `Startup` (pornire
-   automata la login) si `TableManager POS` pe Desktop, cu iconita `img/abcicon.ico`.
-   Se ruleaza o singura data (sau dupa reinstalarea Python-ului); shortcut-urile sunt
-   (re)create de fiecare data de `tools/create-shortcuts.vbs`.
-5. (Optional) Porniti serviciul de printare: `print-service/start-print-service.bat`
-   (sau `start-print-service-hidden.vbs` pentru rulare in fundal, fara consola).
-   Shortcut-ul in `Startup` este creat automat de `setup-venv.bat`. Serviciul asculta
-   doar pe `127.0.0.1:8756`. Destinatiile fizice (sectii si tintele globale Nota/Rapoarte/
-   Fiscal) se configureaza din **Setari → Imprimante sectii**, cu butoane de test; modificarile
-   se aplica instant (hot-reload), fara repornirea serviciului.
-6. (Optional) Porniti serviciul de export catre server: `sync-service/start-sync-service.bat`
-   (sau `start-sync-service-hidden.vbs` pentru rulare in fundal, fara consola). Shortcut-ul in
-   `Startup` este creat automat de `setup-venv.bat`. Serviciul asculta doar pe `127.0.0.1:8757`,
-   citeste serverul/baza/credentialele din `tblConectare` (ID = 1) si executa pe acel server
-   comenzile scrise in `temp_Send_Sql`.
-7. (Optional) Folositi `Pornire-POS-Kiosk.vbs` (in radacina proiectului sau pe Desktop) pentru a
-   deschide aplicatia in mod kiosc fullscreen, fara fereastra DOS. La pornire, acelasi launcher
-   ruleaza si `import_server_grp_prod.py` (importul produselor/grupelor de pe server, cand
-   `tblSet.Server = 1`); shortcut-ul de pe Desktop este creat automat de `setup-venv.bat`.
-   Varianta cu fereastra vizibila ramane `Pornire-POS-Kiosk.bat`.
+![Nota de plată (emulator)](docs/img/09-nota-plata.png)
 
-## Reconstructie baza de date
+### Rapoarte și închidere
+- **Rapoarte X** — PLU, Grupe, Secții, Casieri, General și **Note** (bonurile închise din sesiune, cu detaliul fiecărei note).
+- **Închidere Z** — arhivare și golire atomică a zilei, cu raport General Z plus rapoartele selectate.
 
-Structura bazei de date si datele de referinta sunt publicate in directorul `db/`,
-astfel incat oricine poate reconstrui o baza functionala:
+![Raport X](docs/img/06-raport-x.png)
 
-- `db/schema.sql` — tabelele, indecsii, constrangerile, cheile straine si procedurile stocate.
-- `db/seed.sql` — date de referinta minime plus un meniu demo (fara date reale).
+### Administrare din interfață
+- Setări, grupe, produse, secții, mese, ospătari, moduri preparare, parole, cote TVA, imprimante pe secții, forme de plată, antet, notă, conectare server și sincronizare produse — toate editabile direct din aplicație.
 
-Pasii sunt: rulati `db/schema.sql`, apoi `db/seed.sql`, apoi configurati `api/db.local.php`.
-Instructiuni complete: [db/README.md](db/README.md).
+### Modul mobil
+- Pagină dedicată pentru tabletă/telefon (`mobile.html`) pentru marcarea meselor, independentă de POS-ul desktop, dar folosind aceleași API-uri.
+
+![Modul mobil](docs/img/07-mobil.png)
+
+### Multi-stație & integrare
+- **Export către server** — la închiderea fiecărei note se scrie o comandă `EXEC EmitBon_Ext_NOU` (Restaurant) / `EmitBon_Ext_2` (FastFood) într-o coadă durabilă; un serviciu Python o execută pe serverul din `tblConectare`. Dacă serverul e oprit, comanda se reîncearcă **la infinit**, cu backoff.
+- **Import produse/grupe la pornire** — sincronizare de pe serverul extern prin procedura `dbo.ImportProd`.
+
+---
+
+## Fiabilitate și siguranță
+
+- **Tranzacții atomice** pentru operațiunile critice (închiderea bonului, marcarea, închiderea Z): un bon sau o zi nu poate rămâne pe jumătate procesat(ă).
+- **Cozi durabile** pentru tipărire și export — joburile sunt persistate în baza de date și reîncercate automat, deci o imprimantă offline nu pierde și nu blochează nicio comandă.
+- **Interogări parametrizate** — elimina injectia SQL.
+- **Parole pe roluri** — programare, rapoarte, stornare, discount și ieșire; autentificare pe fiecare oștean, cu blocare.
+- **Credențiale în fișier local**, ignorat de git.
+- **Backup automat** înainte de fiecare actualizare.
+
+---
+
+## Instalare & actualizare
+
+- **Installer automat** (repo separat `TableManager-Setup`): pe un Windows 11 gol configurează Apache + PHP 8.3 + SQL Server 2022 Express + Python 3.12, deploy-ul aplicației, clonarea bazei de date, mediul virtual `.venv`, serviciile și scurtăturile. Dublu-click pe `Setup.bat`; instalarea este idempotentă.
+- **Pornire kiosc** — `Pornire-POS-Kiosk.vbs` (fără fereastră DOS) deschide aplicația fullscreen și importă produsele la pornire.
+- **Actualizare din aplicație** — butonul **Update** compară versiunea instalată cu GitHub, face backup și aplică automat.
+- **Versionare** — fiecare stație știe exact ce rulează: fișierul `VERSION` (ex. `1.5.0`) plus build + commit + dată, vizibile în **Setări → Servicii**, în dialogul Update și programatic prin `api/version.php`.
+
+![Setări → Servicii (versiune + servicii)](docs/img/08-setari-versiune.png)
+
+---
+
+## Tehnologie și avantaje
+
+- **PHP + MSSQL (extensia `sqlsrv`)** — backend simplu, fără framework. Apel direct de proceduri stocate și tranzacții ACID native pentru operațiuni critice; zero layer de abstractizare care să ascundă comportamentul bazei de date.
+- **JavaScript și CSS pur (fără framework, fără build step)** — frontend desktop în `js/pos.js`, mobil în `js/mobile.js`. Deploy = editezi fișierul și reîncarci pagina.
+- **Aspect scalat pe canvas** — design de bază 1024×768, scalat proporțional pe orice ecran, fără CSS fragil de tip vw/vh.
+- **Serviciu de tipărire Python + ESC/POS** — `print-service/` randează bonurile și le trimite nativ către imprimante (Windows raw sau rețea :9100); își deține configurarea și o reîncarcă la cald, cu emulator inclus pentru testare.
+- **Rulează pe HTTP** — serviciile își deduc singure URL-ul API din numele folderului de instalare, deci funcționează chiar dacă proiectul este redenumit sau instalat în alt folder direct sub `htdocs`.
+
+---
+
+## Cerințe
+
+- **Apache** cu **PHP** și extensia **`php_sqlsrv`** încărcată.
+- **Microsoft SQL Server** (baza de date configurabilă în `api/db.local.php`).
+- **Python 3.12** (Windows) pentru componentele Python (`print-service/`, `sync-service/`, `import_server_grp_prod.py`) — opțional, doar dacă folosiți una dintre ele. Toate rulează **dintr-un mediu virtual comun** `.venv` din rădăcina proiectului, creat o singură dată cu `setup-venv.bat` (dependințele — `pyodbc`, `pywin32`, `pyserial` — sunt în `requirements.txt`). Este nevoie și de un **ODBC Driver for SQL Server** instalat. Mediul virtual este obligatoriu: fără el, pornirea kiosc-ului și a serviciilor Python se oprește cu un mesaj care cere rularea `setup-venv.bat`.
+
+---
+
+## Instalare și configurare (manual)
+
+1. Copiați proiectul în directorul servit de Apache (ex. `htdocs/rual`).
+2. Reconstruiți baza de date rulând `db/schema.sql` apoi `db/seed.sql` (detalii în [db/README.md](db/README.md)).
+3. Configurați conexiunea: copiați `api/db.local.example.php` în `api/db.local.php` și completați serverul, baza, utilizatorul și parola.
+4. (Opțional, dar obligatoriu dacă folosiți componentele Python) Rulați `setup-venv.bat` din rădăcina proiectului: creează `.venv`, instalează dependințele și creează scurtăturile (cele două servicii în `Startup` și `TableManager POS` pe Desktop).
+5. (Opțional) Porniți serviciul de tipărire: `print-service/start-print-service.bat` (sau `start-print-service-hidden.vbs`). Ascultă doar pe `127.0.0.1:8756`. Destinațiile se configurează din **Setări → Imprimante secții**, cu butoane de test.
+6. (Opțional) Porniți serviciul de export: `sync-service/start-sync-service.bat` (sau varianta `-hidden`). Ascultă doar pe `127.0.0.1:8757` și citește serverul/credențialele din `tblConectare` (ID = 1).
+7. (Opțional) Folosiți `Pornire-POS-Kiosk.vbs` pentru a deschide aplicația în mod kiosc fullscreen, fără fereastră DOS.
+
+---
+
+## Reconstrucție bază de date
+
+Structura bazei de date și datele de referință sunt publicate în directorul `db/`:
+
+- `db/schema.sql` — tabelele, indecșii, constrângerile, cheile străine și procedurile stocate.
+- `db/seed.sql` — date de referință minime plus un meniu demo (fără date reale).
+
+Pașii sunt: rulați `db/schema.sql`, apoi `db/seed.sql`, apoi configurați `api/db.local.php`. Instrucțiuni complete: [db/README.md](db/README.md).
+
+---
 
 ## Structura proiectului
 
@@ -251,6 +179,8 @@ css/pos.css             stilurile POS-ului desktop
 mobile.html             clientul mobil/tableta (marcare mese)
 js/mobile.js            logica modulului mobil (stare globala MOBILE_STATE)
 css/mobile.css          stilurile modulului mobil
+VERSION                 versiunea human (ex. 1.5.0)
+docs/img/               capturile de ecran din acest README
 api/                    endpoints PHP (JSON)
   db.php                conexiunea MSSQL (+ db.local.php local, ignorat)
   order_action.php      dispatcher: add_product, close_bill, void_line, apply_discount etc.
@@ -262,6 +192,8 @@ api/                    endpoints PHP (JSON)
   send_common.php       helperi comuni (ensureSendSqlTable, enqueueBillSendSql)
   print_config.php      proxy catre serviciul de printare (citire/salvare config, test)
   pos_banca.php         comunicarea cu terminalul bancar (POS bancar) + audit
+  version.php           versiunea aplicatiei (VERSION + build + commit)
+  version_common.php    helperi pentru versionare (stare, eticheta, log)
   exit_app.php          inchide browserul POS din parola de inchidere
   sync_products.php     ruleaza procedura stocata dbo.ImportProd (Sincronizare produse)
   ...                   editori de configurare (produse, grupe, mese, tva, kp, fp, etc.)
@@ -278,7 +210,51 @@ Pornire-POS-Kiosk.bat   lansator kiosc cu fereastra vizibila (aceeasi logica)
 import_server_grp_prod.py  import produse/grupe de pe server (dbo.ImportProd)
 requirements.txt        dependintele Python (pyodbc, pywin32, pyserial) pentru mediul virtual
 setup-venv.bat          creeaza .venv, instaleaza dependintele si creeaza shortcut-urile (o singura data)
-tools/create-shortcuts.vbs  creeaza shortcut-urile: serviciile in Startup + POS pe Desktop (img/abcicon.ico)
+tools/create-shortcuts.vbs  creeaza shortcut-urile: serviciile in Startup + POS pe Desktop
 .venv/                  mediul virtual Python (creat local, ignorat de git)
-sync.sh                 commit + push catre GitHub (doar cand exista modificari)
+sync.sh                 commit + push catre GitHub + regenereaza snapshot-ul de instalare
 ```
+
+---
+
+## Anexă tehnică
+
+### Casa de marcat (protocol detaliat)
+
+La închiderea notei (`close_bill`), în aceeași tranzacție, se generează fișierul de comenzi pentru casa de marcat și se scrie în coada durabilă de tipărire; serviciul Python îl scrie în `spool/fiscal` și îl **copiază** în folderul monitorizat de driverul fiscal (`tblSet.CaleFisierComenziECR`), de unde casa îl procesează. Dacă folderul nu e disponibil, jobul se reîncearcă cu backoff, deci bonul nu se pierde.
+
+Tipul casei se alege din **Setări → Casa Marcat** (`tblSet.TipCasaMarcat`):
+
+- **FiscalWire** (driver FiscalWire) — fișier `.inp`:
+  - `H,1,______,_,__;` antet (fără linie `F` la final, ca în procedura veche);
+  - `S,1,______,_,__;NUME;PRET;CANT;1;1;NrTVA;0;0;` vânzare (nume majuscule, trunchiat la 32 de caractere, fără completare cu spații; preț cu 2 zecimale; cantitate cu 3 zecimale; storno = cantitate negativă);
+  - `C,1,______,_,__;1;PROCENT;` discount pe linie (procent simplu, ex. `5.00` = 5%);
+  - `K,1,______,_,__;RO12345678;` cod fiscal client, înainte de prima vânzare;
+  - `T,1,______,_,__;COD_PLATA;;;;;` încasare la o **singură** formă de plată (fără sumă: FiscalWire calculează singur totalul); la mai multe forme de plată se scrie câte o linie cu suma fiecărei forme (`T,1,______,_,__;COD_PLATA;SUMA;;;;`), descrescător după cod.
+- **FiscalNet** — fișier `.txt` cu separator `^`:
+  - `S^NUME^PRET^CANT^buc^GRTVA^1`, `DV^valoare` / `MV^valoare` pentru discount/majorare, `VS^...` pentru stornare, `ST^` subtotal, `P^COD_PLATA^SUMA` încasare;
+  - `CF^RO12345678` cod fiscal client, înainte de prima vânzare.
+- **Fisco**, **fprwin** — în curs de implementare.
+
+Codurile de plată se iau direct din `tblFP.FPID` (0 = Numerar, 1 = Card, 2 = CEC, 3 = Tichet, 4 = OP, 5 = Voucher): la FiscalWire se scrie `FPID`, la FiscalNet `FPID + 1`. Grupa de TVA se rezolvă din `tblTVA` după cota liniei (`tblNoteD.TVAc` → `tblTVA.Nr_TVA`).
+
+Implicit, bonul fiscal **nu** afișează discountul și nici stornarea (doar cantitățile și prețurile nete). Setarea `tblSet.BonFiscalDiscStorno = 1` activează modul detaliat.
+
+### Așteptarea răspunsului casei de marcat (FiscalWire / FiscalNet)
+
+Setarea `AsteaptaRaspunsCasa` (Setări → Casa Marcat, implicit **NU**): când este **DA** și tipul casei este **FiscalWire** sau **FiscalNet**, la închiderea notei POS-ul scrie fișierul de comenzi direct în `tblSet.CaleFisierComenziECR` și **așteaptă** până la `AsteptareCasaSec` secunde (implicit 30) confirmarea în `tblSet.CaleFisierRaspunsECR`, înainte de a închide nota:
+
+- **FiscalWire**: fișierul `.nrb` (prima linie `OK;Z=..|NR=..|...|BF=..`) confirmă bonul; `NrBon` (`NR`) și `NrZ` (`Z`) reale sunt trimise mai departe serviciului de export; `CANCELED` sau orice linie cu status `Er` blochează închiderea.
+- **FiscalNet**: fișierul de răspuns conține `BONOK=1` + `NRBON=<nr>` la succes, `BONOK=0` + `ERRCODE`/`ERRINFO` la eroare, sau `BONOK=-1`.
+- lipsa răspunsului (timeout) înseamnă că nota **nu** se închide; ecranul de plată revine la starea inițială și se poate reîncerca.
+- în orice caz de eșec, POS-ul **șterge fișierul de comenzi**, ca driverul să nu tipărească ulterior un bon abandonat; înainte de fiecare trimitere se curăță și fișierele `pos_tm_*` abandonate.
+- fiecare eșec se scrie în `logs/fiscal_wait.log`.
+
+### Testare fiscală (mock-uri)
+
+- `tools/mock_fiscalwire.py` (pornit cu `tools/mock_fiscalwire.bat`, din `.venv`) simulează driverul FiscalWire: scrie răspunsurile `.txt`/`.nrb` în folderul configurat (moduri `ok` / `err` / `canceled` / `silent` / `random`) și șterge fișierul de comandă după procesare (se poate păstra cu `--keep`).
+- `tools/mock_fiscalnet.py` (cu `tools/mock_fiscalnet.bat`) simulează driverul FiscalNet: scrie răspunsul cu același nume ca al comenzii (moduri `ok` / `err` / `pos` / `silent` / `random`).
+
+---
+
+© ABCSoft · www.abc-soft.ro
