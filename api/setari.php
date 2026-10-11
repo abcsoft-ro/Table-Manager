@@ -152,6 +152,13 @@ function ensureSetariMeta($conn) {
         'Retur client;Greseala ospatar;Lipsa stoc;Comanda gresita;Altele',
         "Motivele de anulare (stornare) oferite in caseta VD. Valorile sunt separate prin punct si virgula (;).", 'General');
 
+    // Plata combinata (tblSet.PlataCombinata): 1 = DA (plata mixta, cu numpad
+    // de introducere a sumelor), 0 = NU (in ecranul de inchidere se afiseaza
+    // doar formele de plata, fara numpad; la click pe o forma nota se inchide
+    // integral cu acea forma).
+    ensureSetariValue($conn, 'PlataCombinata', '1',
+        "Plata combinata: 1 = DA (se pot combina mai multe forme de plata, cu introducerea sumelor din numpad); 0 = NU (in ecranul de inchidere apar doar formele de plata, fara numpad, iar la click pe o forma nota se inchide integral cu acea forma).", 'General');
+
     // Toate setarile de discount sunt grupate in grupul „Discount" (deploy fara
     // pasi manuali: mutam si randurile existente care inca sunt in alt grup).
     @sqlsrv_query(

@@ -608,6 +608,19 @@ body {
   margin-bottom: 8px;
 }
 
+/* Plata combinata = NU: doar formele de plata (fara numpad), centrate. */
+.payment-methods-grid.single-mode {
+  flex: 1;
+  align-content: center;
+  grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 0;
+}
+
+.payment-methods-grid.single-mode .pay-btn {
+  height: 90px;
+  font-size: 18px;
+}
+
 .pay-btn {
   height: 56px;
   background: #ffff00;
@@ -619,7 +632,18 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   box-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+}
+
+.pay-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.pay-btn-icon svg {
+  display: block;
 }
 
 .pay-btn.green-text {

@@ -302,6 +302,16 @@ if ($stmtAR) {
     if ($ar && trim((string)$ar['Value']) === '1') { $asteaptaRaspunsCasa = 1; }
 }
 
+// Plata combinata (tblSet.PlataCombinata): implicit DA (1). Cand e NU (0),
+// ecranul de inchidere arata doar formele de plata (fara numpad), iar la click
+// pe o forma nota se inchide integral cu acea forma.
+$plataCombinata = 1;
+$stmtPC = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'PlataCombinata'");
+if ($stmtPC) {
+    $pc = sqlsrv_fetch_array($stmtPC, SQLSRV_FETCH_ASSOC);
+    if ($pc && trim((string)$pc['Value']) === '0') { $plataCombinata = 0; }
+}
+
 // 4g. Parola de discount (tblParola.ParolaDiscount): 1 daca este setata (deci
 //     discountul cere parola), 0 daca nu. Valoarea parolei NU se trimite.
 $parolaDiscount = 0;
@@ -367,6 +377,7 @@ sendJsonResponse([
     "server" => $server,
     "posBanca" => $posBanca,
     "asteaptaRaspunsCasa" => $asteaptaRaspunsCasa,
+    "plataCombinata" => $plataCombinata,
     "parolaDiscount" => $parolaDiscount,
     "parolaStornare" => $parolaStornare,
     "motivDiscount" => $motivDiscount,

@@ -49,6 +49,10 @@ const POS_STATE = {
   // (tblSet.AsteaptaRaspunsCasa, doar FiscalWire): cand e 1, dupa plata se
   // asteapta confirmarea bonului fiscal inainte de a inchide nota.
   asteaptaRaspunsCasa: 0,
+  // Plata combinata (tblSet.PlataCombinata): 1 = DA (plata mixta, cu numpad);
+  // 0 = NU (ecranul de inchidere arata doar formele de plata, fara numpad; la
+  // click pe o forma nota se inchide integral cu acea forma).
+  plataCombinata: 1,
   reducereProcent: 0,
   selectedItemIndex: 0,
   // Forme de plata (tblFP) si platile inregistrate pe ecranul de inchidere:
@@ -172,6 +176,7 @@ async function loadMenu() {
   POS_STATE.server = (data.server == 1) ? 1 : 0;
   POS_STATE.posBanca = (data.posBanca == 1) ? 1 : 0;
   POS_STATE.asteaptaRaspunsCasa = (data.asteaptaRaspunsCasa == 1) ? 1 : 0;
+  POS_STATE.plataCombinata = (data.plataCombinata == 0) ? 0 : 1;
   POS_STATE.parolaDiscount = (data.parolaDiscount == 1) ? 1 : 0;
   POS_STATE.parolaStornare = (data.parolaStornare == 1) ? 1 : 0;
 
@@ -181,6 +186,7 @@ async function loadMenu() {
   applyRedUI();
   applyTipDiscountUI();
   applyServerModeUI();
+  applyPlataCombinataUI();
   refreshMotiveSelects();
   updateTablesFooter(data.distrRand1, data.distrRand2);
 }
@@ -958,6 +964,18 @@ async function selectTableAndOpen(numarMasa) {
 // --------------------------------------------------------------------------
 // 4. INCHIDERE NOTA SI PLATA (Inchidere_nota.PNG)
 // --------------------------------------------------------------------------
+
+// Cand PlataCombinata = NU (0), ecranul de plata ascunde numpad-ul si afisajul
+// de sume: se vad doar formele de plata, iar un click pe o forma inchide nota
+// integral cu acea forma (vezi paySingleForm / renderPaymentMethods).
+function applyPlataCombinataUI() {
+  const single = (POS_STATE.plataCombinata === 0);
+  const center = document.querySelector("#screen-plata .payment-calc-center");
+  if (center) { center.style.display = single ? "none" : ""; }
+  const grid = document.getElementById("pay-methods-grid");
+  if (grid) { grid.classList.toggle("single-mode", single); }
+}
+
 function syncPaymentScreen() {
   document.getElementById("pay-tbl-num").innerText = POS_STATE.masaCurenta;
   document.getElementById("pay-cashier-label").innerText = POS_STATE.casierCurent;
@@ -981,9 +999,12 @@ function syncPaymentScreen() {
 
   loadPaymentForms().then(() => {
     renderPaymentMethods();
-    // Forma de plata cu Poz = 1 este cea implicita (altfel prima din lista)
+    applyPlataCombinataUI();
+    // Forma de plata cu Poz = 1 este cea implicita (altfel prima din lista).
+    // In modul "fara plata combinata" nu selectam nimic: click pe o forma
+    // inchide direct nota.
     const def = POS_STATE.paymentForms.find(f => f.Poz === 1) || POS_STATE.paymentForms[0];
-    if (def) {
+    if (def && POS_STATE.plataCombinata !== 0) {
       selectPaymentMethod(def.FPID);
     }
     updatePaymentProgress();
@@ -1005,6 +1026,14 @@ async function loadPaymentForms() {
   }
 }
 
+// Simbol (SVG inline) de card bancar, afisat pe butonul formei de plata CARD.
+const PAY_CARD_ICON =
+  '<svg viewBox="0 0 24 24" width="1.05em" height="1.05em" fill="none" ' +
+  'stroke="currentColor" stroke-width="2" stroke-linecap="round" ' +
+  'stroke-linejoin="round" aria-hidden="true">' +
+  '<rect x="2" y="5" width="20" height="14" rx="2" ry="2"></rect>' +
+  '<line x1="2" y1="10" x2="22" y2="10"></line></svg>';
+
 // Randeaza butoanele formelor de plata
 function renderPaymentMethods() {
   const grid = document.getElementById("pay-methods-grid");
@@ -1015,8 +1044,28 @@ function renderPaymentMethods() {
     const btn = document.createElement("button");
     btn.className = "pay-btn";
     btn.id = "btn-pay-fp-" + f.FPID;
-    btn.textContent = f.Denumire;
-    btn.onclick = () => selectPaymentMethod(f.FPID);
+
+    // Forma de plata "card" (FPID = 1 sau denumire care contine "card"):
+    // primește un simbol de card bancar, ca sa fie mai intuitiv.
+    const isCard = (f.FPID === 1) || /card/i.test(f.Denumire || "");
+    if (isCard) {
+      const icon = document.createElement("span");
+      icon.className = "pay-btn-icon";
+      icon.innerHTML = PAY_CARD_ICON;
+      btn.appendChild(icon);
+    }
+
+    const label = document.createElement("span");
+    label.textContent = f.Denumire;
+    btn.appendChild(label);
+
+    btn.onclick = () => {
+      if (POS_STATE.plataCombinata === 0) {
+        paySingleForm(f.FPID);
+      } else {
+        selectPaymentMethod(f.FPID);
+      }
+    };
     grid.appendChild(btn);
   });
 }
@@ -1165,7 +1214,12 @@ async function finalizePaymentTransaction() {
   }
 
   const rest = POS_STATE.rest || 0;
+  await executeClose(total, rest);
+}
 
+// Inchide nota cu formele de plata deja inregistrate in POS_STATE.payments.
+// Comunicarea cu POS-ul bancar (card) se face inaintea rutinei casei de marcat.
+async function executeClose(total, rest) {
   // Comunicarea cu POS-ul bancar: cand exista plata pe card (FPID = 1) si
   // terminalul e activ, se cere aprobarea INAINTE de a inchide nota (deci
   // inainte de a intra in rutina casei de marcat). La Cancel nota ramane
@@ -1265,6 +1319,21 @@ async function finalizePaymentTransaction() {
   } finally {
     if (asteaptaCasa) { hideFiscalWait(); }
   }
+}
+
+// Mod "fara plata combinata" (PlataCombinata = 0): un click pe o forma de plata
+// inchide nota integral cu acea forma, fara numpad de introducere a sumelor.
+async function paySingleForm(fpid) {
+  const total = parseFloat(document.getElementById("val-total").innerText) || 0;
+  if (total <= 0) {
+    appAlert("Nu exista articole pe aceasta nota de plata!");
+    return;
+  }
+  POS_STATE.activePaymentFp = fpid;
+  POS_STATE.payments = {};
+  POS_STATE.rest = 0;
+  POS_STATE.payments[fpid] = total;
+  await executeClose(total, 0);
 }
 
 // --------------------------------------------------------------------------
@@ -1416,7 +1485,7 @@ function resetPaymentScreen() {
     input.dataset.fresh = "true";
   }
   const def = POS_STATE.paymentForms.find(f => f.Poz === 1) || POS_STATE.paymentForms[0];
-  if (def) { selectPaymentMethod(def.FPID); }
+  if (def && POS_STATE.plataCombinata !== 0) { selectPaymentMethod(def.FPID); }
   updatePaymentProgress();
 }
 
@@ -2201,6 +2270,10 @@ function setariField(row) {
   if (row.Setting === "PoSbanca") {
     return setariPoSbancaField(row);
   }
+  // Plata combinata activ/inactiv: lista DA / NU (implicit DA).
+  if (row.Setting === "PlataCombinata") {
+    return setariDaNuField(row.Setting, row.Value, row.Descriere, false);
+  }
 
   const div = document.createElement("div");
   div.className = "setari-field";
@@ -2780,6 +2853,12 @@ async function saveSetari() {
     }
     if (keys.indexOf("AsteaptaRaspunsCasa") !== -1) {
       POS_STATE.asteaptaRaspunsCasa = (String(setariDirty["AsteaptaRaspunsCasa"]).trim() === "1") ? 1 : 0;
+    }
+
+    // Plata combinata: se aplica imediat in ecranul de inchidere.
+    if (keys.indexOf("PlataCombinata") !== -1) {
+      POS_STATE.plataCombinata = (String(setariDirty["PlataCombinata"]).trim() === "0") ? 0 : 1;
+      applyPlataCombinataUI();
     }
 
     setariDirty = {};

@@ -18,6 +18,9 @@ regandit pentru fiabilitate, intretinere simpla si lipsa dependentelor grele.
 - **Stornare (VD)** — anulare linii trimise, cu parola de manager si motiv; cantitatile nu pot fi depasite.
 - **Transfer produse** intre mese.
 - **Plata** — split pe mai multe forme de plata (numerar, card etc.), cu rest afisat.
+  Setarea `PlataCombinata` (DA/NU) controleaza acest flux: la **NU**, ecranul de inchidere
+  afiseaza doar formele de plata, fara numpad, iar un click pe o forma inchide nota integral
+  cu acea forma.
 - **POS bancar (terminal card)** — cand nota are plata pe card si `tblSet.PoSbanca = 1`,
   la inchidere aplicatia comunica sincron cu terminalul bancar printr-un driver extern
   (un folder cu `vanzare.bat`, sau direct un `.bat`/`.cmd`/`.exe`), cu timeout de 190 s,
@@ -55,7 +58,8 @@ regandit pentru fiabilitate, intretinere simpla si lipsa dependentelor grele.
   sesiune, cu detaliul fiecarei note), pe bonurile inchise din sesiunea curenta.
 - **Inchidere Z** — arhivare si golire atomica a zilei, cu raport General Z plus rapoartele selectate.
 - **Setari operationale** — cantitate maxima pe linie, numar de zecimale la cantitate,
-  permitere/respingere discount (cu parola optionala), contorul bonurilor de sectie, tipul
+  permitere/respingere discount (cu parola optionala), permitere/respingere plata combinata,
+  contorul bonurilor de sectie, tipul
   casei de marcat impreuna cu caile fisierelor de comenzi/raspuns, afisarea discountului si
   stornarii pe bonul fiscal, plus listele de motive pentru discount si stornare.
 - **Programare** — setari, grupe, produse, sectii, mese, ospatari, moduri preparare, parole, TVA,
