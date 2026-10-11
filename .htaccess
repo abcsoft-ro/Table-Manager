@@ -3,3 +3,7 @@ RewriteEngine On
 
 # Nu expunem mediul virtual Python (.venv) si fisierele lui prin web.
 RewriteRule ^\.venv(/|$) - [F,L]
+
+# Nu expunem repository-ul git si fisierele de log/stare (date locale, versiune).
+RewriteRule ^\.git(/|$) - [F,L]
+RewriteRule ^logs(/|$) - [F,L]

@@ -1929,7 +1929,25 @@ function openProgramming() {
   progPrevScreen = active ? active.id : "screen-marcare";
   navigateToScreen("screen-programare");
   applyServerModeUI();
+  loadAppVersion();
   showToast("Acces programare");
+}
+
+// --------------------------------------------------------------------------
+// VERSIUNE: versiunea aplicatiei care ruleaza pe aceasta stație (api/version.php)
+// --------------------------------------------------------------------------
+let APP_VERSION_INFO = null;
+
+async function loadAppVersion() {
+  const label = document.getElementById("app-version-label");
+  try {
+    const data = await fetchJsonNoStore("api/version.php");
+    APP_VERSION_INFO = data;
+    if (label) { label.textContent = data.label || ""; }
+  } catch (err) {
+    if (label) { label.textContent = "versiune indisponibila"; }
+  }
+  return APP_VERSION_INFO;
 }
 
 function closeProgramming() {
@@ -2071,13 +2089,15 @@ async function runUpdate() {
     showToast("Verific versiunea disponibila...");
     const data = await fetchJsonNoStore("api/update.php?check=1");
 
+    const curent = data.label ? ("Versiune curenta: " + data.label + ".\n") : "";
+
     if (!data.updateAvailable) {
-      appAlert("Ai deja ultima versiune (" + data.latest + ").");
+      appAlert(curent + "Ai deja ultima versiune (" + data.latest + ").");
       return;
     }
 
     appConfirm(
-      "Exista o versiune noua (" + data.latest + "). Configurarile locale nu sunt afectate. Actualizati acum?",
+      curent + "Exista o versiune noua (" + data.latest + "). Configurarile locale nu sunt afectate. Actualizati acum?",
       () => promptUpdateParola(),
       "Da",
       "Nu"
@@ -2719,6 +2739,23 @@ function renderServiciiTab(wrap) {
   info.style.marginBottom = "12px";
   info.textContent = "Serviciile locale ruleaza pe acest calculator. Pornirea, oprirea si repornirea se fac de aici.";
   wrap.appendChild(info);
+
+  const ver = document.createElement("div");
+  ver.className = "serviciu-version";
+  ver.id = "serviciu-version";
+  ver.textContent = "Versiune: ...";
+  wrap.appendChild(ver);
+  loadAppVersion().then(v => {
+    if (!v) { return; }
+    const parts = [];
+    if (v.version) parts.push("v" + v.version);
+    if (v.short) parts.push(v.short);
+    if (v.build) parts.push("build " + v.build);
+    if (v.builtAt) parts.push(v.builtAt.slice(0, 10));
+    if (v.source) parts.push("(" + v.source + ")");
+    ver.textContent = "Versiune: " + (parts.join(" · ") || "necunoscuta")
+      + (v.host ? " — stația " + v.host : "");
+  });
 
   SERVICES_DEF.forEach(svc => {
     const card = document.createElement("div");

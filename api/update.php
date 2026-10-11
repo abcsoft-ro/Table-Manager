@@ -13,6 +13,7 @@
  */
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/print_common.php';
+require_once __DIR__ . '/version_common.php';
 
 // Raspunsurile nu se memoreaza in cache (check/apply trebuie sa fie mereu proaspete).
 header('Cache-Control: no-store, no-cache, must-revalidate');
@@ -21,7 +22,6 @@ define('UPDATE_REPO', 'abcsoft-ro/Table-Manager');
 define('UPDATE_BRANCH', 'main');
 
 $UPDATE_ROOT = dirname(__DIR__);
-$UPDATE_STATE_FILE = $UPDATE_ROOT . '/logs/update_state.json';
 $UPDATE_BACKUP_DIR = $UPDATE_ROOT . '/logs/backups';
 
 /**
@@ -47,42 +47,6 @@ function updateIgnorePrefixes() {
         'print-service/logs/', 'print-service/spool/', 'print-service/preview/',
         'sync-service/logs/',
     ];
-}
-
-/**
- * @param string $sha
- */
-function updateShort($sha) {
-    return $sha ? substr($sha, 0, 7) : '';
-}
-
-/**
- * @param string $stateFile
- */
-function updateReadState($stateFile) {
-    if (!is_file($stateFile)) {
-        return [];
-    }
-    $raw = @file_get_contents($stateFile);
-    if ($raw === false) {
-        return [];
-    }
-    $data = json_decode($raw, true);
-    return is_array($data) ? $data : [];
-}
-
-/**
- * @param string $stateFile
- * @param string $sha
- * @param string $updatedAt
- */
-function updateWriteState($stateFile, $sha, $updatedAt) {
-    $dir = dirname($stateFile);
-    if (!is_dir($dir)) {
-        @mkdir($dir, 0777, true);
-    }
-    $data = ['sha' => $sha, 'updatedAt' => $updatedAt];
-    @file_put_contents($stateFile, json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n");
 }
 
 /**
@@ -402,7 +366,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         sendJsonResponse(["status" => "error", "message" => "Ruta necunoscuta"], 404);
     }
 
-    $state = updateReadState($UPDATE_STATE_FILE);
+    $state = appVersionReadState();
     $current = (string)($state['sha'] ?? '');
 
     list($latest, $err) = updateGithubLatestSha($UPDATE_ROOT);
@@ -413,12 +377,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $available = ($current === '' || $current !== $latest);
     sendJsonResponse([
         "status"          => "success",
-        "current"         => updateShort($current),
-        "latest"          => updateShort($latest),
+        "version"         => appVersionReadHuman(),
+        "label"           => appVersionLabel(),
+        "current"         => appVersionShort($current),
+        "latest"          => appVersionShort($latest),
         "updateAvailable" => $available,
         "message"         => $available
-            ? "Exista o versiune noua (" . updateShort($latest) . ")."
-            : "Ai deja ultima versiune (" . updateShort($latest) . ").",
+            ? "Exista o versiune noua (" . appVersionShort($latest) . ")."
+            : "Ai deja ultima versiune (" . appVersionShort($latest) . ").",
     ]);
 }
 
@@ -446,7 +412,7 @@ if (!$hasZip && !$hasPhar) {
     sendJsonResponse(["status" => "error", "message" => "Nu exista extensia PHP zip sau phar pentru dezarhivare."], 500);
 }
 
-$state   = updateReadState($UPDATE_STATE_FILE);
+$state   = appVersionReadState();
 $oldSha  = (string)($state['sha'] ?? '');
 
 list($latest, $err) = updateGithubLatestSha($UPDATE_ROOT);
@@ -458,8 +424,10 @@ if (!$force && $oldSha !== '' && $oldSha === $latest) {
     sendJsonResponse([
         "status"  => "success",
         "updated" => false,
-        "sha"     => updateShort($latest),
-        "message" => "Ai deja ultima versiune (" . updateShort($latest) . ").",
+        "sha"     => appVersionShort($latest),
+        "version" => appVersionReadHuman(),
+        "label"   => appVersionLabel(),
+        "message" => "Ai deja ultima versiune (" . appVersionShort($latest) . ").",
     ]);
 }
 
@@ -559,7 +527,7 @@ if (!empty($existing) && $hasZip) {
         @mkdir($UPDATE_BACKUP_DIR, 0777, true);
     }
     $stamp = date('Ymd-His');
-    $backupName = 'pre-update_' . (updateShort($oldSha) ?: 'unknown') . '_' . $stamp . '.zip';
+    $backupName = 'pre-update_' . (appVersionShort($oldSha) ?: 'unknown') . '_' . $stamp . '.zip';
     $backupPath = $UPDATE_BACKUP_DIR . '/' . $backupName;
     $bz = new ZipArchive();
     if ($bz->open($backupPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true) {
@@ -587,17 +555,33 @@ if ($written === 0) {
     sendJsonResponse(["status" => "error", "message" => "Nu am putut scrie niciun fisier. Backup: " . ($backupRel ?: '-')], 500);
 }
 
-updateWriteState($UPDATE_STATE_FILE, $latest, date('Y-m-d H:i:s'));
+// Starea versiunii: pastram build/branch/builtAt existente daca arhiva nu le
+// aduce (update-ul prin GitHub nu expune numarul de build); actualizam SHA-ul,
+// data aplicarii si sursa.
+$prevState = appVersionReadState();
+appVersionWriteState([
+    'sha'       => $latest,
+    'short'     => appVersionShort($latest),
+    'build'     => $prevState['build'] ?? null,
+    'branch'    => UPDATE_BRANCH,
+    'builtAt'   => $prevState['builtAt'] ?? '',
+    'updatedAt' => date('Y-m-d H:i:s'),
+    'source'    => 'update',
+]);
+$newLabel = appVersionLabel();
+appVersionLog('VERSION SET: ' . $newLabel . ' source=update');
 
 sendJsonResponse([
     "status"        => "success",
     "updated"       => true,
-    "from"          => updateShort($oldSha),
-    "to"            => updateShort($latest),
-    "sha"           => updateShort($latest),
+    "from"          => appVersionShort($oldSha),
+    "to"            => appVersionShort($latest),
+    "sha"           => appVersionShort($latest),
+    "version"       => appVersionReadHuman(),
+    "label"         => $newLabel,
     "filesWritten"  => $written,
     "filesFailed"   => $failed,
     "preserved"     => array_keys($preserved),
     "backup"        => $backupRel,
-    "message"       => "Actualizare aplicata (" . updateShort($latest) . "). Reporniti serviciile de tiparire si export, apoi reincarcati pagina."
+    "message"       => "Actualizare aplicata (" . appVersionShort($latest) . "). Reporniti serviciile de tiparire si export, apoi reincarcati pagina."
 ]);
