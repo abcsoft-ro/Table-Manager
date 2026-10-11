@@ -479,6 +479,53 @@ function printKitchen($conn, $docId) {
 }
 
 /**
+ * Numele resursei de blocare (application lock) pentru inchiderea unei note.
+ * Este per DocID, ca inchiderile aceleiasi note sa fie serializate.
+ */
+function closeLockResource($docId) {
+    return 'rual_closebill_' . (int)$docId;
+}
+
+/**
+ * Ia un application lock exclusiv (Session) pe nota, fara asteptare
+ * (@LockTimeout = 0). Intoarce true daca a fost obtinut, false altfel
+ * (inclusiv la eroare de executie). Folosit ca sa nu se poata rula doua
+ * inchideri concurente ale aceleiasi note (dublu-click, doua ferestre).
+ */
+function acquireCloseLock($conn, $docId) {
+    $sql = "DECLARE @res INT;
+            EXEC @res = sp_getapplock @Resource = ?, @LockMode = 'Exclusive',
+                                       @LockOwner = 'Session', @LockTimeout = 0;
+            SELECT @res AS res;";
+    $stmt = sqlsrv_query($conn, $sql, [closeLockResource($docId)]);
+    if ($stmt === false) { return false; }
+    $res = null;
+    // Consumam toate seturile de rezultate, ca conexiunea sa rămână libera
+    // pentru interogarile urmatoare.
+    do {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        if ($row !== null && array_key_exists('res', $row)) {
+            $res = (int)$row['res'];
+        }
+    } while (sqlsrv_next_result($stmt));
+    return ($res !== null && $res >= 0);
+}
+
+/**
+ * Elibereaza application lock-ul luat de acquireCloseLock pe nota.
+ */
+function releaseCloseLock($conn, $docId) {
+    $stmt = @sqlsrv_query(
+        $conn,
+        "EXEC sp_releaseapplock @Resource = ?, @LockOwner = 'Session';",
+        [closeLockResource($docId)]
+    );
+    if ($stmt !== false) {
+        while (sqlsrv_next_result($stmt)) { /* dreneaza rezultatele */ }
+    }
+}
+
+/**
  * Inchide nota (bonul) identificata prin DocID. Primeste DocID-ul notei si
  * lista de plati, un array asociativ FPID => valoare (ex. [0 => 100, 1 => 200]
  * = 100 lei numerar + 200 lei card).
@@ -489,6 +536,31 @@ function printKitchen($conn, $docId) {
  * Returneaza un array cu status/mesaj/docId (cheia 'http' = codul HTTP dorit).
  */
 function closeBill($conn, $docId, $plati = [], $cui = '', $opts = []) {
+    $docId = (int)$docId;
+
+    // Serializam inchiderile aceleiasi note. Daca o alta cerere inchide deja
+    // nota (dublu-click rapid / alta fereastra), nu o lasam sa emita un al
+    // doilea bon fiscal sau sa re-taxeze terminalul bancar: raspundem imediat.
+    if (!acquireCloseLock($conn, $docId)) {
+        return [
+            "status" => "error",
+            "message" => "Nota se inchide deja",
+            "http" => 409,
+            "alreadyClosing" => true
+        ];
+    }
+    try {
+        return closeBillLocked($conn, $docId, $plati, $cui, $opts);
+    } finally {
+        releaseCloseLock($conn, $docId);
+    }
+}
+
+/**
+ * Corpul efectiv al inchiderii notei, apelat sub application lock-ul luat de
+ * closeBill(). Vezi closeBill() pentru descriere.
+ */
+function closeBillLocked($conn, $docId, $plati = [], $cui = '', $opts = []) {
     $docId = (int)$docId;
     if (!is_array($plati)) { $plati = []; }
     if (!is_array($opts)) { $opts = []; }
@@ -557,12 +629,19 @@ function closeBill($conn, $docId, $plati = [], $cui = '', $opts = []) {
     ensureSendSqlTable($conn);
     sqlsrv_begin_transaction($conn);
 
-    // Marcam bonul ca inchis (Stare = 'I')
-    $sqlClose = "UPDATE tblBonCurent SET Stare = 'I', Ora = GETDATE() WHERE DocID = ?";
+    // Marcam bonul ca inchis (Stare = 'I'). Conditia Stare = 'D' face
+    // operatiunea idempotenta: daca nota a fost inchisa intre timp (sub lock
+    // ar fi imposibil, dar pastram plasa de siguranta), nu mai raportam succes
+    // cu tiparire/export si nu emitem nimic dublu.
+    $sqlClose = "UPDATE tblBonCurent SET Stare = 'I', Ora = GETDATE() WHERE DocID = ? AND Stare = 'D'";
     $upd = sqlsrv_query($conn, $sqlClose, [$docId]);
     if ($upd === false) {
         sqlsrv_rollback($conn);
         return ["status" => "error", "message" => "Eroare inchidere nota: " . sqlsrv_errors()[0]['message'], "http" => 500];
+    }
+    if (sqlsrv_rows_affected($upd) === 0) {
+        sqlsrv_rollback($conn);
+        return ["status" => "success", "message" => "Nota era deja inchisa", "docId" => $docId, "alreadyClosed" => true];
     }
 
     // Salvam formele de plata si sumele aferente (FPID => suma)

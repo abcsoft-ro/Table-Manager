@@ -63,6 +63,11 @@ const POS_STATE = {
   payments: {},
   rest: 0,
   activePaymentFp: null,
+  // Garda anti-reentrare la inchiderea notei: cat timp un close_bill e in curs
+  // (inclusiv asteptarea terminalului bancar / a casei de marcat), un al doilea
+  // click pe OK sau pe o forma de plata este ignorat, ca sa nu se dubleze
+  // bonul fiscal / platile. Se reseteaza in finally-ul lui executeClose.
+  closingBill: false,
   
   // Mod panou dreapta: "groups" sau "products"
   currentPanelMode: "groups",
@@ -1170,6 +1175,9 @@ function hideFastFoodReceipt() {
 }
 
 async function finalizePaymentTransaction() {
+  // Inchidere in curs: ignoram un al doilea click pe OK (anti-dublu-click).
+  if (POS_STATE.closingBill) { return; }
+
   const total = parseFloat(document.getElementById("val-total").innerText) || 0;
   if (total <= 0) {
     appAlert("Nu exista articole pe aceasta nota de plata!");
@@ -1217,9 +1225,24 @@ async function finalizePaymentTransaction() {
   await executeClose(total, rest);
 }
 
+// Blocheaza/deblocheaza butoanele de plata cat timp se inchide nota, ca un
+// dublu-click sa nu poata declansa doua tranzactii (bancar / casa de marcat).
+function setClosingState(on) {
+  const okBtn = document.querySelector("#screen-plata .key-ok");
+  if (okBtn) { okBtn.disabled = !!on; }
+  document.querySelectorAll(".pay-btn").forEach(btn => { btn.disabled = !!on; });
+}
+
 // Inchide nota cu formele de plata deja inregistrate in POS_STATE.payments.
 // Comunicarea cu POS-ul bancar (card) se face inaintea rutinei casei de marcat.
 async function executeClose(total, rest) {
+  // Inchidere deja in curs (ex. al doilea click rapid pe OK sau pe o forma de
+  // plata): ignoram apelul. Fara aceasta garda, doua cereri close_bill
+  // concurente puteau duce la doua bonuri fiscale / doua taxari pe card.
+  if (POS_STATE.closingBill) { return; }
+  POS_STATE.closingBill = true;
+  setClosingState(true);
+
   // Comunicarea cu POS-ul bancar: cand exista plata pe card (FPID = 1) si
   // terminalul e activ, se cere aprobarea INAINTE de a inchide nota (deci
   // inainte de a intra in rutina casei de marcat). La Cancel nota ramane
@@ -1232,6 +1255,8 @@ async function executeClose(total, rest) {
     fiscFlowLog("banca: rezultat=" + (bankApproved ? "verde" : "neaprobat") + " -> " + (bankApproved ? "continua" : "stop"));
     if (!bankApproved) {
       resetPaymentScreen();
+      POS_STATE.closingBill = false;
+      setClosingState(false);
       showToast("Tranzactie bancara anulata");
       return;
     }
@@ -1243,6 +1268,8 @@ async function executeClose(total, rest) {
   // fost aprobat (sau nu era cazul unui card cu terminal activ).
   if (!bankApproved) {
     resetPaymentScreen();
+    POS_STATE.closingBill = false;
+    setClosingState(false);
     return;
   }
 
@@ -1262,8 +1289,32 @@ async function executeClose(total, rest) {
     });
 
     const res = await resp.json();
+    // O alta fereastra inchide deja nota: nu raportam eroare, doar informam.
+    if (res.alreadyClosing) {
+      showToast("Nota se inchide deja");
+      return;
+    }
     if (res.status !== "success") throw new Error(res.message);
     fiscFlowLog("casa: rezultat=ok" + (res.fiscal && res.fiscal.nr != null ? " (NR " + res.fiscal.nr + ")" : ""));
+
+    // Nota fusese deja inchisa (ex. o a doua fereastra / un click scapat inainte
+    // de blocarea butoanelor): serverul nu a mai inchis nimic a doua oara, deci
+    // nu dublam bonul; revenim linistit la lista de mese.
+    if (res.alreadyClosed) {
+      POS_STATE.cui = "";
+      POS_STATE.cuiDocId = null;
+      updateCuiButton();
+      showToast("Nota era deja inchisa");
+      returnToGroups();
+      await loadOrder(POS_STATE.masaCurenta);
+      if (isFastFood()) {
+        navigateToScreen("screen-marcare");
+      } else {
+        await loadTables();
+        navigateToScreen("screen-mese");
+      }
+      return;
+    }
 
     // Bonul s-a inchis: CUI-ul nu mai apartine unei note deschise.
     POS_STATE.cui = "";
@@ -1318,12 +1369,19 @@ async function executeClose(total, rest) {
     if (asteaptaCasa) { resetPaymentScreen(); }
   } finally {
     if (asteaptaCasa) { hideFiscalWait(); }
+    // Inchiderea s-a terminat (succes sau eroare): deblocam butoanele pentru o
+    // eventuala reincercare.
+    POS_STATE.closingBill = false;
+    setClosingState(false);
   }
 }
 
 // Mod "fara plata combinata" (PlataCombinata = 0): un click pe o forma de plata
 // inchide nota integral cu acea forma, fara numpad de introducere a sumelor.
 async function paySingleForm(fpid) {
+  // Inchidere in curs: ignoram un al doilea click pe o forma de plata.
+  if (POS_STATE.closingBill) { return; }
+
   const total = parseFloat(document.getElementById("val-total").innerText) || 0;
   if (total <= 0) {
     appAlert("Nu exista articole pe aceasta nota de plata!");
