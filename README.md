@@ -257,4 +257,4 @@ Setarea `AsteaptaRaspunsCasa` (Setări → Casa Marcat, implicit **NU**): când 
 
 ---
 
-© ABCSoft · www.abc-soft.ro
+© ABCSoft · https://abcsoft.ro
