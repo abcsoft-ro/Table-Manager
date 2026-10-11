@@ -32,7 +32,7 @@ Alegerea se face din **Setări → General** (`TipVanz`). Aceeași bază de date
 
 ![Harta meselor (Restaurant)](docs/img/02-mese.png)
 
-- Hartă de mese (80 de locuri), bon deschis pe masă, proprietar pe oștean.
+- Hartă de mese (80 de locuri), bon deschis pe masă, proprietar pe ospătar.
 - **Bon de comandă** către bucătărie/bar, pe secții, cu numerotare proprie a bonurilor de secție.
 - **Notă de plată**, **notă proformă**, **transfer produse** între mese și **mod preparare**.
 
@@ -51,7 +51,7 @@ Alegerea se face din **Setări → General** (`TipVanz`). Aceeași bază de date
 ## Funcționalități
 
 ### Operare sală
-- **Mese și bonuri** — 80 de mese, deschidere/închidere bon, proprietar pe oștean (un oștean nu poate intra pe masa altuia).
+- **Mese și bonuri** — 80 de mese, deschidere/închidere bon, proprietar pe ospătar (un ospătar nu poate intra pe masa altuia).
 - **Meniu** — grupe și produse cu prețuri, culori, fonturi și dimensiuni configurabile; **Meniul Zilei**.
 - **Scanare cod** — caută după cod de bare sau cod produs.
 
@@ -112,7 +112,7 @@ Alegerea se face din **Setări → General** (`TipVanz`). Aceeași bază de date
 - **Tranzacții atomice** pentru operațiunile critice (închiderea bonului, marcarea, închiderea Z): un bon sau o zi nu poate rămâne pe jumătate procesat(ă).
 - **Cozi durabile** pentru tipărire și export — joburile sunt persistate în baza de date și reîncercate automat, deci o imprimantă offline nu pierde și nu blochează nicio comandă.
 - **Interogări parametrizate** — elimina injectia SQL.
-- **Parole pe roluri** — programare, rapoarte, stornare, discount și ieșire; autentificare pe fiecare oștean, cu blocare.
+- **Parole pe roluri** — programare, rapoarte, stornare, discount și ieșire; autentificare pe fiecare ospătar, cu blocare.
 - **Credențiale în fișier local**, ignorat de git.
 - **Backup automat** înainte de fiecare actualizare.
 
