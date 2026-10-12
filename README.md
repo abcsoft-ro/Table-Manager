@@ -257,4 +257,16 @@ Setarea `AsteaptaRaspunsCasa` (Setări → Casa Marcat, implicit **NU**): când 
 
 ---
 
+## Licență
+
+Acest proiect este distribuit sub **GNU General Public License v3.0 (GPL-3.0)**.
+
+Copyright (C) 2026 **Florian Liviu Stefanescu**.
+
+Textul complet al licenței: [LICENSE](LICENSE).
+
+Aplicația este software liber: o poți folosi, studia, modifica și redistribui liber, cu condiția ca orice versiune derivată distribuită să rămână, la rândul ei, sub GPL-3.0 și cu sursa deschisă. Se distribuie fără nicio garanție.
+
+---
+
 © ABCSoft · https://abcsoft.ro
