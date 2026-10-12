@@ -59,9 +59,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     if ($action === 'printers') {
         $res = printServiceGet('/printers');
         if ($res === null) {
-            sendJsonResponse(["status" => "error", "message" => "Serviciul de tiparire nu raspunde.", "available" => false, "printers" => []], 200);
+            sendJsonResponse(["status" => "error", "message" => "Serviciul de tiparire nu raspunde.", "available" => false, "printers" => [], "usb" => []], 200);
         }
-        sendJsonResponse(["status" => "success", "available" => !empty($res['available']), "printers" => $res['printers'] ?? []]);
+        sendJsonResponse(["status" => "success", "available" => !empty($res['available']), "printers" => $res['printers'] ?? [], "usb" => $res['usb'] ?? []]);
     }
 
     $res = printServiceGet('/config');

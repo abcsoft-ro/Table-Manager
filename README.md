@@ -153,7 +153,7 @@ Alegerea se face din **Setări → General** (`TipVanz`). Aceeași bază de date
 2. Reconstruiți baza de date rulând `db/schema.sql` apoi `db/seed.sql` (detalii în [db/README.md](db/README.md)).
 3. Configurați conexiunea: copiați `api/db.local.example.php` în `api/db.local.php` și completați serverul, baza, utilizatorul și parola.
 4. (Opțional, dar obligatoriu dacă folosiți componentele Python) Rulați `setup-venv.bat` din rădăcina proiectului: creează `.venv`, instalează dependințele și creează scurtăturile (cele două servicii în `Startup` și `TableManager POS` pe Desktop).
-5. (Opțional) Porniți serviciul de tipărire: `print-service/start-print-service.bat` (sau `start-print-service-hidden.vbs`). Ascultă doar pe `127.0.0.1:8756`. Destinațiile se configurează din **Setări → Imprimante secții**, cu butoane de test.
+5. (Opțional) Porniți serviciul de tipărire: `print-service/start-print-service.bat` (sau `start-print-service-hidden.vbs`). Ascultă doar pe `127.0.0.1:8756`. Destinațiile se configurează din **Setări → Imprimante secții**, cu butoane de test: fiecare țintă (secție, nota, rapoarte) poate fi pe **rețea** (IP:port) sau **Windows / USB** (imprimantă locală cu driver Windows instalat, marcată `(USB)` dacă e pe port USB). Imprimantele USB sunt accesibile doar pe stația care rulează serviciul de tipărire.
 6. (Opțional) Porniți serviciul de export: `sync-service/start-sync-service.bat` (sau varianta `-hidden`). Ascultă doar pe `127.0.0.1:8757` și citește serverul/credențialele din `tblConectare` (ID = 1).
 7. (Opțional) Folosiți `Pornire-POS-Kiosk.vbs` pentru a deschide aplicația în mod kiosc fullscreen, fără fereastră DOS.
 

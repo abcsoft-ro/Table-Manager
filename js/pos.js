@@ -5605,11 +5605,12 @@ let imprGlobal = {         // tinte globale
 };
 let imprSelected = null;
 let imprWindowsPrinters = [];
+let imprUsbPrinters = [];
 let imprServiceUp = false;
 
 const IMPR_TARGET_TYPES = [
   ["network", "Retea (IP:port)"],
-  ["windows", "Windows (nume imprimanta)"],
+  ["windows", "Windows / USB (nume imprimanta)"],
   ["preview", "Preview (emulator)"],
   ["file", "Fisier (spool)"]
 ];
@@ -5663,11 +5664,18 @@ async function loadImprimante() {
     };
     imprSelected = imprSections.length ? imprSections[0].NrLogic : null;
 
-    // Lista imprimantelor Windows (optional, pentru combo).
+    // Lista imprimantelor Windows (optional, pentru combo) + cele pe USB local.
     imprWindowsPrinters = [];
+    imprUsbPrinters = [];
     fetch("api/print_config.php?action=printers")
       .then(r => r.json())
-      .then(d => { if (d && d.status === "success") { imprWindowsPrinters = d.printers || []; renderImprimante(); } })
+      .then(d => {
+        if (d && d.status === "success") {
+          imprWindowsPrinters = d.printers || [];
+          imprUsbPrinters = d.usb || [];
+          renderImprimante();
+        }
+      })
       .catch(() => {});
 
     renderImprimante();
@@ -5691,10 +5699,14 @@ function renderImprimante() {
   renderImprGlobal();
 }
 
+function imprIsUsb(name) {
+  return !!(name && imprUsbPrinters.indexOf(name) !== -1);
+}
+
 function imprTargetLabel(t) {
   if (!t) return "-";
   if (t.type === "network") return "Retea " + (t.host || "?") + ":" + (t.port || "9100");
-  if (t.type === "windows") return "Windows " + (t.name || "?");
+  if (t.type === "windows") return "Windows / USB " + (t.name || "?") + (imprIsUsb(t.name) ? " (USB)" : "");
   if (t.type === "file") return "Fisier";
   return "Preview";
 }
@@ -5757,16 +5769,19 @@ function imprWinPrinterField(prefix, current) {
     if (current && !has) {
       opts += `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} (actual)</option>`;
     }
-    opts += imprWindowsPrinters.map(n =>
-      `<option value="${escapeHtml(n)}"${n === current ? " selected" : ""}>${escapeHtml(n)}</option>`).join("");
-    return `<div class="tva-field"><label>Imprimanta Windows</label>
-      <select class="prod-combo" onchange="imprTargetFieldChanged('${prefix}','name',this.value)">${opts}</select></div>`;
+    opts += imprWindowsPrinters.map(n => {
+      const label = escapeHtml(n) + (imprIsUsb(n) ? " (USB)" : "");
+      return `<option value="${escapeHtml(n)}"${n === current ? " selected" : ""}>${label}</option>`;
+    }).join("");
+    return `<div class="tva-field"><label>Imprimanta Windows / USB</label>
+      <select class="prod-combo" onchange="imprTargetFieldChanged('${prefix}','name',this.value)">${opts}</select>
+      <div class="impr-hint">Imprimantele USB locale sunt marcate cu (USB).</div></div>`;
   }
-  return `<div class="tva-field"><label>Imprimanta Windows</label>
+  return `<div class="tva-field"><label>Imprimanta Windows / USB</label>
     <div class="tva-field-row">
       <input type="text" class="tva-input" value="${escapeHtml(current || "")}" oninput="imprTargetFieldChanged('${prefix}','name',this.value)">
     </div>
-    <div class="impr-hint">Lista imprimantelor Windows nu este disponibila (pywin32 lipseste). Scrie numele exact.</div></div>`;
+    <div class="impr-hint">Lista imprimantelor Windows nu este disponibila (pywin32 lipseste). Scrie numele exact (inclusiv pentru o imprimanta USB locala).</div></div>`;
 }
 
 function imprTargetFieldsHtml(prefix, t) {

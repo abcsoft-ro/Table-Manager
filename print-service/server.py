@@ -34,21 +34,34 @@ def reload_config():
 
 
 def _windows_printers():
+    """Imprimantele Windows instalate + cele conectate pe USB.
+
+    USB-ul nu are un transport separat: o imprimanta USB cu driver Windows
+    apare ca orice imprimanta locala, iar tinta `windows` trimite RAW prin
+    spooler. Aici doar detectam si raportam care dintre ele sunt pe port USB,
+    ca ecranul Setari > Imprimante sa le poata marca.
+    """
     try:
         import win32print  # type: ignore
     except ImportError:
-        return {"available": False, "printers": []}
+        return {"available": False, "printers": [], "usb": []}
     names = []
+    usb = []
     try:
         flags = win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
         for p in win32print.EnumPrinters(flags, None, 2):
             name = p.get("pPrinterName")
-            if name:
-                names.append(name)
+            if not name:
+                continue
+            names.append(name)
+            port = str(p.get("pPortName") or "").strip().upper()
+            if port.startswith("USB"):
+                usb.append(name)
     except Exception:  # noqa: BLE001 - nu blocam ecranul daca lista esueaza
-        return {"available": False, "printers": []}
+        return {"available": False, "printers": [], "usb": []}
     names.sort(key=lambda s: s.lower())
-    return {"available": True, "printers": names}
+    usb.sort(key=lambda s: s.lower())
+    return {"available": True, "printers": names, "usb": usb}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -109,7 +122,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/printers":
             info = _windows_printers()
-            self._json({"status": "success", "available": info["available"], "printers": info["printers"]})
+            self._json({"status": "success", "available": info["available"],
+                        "printers": info["printers"], "usb": info["usb"]})
             return
 
         if path == "/wake":
