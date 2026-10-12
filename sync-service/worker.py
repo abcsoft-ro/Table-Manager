@@ -82,9 +82,12 @@ def _report_failure(cfg, job, error):
         log("Nu pot raporta esecul randului %s: %s" % (job.get("Id"), exc), cfg)
 
 
-def _report_success(cfg, job):
+def _report_success(cfg, job, result=None):
+    payload = {"action": "done", "id": job.get("Id")}
+    if result is not None:
+        payload["result"] = result
     try:
-        _api(cfg, "send_queue.php", {"action": "done", "id": job.get("Id")})
+        _api(cfg, "send_queue.php", payload)
     except (urllib.error.URLError, ValueError, OSError) as exc:
         log("Nu pot raporta succesul randului %s: %s" % (job.get("Id"), exc), cfg)
 
@@ -120,9 +123,9 @@ def process_once(cfg):
     casa_txt = (" | casa: %s" % casa) if casa else ""
 
     try:
-        message = execute_statements(info, [job.get("str_sql")], cfg)
+        message, result = execute_statements(info, [job.get("str_sql")], cfg)
         log("Rand %s (DocID %s) OK: %s%s" % (job_id, job.get("DocID"), message, casa_txt), cfg)
-        _report_success(cfg, job)
+        _report_success(cfg, job, result)
     except (DbError, Exception) as exc:  # noqa: BLE001 - raportam orice esec
         log("Rand %s (DocID %s) esuat: %s%s" % (job_id, job.get("DocID"), exc, casa_txt), cfg)
         log(traceback.format_exc(), cfg)

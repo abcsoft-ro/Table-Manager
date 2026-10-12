@@ -2929,3 +2929,217 @@ select.tva-input {
 .impr-global-block .tva-field {
   margin-bottom: 6px;
 }
+
+/* ==========================================================================
+   ECRAN FACTURARE POS (emulare ecran facturare aplicatie VBA)
+   ========================================================================== */
+#screen-facturare {
+  padding: 0;
+}
+
+.fact-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #c0c0c0;
+  border: 1px solid #000000;
+  color: #000000;
+  font-family: Arial, "Segoe UI", sans-serif;
+  padding-bottom: 10px;
+  overflow: auto;
+}
+
+.fact-titlebar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 8px;
+  font-size: 15px;
+  font-weight: bold;
+  background: #c0c0c0;
+  border-bottom: 1px solid #808080;
+}
+
+.fact-close-btn {
+  min-width: 90px;
+  height: 28px;
+  background: #e8e8e8;
+  border: 1px solid #333;
+  border-radius: 2px;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.fact-close-btn:active {
+  background: #cfcfcf;
+}
+
+.fact-redline {
+  height: 3px;
+  background: #ff0000;
+  margin: 0 4px;
+}
+
+.fact-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 22px 0 22px;
+}
+
+.fact-form {
+  flex: 1;
+  min-width: 0;
+}
+
+.fact-cif-title {
+  font-size: 19px;
+  font-weight: bold;
+  color: #111;
+  margin-bottom: 12px;
+}
+
+.fact-field-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 13px;
+}
+
+.fact-lbl {
+  width: 128px;
+  flex: 0 0 128px;
+  font-size: 14px;
+  font-weight: bold;
+  color: #111;
+}
+
+.fact-vat-lbl {
+  width: auto;
+  flex: 0 0 auto;
+  margin: 0 8px 0 12px;
+}
+
+.fact-input {
+  height: 26px;
+  border: 1px solid #444;
+  background: #ffffff;
+  color: #000;
+  font-size: 14px;
+  padding: 2px 6px;
+  outline: none;
+}
+
+.fact-input:focus {
+  border-color: #1105aa;
+  box-shadow: 0 0 0 2px rgba(17,5,170,0.25);
+}
+
+.fact-input[readonly] {
+  background: #d0d0d0;
+  color: #333;
+}
+
+.fact-input-cif { width: 190px; }
+.fact-input-vat { width: 70px; }
+.fact-input-long { width: 56%; min-width: 320px; }
+.fact-input-short { width: 42%; min-width: 240px; }
+
+.fact-anaf-btn {
+  height: 26px;
+  margin-left: 12px;
+  padding: 0 14px;
+  background: #e8e8e8;
+  border: 1px solid #333;
+  border-radius: 2px;
+  font-size: 12px;
+  font-weight: bold;
+  color: #1a2b6b;
+  cursor: pointer;
+}
+
+.fact-anaf-btn:active {
+  background: #cfcfcf;
+}
+
+.fact-anaf-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.fact-oblig {
+  font-size: 12px;
+  font-weight: bold;
+  color: #111;
+  margin: 6px 0 14px 0;
+}
+
+.fact-right {
+  flex: 0 0 230px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding-top: 4px;
+}
+
+.fact-right .fact-lbl {
+  width: auto;
+  flex: 0 0 auto;
+  margin-bottom: 8px;
+}
+
+.fact-bon-select {
+  width: 100%;
+  height: 30px;
+  background: #ffffff;
+  border: 1px solid #444;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  color: #000;
+  text-align: left;
+}
+
+.fact-bon-select:active {
+  background: #eee;
+}
+
+.fact-bon-caret {
+  font-size: 11px;
+  margin-left: 8px;
+}
+
+/* Tastatura: se foloseste cea standard a aplicatiei (#modal-fkb, flotanta). */
+
+.fact-generate-row {
+  display: flex;
+  justify-content: center;
+  padding: 18px 0 6px 0;
+}
+
+.fact-generate-btn {
+  min-width: 360px;
+  height: 40px;
+  background: #e8e8e8;
+  border: 1px solid #333;
+  border-radius: 2px;
+  font-size: 15px;
+  font-weight: bold;
+  color: #1a2b6b;
+  cursor: pointer;
+}
+
+.fact-generate-btn:active {
+  background: #cfcfcf;
+}
+
+/* Ecran facturare: nota deja facturata -> campurile sunt blocate (reprint). */
+.fact-locked .fact-input {
+  background: #d0d0d0;
+  color: #333;
+}

@@ -172,6 +172,16 @@ function ensureSetariMeta($conn) {
         'Retur client;Greseala ospatar;Lipsa stoc;Comanda gresita;Altele',
         "Motivele de anulare (stornare) oferite in caseta VD. Valorile sunt separate prin punct si virgula (;).", 'General');
 
+    // Seria facturii folosita la apelul procedurii GenFactPoS pe server
+    // (ecranul Facturare). Numarul facturii vine de pe server.
+    ensureSetariValue($conn, 'SerieFactura', '',
+        "Seria folosita la generarea facturii pe server (procedura GenFactPoS din ecranul Facturare).", 'General');
+
+    // Text liber afisat in subsolul facturii (ecranul Facturare). Mai multe
+    // randuri se separa prin punct si virgula (;).
+    ensureSetariValue($conn, 'TextFactura', '',
+        "Text liber afisat in subsolul facturii (ecranul Facturare). Pentru mai multe randuri, separati-le prin punct si virgula (;).", 'General');
+
     // Plata combinata (tblSet.PlataCombinata): 1 = DA (plata mixta, cu numpad
     // de introducere a sumelor), 0 = NU (in ecranul de inchidere se afiseaza
     // doar formele de plata, fara numpad; la click pe o forma nota se inchide

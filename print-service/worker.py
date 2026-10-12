@@ -210,6 +210,79 @@ def build_raport(payload, cfg):
     return b.bytes()
 
 
+def build_factura(payload, cfg):
+    """Factura: antetul furnizorului (tblAntet) + datele clientului + liniile
+    notei selectate. Se tipareste pe imprimanta de note (nota_target)."""
+    b = EscposBuilder(cfg["receipt_width"], cfg.get("charset", "ascii"))
+
+    b.align("center").bold(True).size(1, 2).line(payload.get("title") or "FACTURA")
+    b.size(1, 1).bold(False).align("left")
+    serie = str(payload.get("serie") or "").strip()
+    nr = str(payload.get("nrFactura") or "")
+    nr_afis = (("%s %s" % (serie, nr)).strip() if serie else nr)
+    b.lr("Nr: %s" % nr_afis, "Data: %s" % payload.get("data", ""))
+    b.sep()
+
+    furn = payload.get("furnizor") or {}
+    b.bold(True).line("FURNIZOR:").bold(False)
+    for key in ("nume", "denumire2"):
+        if furn.get(key):
+            b.line(furn[key])
+    if furn.get("adresa"):
+        b.line(furn["adresa"])
+    loc = ", ".join([x for x in [furn.get("oras"), furn.get("judet")] if x])
+    if furn.get("codPostal"):
+        loc = (loc + " " + furn["codPostal"]).strip()
+    if loc:
+        b.line(loc)
+    if furn.get("codFisc"):
+        b.line("CIF: %s" % furn["codFisc"])
+    if furn.get("regCom"):
+        b.line("Reg.Com: %s" % furn["regCom"])
+    if furn.get("cont"):
+        b.line("Cont: %s %s" % (furn["cont"], furn.get("banca", "")))
+    if furn.get("telefon"):
+        b.line("Tel: %s" % furn["telefon"])
+    b.sep()
+
+    cl = payload.get("client") or {}
+    b.bold(True).line("CLIENT:").bold(False)
+    if cl.get("denumire"):
+        b.line(cl["denumire"])
+    if cl.get("cif"):
+        b.line("CIF: %s" % cl["cif"])
+    b.line("Platitor TVA: %s" % ("DA" if str(cl.get("vat")) == "1" else "NU"))
+    if cl.get("regCom"):
+        b.line("Reg.Com: %s" % cl["regCom"])
+    if cl.get("adresa"):
+        b.line(cl["adresa"])
+    locc = ", ".join([x for x in [cl.get("oras"), cl.get("judet")] if x])
+    if locc:
+        b.line(locc)
+    b.sep()
+
+    b.lr("Denumire", "Cant x Pret    Valoare")
+    b.sep()
+    for item in payload.get("items", []) or []:
+        b.line(item.get("denumire", ""))
+        left = "  %s x %s" % (qty(item.get("cant", 0)), money(item.get("pret", 0)))
+        b.lr(left, money(item.get("valoare", 0)))
+    b.sep()
+
+    b.lr("Total fara TVA:", money(payload.get("totalBaza")))
+    for t in payload.get("tva", []) or []:
+        b.lr("TVA %s%%:" % t.get("cota", ""), money(t.get("suma")))
+    b.bold(True).size(1, 2).lr("TOTAL:", money(payload.get("total")))
+    b.size(1, 1).bold(False)
+    b.sep()
+
+    for extra in payload.get("footerLines", []) or []:
+        styled_line(b, extra, "center")
+
+    b.align("center").feed(1).line("* * *").feed(2).cut()
+    return b.bytes()
+
+
 def build_test(cfg):
     """Bon scurt de test, folosit de butonul 'Test' din Setari > Imprimante."""
     b = EscposBuilder(cfg["receipt_width"], cfg.get("charset", "ascii"))
@@ -285,6 +358,12 @@ def process_job(cfg, job):
 
     if tip in ("nota", "proforma"):
         data = build_nota(payload, cfg)
+        target = cfg.get("nota_target") or {"target": "preview"}
+        return deliver(target, data, cfg, job.get("JobID"))
+
+    if tip == "factura":
+        data = build_factura(payload, cfg)
+        # Factura se tipareste intotdeauna pe imprimanta de note.
         target = cfg.get("nota_target") or {"target": "preview"}
         return deliver(target, data, cfg, job.get("JobID"))
 

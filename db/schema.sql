@@ -481,15 +481,53 @@ CREATE TABLE dbo.[temp_Send_Sql] (
     [LastError] nvarchar(500) NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_temp_Send_Sql_Created] DEFAULT (sysdatetime()),
     [SentAt] datetime2(7) NULL,
-    [RaspunsCasa] nvarchar(max) NULL
+    [RaspunsCasa] nvarchar(max) NULL,
+    [Scop] nvarchar(20) NULL,
+    [Rezultat] nvarchar(max) NULL
 );
 END
+GO
+IF COL_LENGTH('dbo.temp_Send_Sql','Scop') IS NULL
+    ALTER TABLE dbo.[temp_Send_Sql] ADD [Scop] nvarchar(20) NULL;
+GO
+IF COL_LENGTH('dbo.temp_Send_Sql','Rezultat') IS NULL
+    ALTER TABLE dbo.[temp_Send_Sql] ADD [Rezultat] nvarchar(max) NULL;
 GO
 IF NOT EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = N'PK_temp_Send_Sql')
 ALTER TABLE dbo.[temp_Send_Sql] ADD CONSTRAINT [PK_temp_Send_Sql] PRIMARY KEY CLUSTERED ([Id]);
 GO
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_temp_Send_Sql_Preluat' AND object_id = OBJECT_ID(N'dbo.temp_Send_Sql'))
 CREATE NONCLUSTERED INDEX [IX_temp_Send_Sql_Preluat] ON dbo.[temp_Send_Sql] ([Preluat],[Stare],[NextAttempt]) INCLUDE ([Id]);
+GO
+
+------------------------------------------------------------ tblFacturaDoc
+-- Leaga nota locala (DocID) de factura generata pe server (GenFactPoS), ca
+-- factura sa fie generata o singura data per nota; printurile ulterioare
+-- refolosesc seria si numarul.
+IF OBJECT_ID(N'dbo.tblFacturaDoc', N'U') IS NULL
+BEGIN
+CREATE TABLE dbo.[tblFacturaDoc] (
+    [DocID] int NOT NULL,
+    [ServerDocID] int NULL,
+    [Serie] nvarchar(10) NULL,
+    [NrDocFisc] int NULL,
+    [QueueId] int NULL,
+    [Stare] nvarchar(12) NOT NULL CONSTRAINT [DF_tblFacturaDoc_Stare] DEFAULT ('generating'),
+    [LastError] nvarchar(500) NULL,
+    [ClientCIF] nvarchar(18) NULL,
+    [ClientVAT] int NULL,
+    [ClientDen] nvarchar(150) NULL,
+    [ClientAdresa] nvarchar(250) NULL,
+    [ClientJudet] nvarchar(50) NULL,
+    [ClientOras] nvarchar(100) NULL,
+    [ClientRegCom] nvarchar(15) NULL,
+    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tblFacturaDoc_Created] DEFAULT (sysdatetime()),
+    [UpdatedAt] datetime2(7) NULL
+);
+END
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = N'PK_tblFacturaDoc')
+    ALTER TABLE dbo.[tblFacturaDoc] ADD CONSTRAINT [PK_tblFacturaDoc] PRIMARY KEY CLUSTERED ([DocID]);
 GO
 
 ------------------------------------------------------------ tblPosBancaLog

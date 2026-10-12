@@ -86,7 +86,7 @@ if ($isGet) {
     if ($action === 'get') {
         $id = (int)($_GET['id'] ?? 0);
         $stmt = sqlsrv_query($conn, "SELECT Id, DocID, str_sql, Preluat, Stare, Attempts,
-                                            NextAttempt, LastError, CreatedAt, SentAt, RaspunsCasa
+                                            NextAttempt, LastError, CreatedAt, SentAt, RaspunsCasa, Rezultat
                                      FROM temp_Send_Sql WHERE Id = ?", [$id]);
         $r = $stmt ? sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC) : null;
         if (!$r) { sendJsonResponse(["status" => "error", "message" => "Rand inexistent"], 404); }
@@ -95,6 +95,7 @@ if ($isGet) {
             "DocID" => $r['DocID'] === null ? null : (int)$r['DocID'],
             "str_sql" => (string)($r['str_sql'] ?? ''),
             "RaspunsCasa" => (string)($r['RaspunsCasa'] ?? ''),
+            "Rezultat" => (string)($r['Rezultat'] ?? ''),
             "Preluat" => ((int)$r['Preluat'] === 1),
             "Stare" => trim((string)($r['Stare'] ?? '')),
             "Attempts" => (int)$r['Attempts'],
@@ -141,10 +142,15 @@ $id = (int)($input['id'] ?? 0);
 switch ($action) {
     case 'done':
         if ($id <= 0) { sendJsonResponse(["status" => "error", "message" => "id invalid"], 400); }
+        $rezultat = null;
+        if (array_key_exists('result', $input) && $input['result'] !== null) {
+            $rezultat = json_encode($input['result'], JSON_UNESCAPED_UNICODE);
+        }
         $stmt = sqlsrv_query(
             $conn,
-            "UPDATE temp_Send_Sql SET Preluat = 1, Stare = 'done', SentAt = GETDATE(), LastError = NULL WHERE Id = ?",
-            [$id]
+            "UPDATE temp_Send_Sql SET Preluat = 1, Stare = 'done', SentAt = GETDATE(), LastError = NULL,
+                    Rezultat = COALESCE(?, Rezultat) WHERE Id = ?",
+            [$rezultat, $id]
         );
         if ($stmt === false) {
             sendJsonResponse(["status" => "error", "message" => "Eroare done: " . sqlsrv_errors()[0]['message']], 500);

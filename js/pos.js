@@ -1334,27 +1334,20 @@ async function executeClose(total, rest) {
 
     const detalii = Object.entries(POS_STATE.payments).map(([id, val]) => {
       const f = POS_STATE.paymentForms.find(x => x.FPID === parseInt(id, 10));
-      return `${f ? f.Denumire : ("FP " + id)}: ${val.toFixed(2)} Lei`;
-    }).join("\n");
+      return `${escapeHtml(f ? f.Denumire : ("FP " + id))}: ${val.toFixed(2)} Lei`;
+    }).join("<br>");
 
-    let msg = `BON FISCAL EMIS IN MSSQL!\n${detalii}\nTotal: ${total.toFixed(2)} Lei`;
+    let msgHtml = `NOTA A FOST TRIMISA LA APARATUL FISCAL<br>${detalii}<br>Total: ${total.toFixed(2)} Lei`;
     if (rest > 0) {
-      msg += `\nRest de dat: ${rest.toFixed(2)} Lei`;
-    }
-    if (res.print) {
-      if (res.print.nota) {
-        msg += `\nTiparire: nota #${res.print.nota}, fiscal #${res.print.fiscal}`;
-      } else if (res.print.fiscal) {
-        msg += `\nTiparire: fiscal #${res.print.fiscal}`;
-      }
+      msgHtml += `<br><span style="font-size:22px; font-weight:bold;">Rest de dat: ${rest.toFixed(2)} Lei</span>`;
     }
     if (res.fiscal) {
-      let casaLinie = `\nCasa de marcat: NR ${res.fiscal.nr != null ? res.fiscal.nr : "-"}`;
+      let casaLinie = `<br>Casa de marcat: NR ${res.fiscal.nr != null ? res.fiscal.nr : "-"}`;
       if (res.fiscal.z != null) { casaLinie += ` / Z ${res.fiscal.z}`; }
-      msg += casaLinie;
+      msgHtml += casaLinie;
     }
 
-    appAlert(msg);
+    appAlertHtml(msgHtml);
     showToast("BON INCHIS CU SUCCES!");
 
     returnToGroups();
@@ -2182,6 +2175,22 @@ function appAlert(message, onOk) {
     return;
   }
   document.getElementById("alert-message").textContent = message;
+  const ok = document.getElementById("alert-ok");
+  ok.onclick = () => {
+    closeAppAlert();
+    if (typeof onOk === "function") onOk();
+  };
+  modal.classList.add("active");
+}
+
+function appAlertHtml(html, onOk) {
+  const modal = document.getElementById("modal-alert");
+  if (!modal) {
+    window.alert(String(html).replace(/<[^>]*>/g, ""));
+    if (typeof onOk === "function") onOk();
+    return;
+  }
+  document.getElementById("alert-message").innerHTML = html;
   const ok = document.getElementById("alert-ok");
   ok.onclick = () => {
     closeAppAlert();
@@ -6739,6 +6748,283 @@ async function actionNota() {
     await loadOrder(POS_STATE.masaCurenta);
   }
   navigateToScreen("screen-plata");
+}
+
+// --------------------------------------------------------------------------
+// FACTURARE POS (ecran de facturare a notelor inchise din ziua curenta)
+// --------------------------------------------------------------------------
+let facturaPrevScreen = "screen-mese";
+let facturaFieldsBound = false;
+let facturaBonuri = [];
+let facturaBonSel = null;
+
+function openFacturare() {
+  const active = document.querySelector(".pos-screen.active");
+  facturaPrevScreen = active ? active.id : "screen-mese";
+  navigateToScreen("screen-facturare");
+  facturaBindFields();
+  loadFacturaBonuri();
+  setTimeout(() => { const el = document.getElementById("fact-cif"); if (el) el.focus(); }, 60);
+}
+
+function closeFacturare() {
+  closeFloatingKeyboard();
+  resetFacturareForm();
+  navigateToScreen(facturaPrevScreen || "screen-mese");
+}
+
+// Golesc campurile si selectia bonului (la inchiderea ecranului de facturare).
+function resetFacturareForm() {
+  document.querySelectorAll("#screen-facturare .fact-input").forEach(el => { el.value = ""; });
+  const label = document.getElementById("fact-bon-label");
+  if (label) label.textContent = "-";
+  facturaBonSel = null;
+  facturaAnafCif = "";
+  applyFacturareLock(false);
+  updateFacturaBonSelectBtn();
+}
+
+// Blocheaza/deblocheaza campurile facturii. Cand nota aleasa a fost deja
+// facturata, datele partenerului sunt cele salvate si nu mai pot fi editate.
+function applyFacturareLock(locked) {
+  document.querySelectorAll("#screen-facturare .fact-input").forEach(el => {
+    if (el.id === "fact-vat") return; // mereu readonly (0/1)
+    el.readOnly = !!locked;
+  });
+  const anafBtn = document.getElementById("fact-anaf-btn");
+  if (anafBtn) anafBtn.disabled = !!locked;
+  const screen = document.getElementById("screen-facturare");
+  if (screen) screen.classList.toggle("fact-locked", !!locked);
+  if (locked) closeFloatingKeyboard();
+}
+
+// Completeaza campurile din datele clientului salvat (reprint).
+function fillFacturareClient(c) {
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = (val == null ? "" : val); };
+  set("fact-cif", c.cif || "");
+  set("fact-vat", (String(c.vat) === "1") ? "1" : "0");
+  set("fact-den", c.denumire || "");
+  set("fact-adresa", c.adresa || "");
+  set("fact-judet", c.judet || "");
+  set("fact-oras", c.oras || "");
+  set("fact-regcom", c.regCom || "");
+}
+
+// Fiecare camp deschide tastatura virtuala standard (aceeasi folosita in
+// ecranele de programare), care scrie in campul care are focusul.
+function facturaBindFields() {
+  if (facturaFieldsBound) return;
+  document.querySelectorAll("#screen-facturare .fact-input").forEach(el => {
+    if (el.readOnly) return;
+    el.addEventListener("focus", () => { facturaOpenKeyboard(el); });
+    el.addEventListener("click", () => { facturaOpenKeyboard(el); });
+  });
+  const cifEl = document.getElementById("fact-cif");
+  if (cifEl) {
+    cifEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); interogareANAF(); }
+    });
+  }
+  facturaFieldsBound = true;
+}
+
+// Deschide tastatura standard pentru campul dat, fara sa o mai reseteze daca
+// este deja afisata pentru acelasi camp (altfel CAPS s-ar dezactiva la fiecare
+// tasta, pentru ca fiecare tasta re-focusa campul).
+function facturaOpenKeyboard(el) {
+  if (!el || el.readOnly) return; // campurile blocate (factura deja generata) nu se editeaza
+  const m = document.getElementById("modal-fkb");
+  if (m && m.classList.contains("active") && fkbTarget === el) return;
+  openFloatingKeyboardFor(el.id);
+}
+
+// ---- Interogare server ANAF (datele firmei dupa CIF) --------------------
+let facturaAnafCif = "";
+
+async function interogareANAF() {
+  const cifEl = document.getElementById("fact-cif");
+  if (!cifEl || cifEl.readOnly) return;
+  const cif = (cifEl.value || "").replace(/\s+/g, "");
+  if (cif.length < 2) {
+    appAlert("Introduceti codul fiscal (CIF) inainte de interogarea ANAF.");
+    return;
+  }
+  if (cif === facturaAnafCif) {
+    const d = document.getElementById("fact-den");
+    if (d && d.value) { return; } // deja interogat cu succes pentru acest CIF
+  }
+
+  const btn = document.getElementById("fact-anaf-btn");
+  if (btn) { btn.disabled = true; }
+  showToast("Interogare server ANAF...");
+  try {
+    const data = await fetchJsonNoStore("api/anaf.php?cif=" + encodeURIComponent(cif));
+    const f = data.found || {};
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val == null ? "" : val; };
+    set("fact-den", f.denumire || "");
+    set("fact-adresa", f.adresa || "");
+    set("fact-judet", f.judet || "");
+    set("fact-oras", f.oras || "");
+    set("fact-regcom", f.regCom || "");
+    set("fact-vat", f.platitorTVA ? "1" : "0");
+    facturaAnafCif = cif;
+    showToast("Date preluate de la ANAF");
+  } catch (err) {
+    facturaAnafCif = "";
+    appAlert("Interogare ANAF: " + err.message);
+  } finally {
+    if (btn) { btn.disabled = false; }
+  }
+}
+
+// ---- Selectia bonului (note inchise, ziua curenta) ----------------------
+async function loadFacturaBonuri() {
+  const tbody = document.getElementById("fact-bon-list");
+  if (tbody) {
+    tbody.innerHTML = '<tr class="inactive"><td colspan="4" style="text-align:center;color:#888;">Se incarca...</td></tr>';
+  }
+  try {
+    const data = await fetchJsonNoStore("api/facturare.php?action=lista");
+    if (data.status !== "success") throw new Error(data.message || "Eroare");
+    facturaBonuri = data.bonuri || [];
+    renderFacturaBonuri();
+  } catch (err) {
+    if (tbody) {
+      tbody.innerHTML = '<tr class="inactive"><td colspan="4" style="text-align:center;color:#c00;">'
+        + escapeHtml(err.message) + '</td></tr>';
+    }
+  }
+}
+
+function renderFacturaBonuri() {
+  const tbody = document.getElementById("fact-bon-list");
+  if (!tbody) return;
+  if (!facturaBonuri.length) {
+    tbody.innerHTML = '<tr class="inactive"><td colspan="4" style="text-align:center;">Nu exista note inchise in ziua curenta</td></tr>';
+    updateFacturaBonSelectBtn();
+    return;
+  }
+  tbody.innerHTML = facturaBonuri.map(b => {
+    const sel = (facturaBonSel === b.docId) ? " selected" : "";
+    return '<tr data-docid="' + b.docId + '" onclick="facturaBonSelectRow(' + b.docId + ')" class="' + sel.trim() + '">'
+      + '<td class="printq-num">' + b.nrNota + '</td>'
+      + '<td class="printq-num">' + b.suma.toFixed(2) + '</td>'
+      + '<td>' + escapeHtml(b.ospatar) + '</td>'
+      + '<td class="printq-num">' + b.masa + '</td>'
+      + '</tr>';
+  }).join("");
+  updateFacturaBonSelectBtn();
+}
+
+function facturaBonSelectRow(docId) {
+  facturaBonSel = docId;
+  document.querySelectorAll("#fact-bon-list tr").forEach(tr => {
+    tr.classList.toggle("selected", parseInt(tr.dataset.docid, 10) === docId);
+  });
+  updateFacturaBonSelectBtn();
+}
+
+function updateFacturaBonSelectBtn() {
+  const btn = document.getElementById("btn-fact-bon-select");
+  if (btn) btn.disabled = !facturaBonSel;
+}
+
+function openFacturaBonList() {
+  facturaBonSel = null;
+  document.getElementById("modal-factura-bon").classList.add("active");
+  loadFacturaBonuri();
+}
+
+function closeFacturaBonList() {
+  document.getElementById("modal-factura-bon").classList.remove("active");
+}
+
+function confirmFacturaBon() {
+  if (!facturaBonSel) return;
+  const b = facturaBonuri.find(x => x.docId === facturaBonSel);
+  const label = document.getElementById("fact-bon-label");
+  if (b && label) {
+    label.textContent = "#" + b.nrNota + " - " + b.suma.toFixed(2) + " Lei - Masa " + b.masa;
+  }
+  closeFacturaBonList();
+  loadFacturareBonStatus(facturaBonSel);
+}
+
+// Verifica daca nota aleasa a fost deja facturata. Daca da, completeaza
+// formularul cu datele partenerului salvat si il blocheaza (reprint fara
+// modificari); altfel lasa formularul gol si editabil.
+async function loadFacturareBonStatus(docId, silent) {
+  applyFacturareLock(false);
+  try {
+    const data = await fetchJsonNoStore("api/facturare.php?action=get&docId=" + encodeURIComponent(docId));
+    if (data.client) {
+      fillFacturareClient(data.client);
+      applyFacturareLock(true);
+      if (!silent) {
+        if (data.generated) {
+          showToast("Nota a fost deja facturata (" + (data.serie ? data.serie + " " : "") + data.nrFactura + ")");
+        } else {
+          showToast("Factura este in curs de generare; datele sunt blocate");
+        }
+      }
+    } else {
+      // Nota noua: curatam eventualele date rămase de la alta nota.
+      ["fact-cif", "fact-vat", "fact-den", "fact-adresa", "fact-judet", "fact-oras", "fact-regcom"].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = "";
+      });
+      facturaAnafCif = "";
+    }
+  } catch (err) {
+    if (!silent) showToast("Nu pot verifica starea facturii: " + err.message);
+  }
+}
+
+// Trimite factura la tiparire (pe imprimanta de note): datele furnizorului vin
+// din tblAntet, cele ale clientului din formular, iar liniile din nota aleasa.
+async function generazaFactura() {
+  if (!facturaBonSel) {
+    appAlert("Selectati mai intai bonul de facturat.");
+    return;
+  }
+  const val = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
+  const client = {
+    cif: val("fact-cif"),
+    vat: val("fact-vat") || "0",
+    denumire: val("fact-den"),
+    adresa: val("fact-adresa"),
+    judet: val("fact-judet"),
+    oras: val("fact-oras"),
+    regCom: val("fact-regcom")
+  };
+  const lipsa = [];
+  if (!client.cif) { lipsa.push("Cod Fiscal (CIF)"); }
+  if (!client.denumire) { lipsa.push("Denumire Firma"); }
+  if (!client.adresa) { lipsa.push("Adresa"); }
+  if (!client.judet) { lipsa.push("Judet"); }
+  if (lipsa.length) {
+    appAlert("Completati campurile obligatorii: " + lipsa.join(", "));
+    return;
+  }
+
+  try {
+    showToast("Generez factura...");
+    const resp = await fetch("api/facturare.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "print", docId: facturaBonSel, client: client })
+    });
+    const data = await resp.json();
+    if (data.status !== "success") throw new Error(data.message || "Eroare");
+    const docId = facturaBonSel;
+    showToast(data.message || "Factura a fost trimisa la tiparire");
+    closeFloatingKeyboard();
+    refreshPrintStatus();
+    // Dupa generare, reincarcam starea: nota intra in tblFacturaDoc si
+    // formularul se blocheaza pe datele partenerului salvat.
+    loadFacturareBonStatus(docId, true);
+  } catch (err) {
+    appAlert("Generare factura: " + err.message);
+  }
 }
 
 // --------------------------------------------------------------------------

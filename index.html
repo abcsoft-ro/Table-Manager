@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>TableManager 1.5.0 - Modern Web POS</title>
-  <link rel="stylesheet" href="css/pos.css?v=20260929a">
+  <link rel="stylesheet" href="css/pos.css?v=20261012l">
   <script>
     /* Scalare UI libera pe AMBELE axe, plecand de la canvasul minim 1024x768.
        --pos-scale = factorul proportional (limitat de axa cu raportul cel mai mic);
@@ -265,7 +265,7 @@
 
         <!-- Meniu Dreapta -->
         <div class="tables-right-menu">
-          <button class="tables-menu-btn blue-text" onclick="showToast('Facturare')">Facturare.<br>.........</button>
+          <button class="tables-menu-btn blue-text" onclick="openFacturare()">Facturare.</button>
           <button class="tables-menu-btn blue-text" id="btn-print-queue" onclick="openPrintQueue()">Coada<br>printare</button>
           <button class="tables-menu-btn red-text" onclick="openKeyboardModal('Parola')">Parola</button>
         </div>
@@ -614,6 +614,101 @@
       <div class="setari-tabs" id="rapoarte-tabs"></div>
       <div class="setari-content">
         <div class="rapoarte-grid" id="rapoarte-grid"></div>
+      </div>
+    </div>
+
+    <!-- ECRAN FACTURARE POS (emulare ecran facturare aplicatie VBA) -->
+    <div id="screen-facturare" class="pos-screen">
+      <div class="fact-screen">
+        <div class="fact-titlebar">
+          <span>FACTURARE POS</span>
+          <button class="fact-close-btn" onclick="closeFacturare()">Inchide</button>
+        </div>
+        <div class="fact-redline"></div>
+
+        <div class="fact-body">
+          <div class="fact-form">
+            <div class="fact-cif-title">Introduceti CIF:</div>
+
+            <div class="fact-field-row">
+              <label class="fact-lbl">Cod Fiscal (CIF) *</label>
+              <input type="text" class="fact-input fact-input-cif" id="fact-cif" maxlength="20" autocomplete="off">
+              <label class="fact-lbl fact-vat-lbl">VAT:</label>
+              <input type="text" class="fact-input fact-input-vat" id="fact-vat" maxlength="1" readonly autocomplete="off">
+              <button type="button" class="fact-anaf-btn" id="fact-anaf-btn" onclick="interogareANAF()">Interogare ANAF</button>
+            </div>
+            <div class="fact-field-row">
+              <label class="fact-lbl">Denumire Firma: *</label>
+              <input type="text" class="fact-input fact-input-long" id="fact-den" maxlength="100" autocomplete="off">
+            </div>
+            <div class="fact-field-row">
+              <label class="fact-lbl">Adresa: *</label>
+              <input type="text" class="fact-input fact-input-long" id="fact-adresa" maxlength="120" autocomplete="off">
+            </div>
+            <div class="fact-field-row">
+              <label class="fact-lbl">Judet: *</label>
+              <input type="text" class="fact-input fact-input-short" id="fact-judet" maxlength="40" autocomplete="off">
+            </div>
+            <div class="fact-field-row">
+              <label class="fact-lbl">Oras:</label>
+              <input type="text" class="fact-input fact-input-short" id="fact-oras" maxlength="40" autocomplete="off">
+            </div>
+            <div class="fact-field-row">
+              <label class="fact-lbl">RegCom:</label>
+              <input type="text" class="fact-input fact-input-short" id="fact-regcom" maxlength="40" autocomplete="off">
+            </div>
+
+            <div class="fact-oblig">Campurile marcate cu steluta * sunt obligatorii</div>
+          </div>
+
+          <div class="fact-right">
+            <label class="fact-lbl">Selectati bonul:</label>
+            <button type="button" class="fact-bon-select" id="fact-bon-select" onclick="openFacturaBonList()">
+              <span id="fact-bon-label">-</span>
+              <span class="fact-bon-caret">&#9660;</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="fact-generate-row">
+          <button class="fact-generate-btn" onclick="generazaFactura()">Generaza Factura</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal SELECTIE BON pentru facturare (note inchise, ziua curenta) -->
+    <div class="modal-keyboard-overlay" id="modal-factura-bon">
+      <div class="transfer-dialog" style="width: 640px;">
+        <div class="keyboard-dialog-header">
+          <span>SELECTATI BONUL</span>
+          <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeFacturaBonList()">Inchide</button>
+        </div>
+        <div class="transfer-body">
+          <div class="transfer-subtitle">Note inchise in ziua curenta</div>
+          <div class="printq-wrap">
+            <table class="printq-table">
+              <colgroup>
+                <col style="width: 90px;">
+                <col style="width: 110px;">
+                <col>
+                <col style="width: 70px;">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>NrNota</th>
+                  <th>Suma</th>
+                  <th>Ospatar</th>
+                  <th>Masa</th>
+                </tr>
+              </thead>
+              <tbody id="fact-bon-list"></tbody>
+            </table>
+          </div>
+          <div class="tva-actions">
+            <button class="act-btn" onclick="loadFacturaBonuri()">Reincarca</button>
+            <button class="act-btn" style="background:#ffff00;" id="btn-fact-bon-select" onclick="confirmFacturaBon()" disabled>Selecteaza</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1029,7 +1124,6 @@
       </div>
       
       <div class="keyboard-body">
-        <div style="color: #666; font-size: 13px;">web: www.abc-soft.ro</div>
         <div id="kb-subtitle" style="font-size: 20px; font-weight: bold; color: #333;">Introduceti parola</div>
         
         <input type="password" id="virtual-keyboard-input" class="keyboard-input-display" readonly>
@@ -1682,7 +1776,7 @@
         <span>ATENTIE</span>
       </div>
       <div class="transfer-body">
-        <div id="alert-message" style="font-size:15px; color:#222; margin:8px 0 18px 0; line-height:1.4; white-space: pre-line;"></div>
+        <div id="alert-message" style="font-size:15px; color:#222; margin:8px 0 18px 0; line-height:1.4; white-space: pre-line; max-width: 440px; max-height: 320px; overflow: auto; overflow-wrap: anywhere; word-break: break-word;"></div>
         <div class="tva-actions">
           <button class="act-btn" id="alert-ok" style="background:#ffff00;">OK</button>
         </div>
@@ -1939,6 +2033,6 @@
   </div><!-- /#pos-stage -->
 
   <!-- Script aplicatie -->
-  <script src="js/pos.js?v=20260929h"></script>
+  <script src="js/pos.js?v=20261012l"></script>
 </body>
 </html>

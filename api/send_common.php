@@ -45,7 +45,9 @@ function ensureSendSqlTable($conn) {
             LastError   NVARCHAR(500) NULL,
             CreatedAt   DATETIME2     NOT NULL CONSTRAINT DF_temp_Send_Sql_Created DEFAULT (SYSDATETIME()),
             SentAt      DATETIME2     NULL,
-            RaspunsCasa NVARCHAR(MAX) NULL
+            RaspunsCasa NVARCHAR(MAX) NULL,
+            Scop        NVARCHAR(20)  NULL,
+            Rezultat    NVARCHAR(MAX) NULL
         );
         CREATE INDEX IX_temp_Send_Sql_Preluat ON dbo.temp_Send_Sql (Preluat, Stare, NextAttempt) INCLUDE (Id);
     END";
@@ -63,6 +65,8 @@ function ensureSendSqlTable($conn) {
         'CreatedAt'   => "DATETIME2 NULL",
         'SentAt'      => "DATETIME2 NULL",
         'RaspunsCasa' => "NVARCHAR(MAX) NULL",
+        'Scop'        => "NVARCHAR(20) NULL",
+        'Rezultat'    => "NVARCHAR(MAX) NULL",
     ];
     foreach ($columns as $col => $def) {
         @sqlsrv_query(
@@ -298,6 +302,32 @@ function enqueueBillSendSql($conn, $docId, $bon, $plati = [], $nrBonOverride = n
     $stmt = sqlsrv_query($conn, $sql, [$docId, $strSql, $raspunsCasaVal]);
     if ($stmt === false) { return false; }
 
+    sqlsrv_next_result($stmt);
+    $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+    return $row ? (int)$row['Id'] : false;
+}
+
+/**
+ * Adauga in temp_Send_Sql o comanda SQL oarecare (de ex. apelul procedurii
+ * GenFactPoS pentru generarea facturii pe server). `Scop` permite separarea
+ * acestor comenzi de exportul clasic de bonuri. Intoarce Id-ul randului sau
+ * false la eroare.
+ *
+ * @param resource $conn
+ * @param int|null $docId
+ * @param string $strSql
+ * @param string $scop
+ */
+function enqueueRawSendSql($conn, $docId, $strSql, $scop = 'export') {
+    ensureSendSqlTable($conn);
+    $sql = "INSERT INTO temp_Send_Sql (DocID, str_sql, Preluat, Stare, Attempts, CreatedAt, Scop)
+            VALUES (?, ?, 0, 'pending', 0, SYSDATETIME(), ?); SELECT SCOPE_IDENTITY() AS Id;";
+    $stmt = sqlsrv_query($conn, $sql, [
+        ($docId === null ? null : (int)$docId),
+        (string)$strSql,
+        (string)$scop
+    ]);
+    if ($stmt === false) { return false; }
     sqlsrv_next_result($stmt);
     $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
     return $row ? (int)$row['Id'] : false;

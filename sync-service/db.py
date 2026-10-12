@@ -48,6 +48,10 @@ def execute_statements(info, statements, cfg):
     `statements` este lista comenzilor ne-goale (comanda din str_sql).
     Se foloseste autocommit, ca fiecare procedura sa isi confirme singura
     tranzactia si sa nu ramana tranzactii deschise pe conexiune.
+
+    Intoarce (mesaj, rezultat), unde `rezultat` este ultimul rand de rezultat
+    returnat de comenzi (dict coloana->valoare) sau None. Este folosit pentru
+    a prelua DocID/Serie/NrDocFisc de la procedura GenFactPoS.
     """
     statements = [s for s in (statements or []) if s and s.strip()]
     if not statements:
@@ -63,20 +67,30 @@ def execute_statements(info, statements, cfg):
     except pyodbc.Error as exc:
         raise DbError("Conexiunea la server a esuat: %s" % exc)
 
+    result = None
     try:
         cur = cn.cursor()
         for sql in statements:
             cur.execute(sql)
             # Consumam toate seturile de rezultate (procedura poate returna
-            # resultset-uri / mesaje), ca sa nu ramana cursorul in asteptare.
+            # resultset-uri / mesaje) si pastram ultimul rand de rezultat.
             while True:
                 try:
-                    cur.fetchall()
+                    if cur.description:
+                        cols = [c[0] for c in cur.description]
+                        rows = cur.fetchall()
+                        if rows:
+                            row = {}
+                            for c, v in zip(cols, rows[-1]):
+                                row[c] = v if (v is None or isinstance(v, (int, float, str, bool))) else str(v)
+                            result = row
+                    else:
+                        cur.fetchall()
                 except pyodbc.ProgrammingError:
                     pass
                 if not cur.nextset():
                     break
-        return "executat (%d comenzi)" % len(statements)
+        return "executat (%d comenzi)" % len(statements), result
     except pyodbc.Error as exc:
         raise DbError("Executia a esuat: %s" % exc)
     finally:
