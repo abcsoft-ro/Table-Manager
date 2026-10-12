@@ -170,6 +170,42 @@ Pașii sunt: rulați `db/schema.sql`, apoi `db/seed.sql`, apoi configurați `api
 
 ---
 
+## Backup bază de date
+
+Backup planificat al bazei de date MSSQL, independent de aplicație (nu depinde de un browser deschis):
+
+- `tools/backup-db.ps1` — face un backup **full** (`BACKUP DATABASE ... WITH INIT, CHECKSUM`), îl **verifică** (`RESTORE VERIFYONLY`), șterge backup-urile mai vechi de **14 zile** și scrie un log în `logs/backup_db.log`. Credențialele sunt citite din `api/db.local.php` (aceeași sursă ca aplicația), iar execuția folosește ADO.NET (`System.Data.SqlClient`), fără dependențe suplimentare.
+- `tools/backup-db-task.xml` — task Windows Scheduler care rulează scriptul **zilnic la 03:00**, ca **SYSTEM** (fără parolă stocată), cu `StartWhenAvailable` (rulează și dacă stația era oprită).
+- `tools/install-backup-task.bat` — montează task-ul (rulează ca Administrator): își deduce folderul proiectului, rescrie calea din XML și apelează `schtasks /Create`.
+
+Implicit, backup-urile se scriu în `C:\ABCSoft\Data\backup`, cu numele `<BazaDeDate>_<yyyyMMdd_HHmmss>.bak`. Când SQL Server rulează pe aceeași mașină, scriptul creează folderul și acordă drepturi de scriere contului serviciului SQL; dacă serverul e remote, folderul trebuie să existe deja și să fie scriibil pe acea mașină.
+
+**Montare:**
+
+```bat
+tools\install-backup-task.bat        :: click dreapta -> Run as administrator
+```
+
+sau manual: `schtasks /Create /TN "TableManager\Backup DB" /XML "…\tools\backup-db-task.xml" /F`.
+
+**Rulare manuală / test:**
+
+```bat
+powershell -ExecutionPolicy Bypass -File tools\backup-db.ps1            :: backup acum
+powershell -ExecutionPolicy Bypass -File tools\backup-db.ps1 -DryRun    :: doar afișează planul
+schtasks /Run /TN "TableManager\Backup DB"                              :: forțează task-ul
+```
+
+**Restaurare** (după oprirea aplicației), în SQL:
+
+```sql
+RESTORE DATABASE [NumeBaza]
+  FROM DISK = N'C:\ABCSoft\Data\backup\NumeBaza_20260101_030000.bak'
+  WITH REPLACE;
+```
+
+---
+
 ## Structura proiectului
 
 ```
@@ -211,6 +247,9 @@ import_server_grp_prod.py  import produse/grupe de pe server (dbo.ImportProd)
 requirements.txt        dependintele Python (pyodbc, pywin32, pyserial) pentru mediul virtual
 setup-venv.bat          creeaza .venv, instaleaza dependintele si creeaza shortcut-urile (o singura data)
 tools/create-shortcuts.vbs  creeaza shortcut-urile: serviciile in Startup + POS pe Desktop
+tools/backup-db.ps1     backup full al bazei de date (planificat, verificat, cu retentie)
+tools/backup-db-task.xml    task Windows Scheduler pentru backup (zilnic 03:00, ca SYSTEM)
+tools/install-backup-task.bat  monteaza task-ul de backup (Run as administrator)
 .venv/                  mediul virtual Python (creat local, ignorat de git)
 sync.sh                 commit + push catre GitHub + regenereaza snapshot-ul de instalare
 ```

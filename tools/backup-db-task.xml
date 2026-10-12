@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Date>2026-01-01T00:00:00</Date>
+    <Author>TableManager</Author>
+    <Description>Backup zilnic al bazei de date TableManager (MSSQL), prin tools\backup-db.ps1. Ruleaza ca SYSTEM la 03:00.</Description>
+    <URI>\TableManager\Backup DB</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <CalendarTrigger>
+      <StartBoundary>2026-01-01T03:00:00</StartBoundary>
+      <Enabled>true</Enabled>
+      <ScheduleByDay>
+        <DaysInterval>1</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>S-1-5-18</UserId>
+      <LogonType>ServiceAccount</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT1H</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>powershell.exe</Command>
+      <Arguments>-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Apache24\htdocs\rual\tools\backup-db.ps1"</Arguments>
+      <WorkingDirectory>C:\Apache24\htdocs\rual</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
