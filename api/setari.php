@@ -152,13 +152,13 @@ function ensureSetariMeta($conn) {
 
     // Export/sincronizare catre server (tblSet.Server): 0 = independent,
     // 1 = grupe/produse de pe server extern + exportul vanzarilor prin sync-service.
-    $serverDesc = "0 = aplicatia functioneaza independent; 1 = aplicatia incarca grupele si produsele de pe un server extern, aplicatia exporta vanzarile catre serverul extern prin serviciul python sync-service.";
+    $serverDesc = "Export/sincronizare cu serverul extern: 0 = NU (aplicatia functioneaza independent); 1 = DA (aplicatia incarca grupele si produsele de pe un server extern, aplicatia exporta vanzarile catre serverul extern prin serviciul python sync-service).";
     $chkSrv = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'Server'");
     $hasSrv = $chkSrv ? sqlsrv_fetch_array($chkSrv, SQLSRV_FETCH_ASSOC) : null;
     if (!$hasSrv) {
         @sqlsrv_query(
             $conn,
-            "INSERT INTO tblSet (Setting, Value, Descriere, Grup) VALUES ('Server', '0', ?, 'ODBC')",
+            "INSERT INTO tblSet (Setting, Value, Descriere, Grup) VALUES ('Server', '0', ?, 'General')",
             [$serverDesc]
         );
     } else {
@@ -168,6 +168,12 @@ function ensureSetariMeta($conn) {
             [$serverDesc, $serverDesc]
         );
     }
+    // Server si NrLogic sunt setari din tabul General (mutate fara pasi manuali
+    // de pe instalatiile existente, unde Server era in grupul ODBC).
+    @sqlsrv_query(
+        $conn,
+        "UPDATE tblSet SET Grup = 'General' WHERE Setting IN ('Server', 'NrLogic') AND (Grup IS NULL OR Grup <> 'General')"
+    );
 
     // Motivele de discount si de stornare: liste editabile, separate prin
     // punct si virgula. Sunt afisate ca optiuni in casetele Discount si VD.

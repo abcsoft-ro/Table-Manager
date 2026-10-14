@@ -34,6 +34,36 @@ function ensureProdSchema($conn) {
     );
 }
 
+/**
+ * Valoarea brute a setarii tblSet.MagID (poate fi un intreg sau o lista de
+ * id-uri separate prin virgula, ex. "1,2").
+ *
+ * @param resource $conn Conexiunea SQL Server.
+ * @return string
+ */
+function tblProdMagIdSetting($conn) {
+    $stmt = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'MagID'");
+    $row = $stmt ? sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC) : null;
+    return $row ? trim((string)($row['Value'] ?? '')) : '';
+}
+
+/**
+ * Lista de id-uri de gestiune din tblSet.MagID (parseaza "1,2" -> [1, 2]).
+ *
+ * @param resource $conn Conexiunea SQL Server.
+ * @return int[]
+ */
+function tblProdMagIdList($conn) {
+    $out = [];
+    foreach (explode(',', tblProdMagIdSetting($conn)) as $part) {
+        $t = trim($part);
+        if ($t !== '' && preg_match('/^-?\d+$/', $t)) {
+            $out[] = (int)$t;
+        }
+    }
+    return $out;
+}
+
 $conn = getDBConnection();
 ensureProdSchema($conn);
 
@@ -44,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $where = $nrgrp > 0 ? "WHERE p.NrGrp = " . (int)$nrgrp : "";
     $sql = "SELECT p.ProdID, p.BarCod, p.Denumire, p.UM, p.IRP, p.IIVCN, p.DataUM,
                    p.NrGrp, p.KP, p.BackColor, p.FontColor, p.FontSize, p.Bold, p.Poz,
-                   p.FontType, p.Imagine, p.Sectie, p.PV, p.Nr_TVA, p.MZ
+                   p.FontType, p.Imagine, p.Sectie, p.PV, p.Nr_TVA, p.MZ, p.MagID
             FROM tblProd p
             $where
             ORDER BY p.NrGrp, p.Poz, p.ProdID";
@@ -75,7 +105,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 "Sectie" => tblProdIntOrNull($p['Sectie'] ?? ''),
                 "PV" => tblProdFloatOrNull($p['PV'] ?? ''),
                 "Nr_TVA" => tblProdIntOrNull($p['Nr_TVA'] ?? ''),
-                "MZ" => (int)($p['MZ'] ?? 0)
+                "MZ" => (int)($p['MZ'] ?? 0),
+                "MagID" => tblProdIntOrNull($p['MagID'] ?? '')
             ];
         }
     }
@@ -117,7 +148,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         }
     }
 
-    sendJsonResponse(["status" => "success", "products" => $products, "sectii" => $sectii, "tva" => $tvaList, "kpList" => $kpList]);
+    sendJsonResponse(["status" => "success", "products" => $products, "sectii" => $sectii, "tva" => $tvaList, "kpList" => $kpList,
+        "magId" => tblProdMagIdSetting($conn), "magIdList" => tblProdMagIdList($conn)]);
 }
 
 $raw = file_get_contents('php://input');
@@ -177,6 +209,7 @@ switch ($action) {
         $pv = tblProdFloatOrNull($input['PV'] ?? '');
         $nrTva = tblProdIntOrNull($input['Nr_TVA'] ?? '');
         $mz = !empty($input['MZ']) ? 1 : 0;
+        $magId = tblProdIntOrNull($input['MagID'] ?? '');
 
         if ($action === 'insert') {
             // DataUM e intotdeauna data curenta (GETDATE()). Coloana TVA (vechea) a fost eliminata din schema.
@@ -184,12 +217,12 @@ switch ($action) {
                 $conn,
                 "INSERT INTO tblProd
                    (ProdID, BarCod, Denumire, UM, IRP, IIVCN, DataUM, NrGrp, KP,
-                    BackColor, FontColor, FontSize, Bold, Poz, FontType, Imagine, Sectie, PV, Nr_TVA, MZ)
-                 VALUES (?, ?, ?, ?, ?, ?, GETDATE(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    BackColor, FontColor, FontSize, Bold, Poz, FontType, Imagine, Sectie, PV, Nr_TVA, MZ, MagID)
+                 VALUES (?, ?, ?, ?, ?, ?, GETDATE(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 [$prodId, $barcod, ($denumire === '' ? null : $denumire), $um,
                  $irp, $iivcn, $nrGrp, $kp,
                  $bg, $fg, $fontSize, $bold, $poz, ($fontType === '' ? null : $fontType),
-                 ($imagine === '' ? null : $imagine), $sectie, $pv, $nrTva, $mz]
+                 ($imagine === '' ? null : $imagine), $sectie, $pv, $nrTva, $mz, $magId]
             );
             if (!$stmt) {
                 sendJsonResponse(["status" => "error", "message" => "Eroare inserare (posibil ProdID/BarCod duplicat): " . sqlsrv_errors()[0]['message']], 500);
@@ -201,12 +234,12 @@ switch ($action) {
                 $conn,
                 "UPDATE tblProd SET BarCod = ?, Denumire = ?, UM = ?, IRP = ?, IIVCN = ?, DataUM = GETDATE(),
                         NrGrp = ?, KP = ?, BackColor = ?, FontColor = ?, FontSize = ?, Bold = ?,
-                        Poz = ?, FontType = ?, Imagine = ?, Sectie = ?, PV = ?, Nr_TVA = ?, MZ = ?
+                        Poz = ?, FontType = ?, Imagine = ?, Sectie = ?, PV = ?, Nr_TVA = ?, MZ = ?, MagID = ?
                  WHERE ProdID = ?",
                 [$barcod, ($denumire === '' ? null : $denumire), $um,
                  $irp, $iivcn, $nrGrp, $kp,
                  $bg, $fg, $fontSize, $bold, $poz, ($fontType === '' ? null : $fontType),
-                 ($imagine === '' ? null : $imagine), $sectie, $pv, $nrTva, $mz, $prodId]
+                 ($imagine === '' ? null : $imagine), $sectie, $pv, $nrTva, $mz, $magId, $prodId]
             );
             if (!$stmt) {
                 sendJsonResponse(["status" => "error", "message" => "Eroare actualizare produs: " . sqlsrv_errors()[0]['message']], 500);

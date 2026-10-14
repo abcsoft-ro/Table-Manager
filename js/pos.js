@@ -253,7 +253,8 @@ function applyTipDiscountUI() {
 
 // In ecranul de programare: cand tblSet.Server = 1 (export/sincronizare activ),
 // Grupe si Produse sunt blocate (datele vin din sincronizare), iar Sincronizare
-// produse este activa; cand Server = 0 este invers.
+// produse, Conectare server si Coada export sunt active; cand Server = 0 este invers
+// (fara server nu se scrie nimic in coada de export).
 function applyServerModeUI() {
   const serverOn = (POS_STATE.server === 1);
   const set = (id, disabled) => {
@@ -263,6 +264,8 @@ function applyServerModeUI() {
   set("prog-btn-grupe", serverOn);
   set("prog-btn-produse", serverOn);
   set("prog-btn-sync", !serverOn);
+  set("prog-btn-conectare", !serverOn);
+  set("prog-btn-send-queue", !serverOn);
 }
 
 // Footer-ul ecranului mese: datele de contact din tblSet (DistrRand1/2)
@@ -1715,6 +1718,25 @@ function vkKey(ch) {
   }
 }
 
+// Suport pentru tastatura fizica: cand modalul de autentificare/cautare este
+// deschis, tastele fizice scriu in campul virtual (litere, cifre, spatiu,
+// Backspace) si Enter valideaza. Escape inchide modalul.
+document.addEventListener("keydown", function (e) {
+  const modal = document.getElementById("modal-keyboard");
+  if (!modal || !modal.classList.contains("active")) return;
+  // Nu interceptam cand un alt dialog este peste (alerta/confirmare).
+  if (document.querySelector("#modal-alert.active, #modal-confirm.active")) return;
+
+  if (e.key === "Enter") { e.preventDefault(); vkeyValidate(); return; }
+  if (e.key === "Escape") { e.preventDefault(); closeKeyboardModal(); return; }
+  if (e.key === "Backspace") { e.preventDefault(); vkeyBackspace(); return; }
+  if (e.key === " ") { e.preventDefault(); vkeyInput(" "); return; }
+  if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    e.preventDefault();
+    vkeyInput(e.key);
+  }
+});
+
 async function vkeyValidate() {
   const input = document.getElementById("virtual-keyboard-input");
   const valoare = input.value;
@@ -2124,7 +2146,7 @@ function promptUpdateParola() {
 // Doar coloana Value este editabila; Setting si Descriere sunt doar afisate.
 // --------------------------------------------------------------------------
 const SETARI_TABS = [
-  { id: "general",    label: "General",    groups: ["Discount", "General"] },
+  { id: "general",    label: "General",    groups: ["General", "Discount"] },
   { id: "device",     label: "Device-uri", groups: ["Casa", "Afiseaj", "Cantar", "PoSbanca"] },
   { id: "servicii",   label: "Servicii",   groups: [], special: true },
   { id: "altele",     label: "Altele",     groups: null } // null = toate cele neincluse mai sus
@@ -2272,6 +2294,7 @@ function renderSetariTabs() {
 // Ordinea explicita a setarilor in cadrul unui grup (dupa tblSet.Setting).
 // Cele care nu apar in lista raman dupa ele, in ordinea primita de la server.
 const SETARI_ORDINE = {
+  "general": ["NrLogic", "MagID", "TipVanz", "Server"],
   "discount": ["RED", "TipDiscount", "ProcentDiscountFix", "MotivDiscount"],
   "casa": ["TipCasaMarcat", "AsteaptaRaspunsCasa", "AsteptareCasaSec", "BonFiscalDiscStorno", "CaleFisierComenziECR", "CaleFisierRaspunsECR"],
   "afiseaj": ["AfiseajClient", "PortComAfiseaj", "BaudRateAfisaj", "CaleDriverAfiseajClient", "CaleFisierComenziAfiseajClient"],
@@ -2363,6 +2386,10 @@ function setariField(row) {
   // Plata combinata activ/inactiv: lista DA / NU (implicit DA).
   if (row.Setting === "PlataCombinata") {
     return setariDaNuField(row.Setting, row.Value, row.Descriere, false);
+  }
+  // Export/sincronizare cu serverul extern: lista DA / NU (implicit NU).
+  if (row.Setting === "Server") {
+    return setariDaNuField(row.Setting, row.Value, row.Descriere, true);
   }
 
   const div = document.createElement("div");
@@ -2516,7 +2543,7 @@ function setariRedField(row) {
     if (pair[0] === (cur === "0" ? "0" : "1")) opt.selected = true;
     select.appendChild(opt);
   });
-  select.onchange = () => { setariDirty[row.Setting] = select.value; };
+  select.onchange = () => { setariDirty[row.Setting] = select.value; applyRedFieldsUI(); };
   div.appendChild(select);
 
   if (row.Descriere && String(row.Descriere).trim() !== "") {
@@ -2688,7 +2715,7 @@ function setariDaNuField(setting, value, descriere, defaultToNu) {
     const opt = document.createElement("option");
     opt.value = pair[0];
     opt.textContent = pair[1];
-    if (pair[0] === selected) opt.selected = true;
+    if (pair[0] === (cur === "0" ? "0" : "1")) opt.selected = true;
     select.appendChild(opt);
   });
   select.onchange = () => { setariDirty[setting] = select.value; };
@@ -2702,6 +2729,25 @@ function setariDaNuField(setting, value, descriere, defaultToNu) {
   }
 
   return div;
+}
+
+// Campurile din grupul Discount care depind de tblSet.RED. Cand RED = NU (0),
+// ele devin inactive (nu are sens sa le configurezi daca discountul e interzis).
+const RED_DEPENDENT_FIELDS = ["setari-inp-TipDiscount", "setari-inp-ProcentDiscountFix", "setari-inp-MotivDiscount"];
+
+function applyRedFieldsUI() {
+  const redEl = document.getElementById("setari-inp-RED");
+  if (!redEl) return;
+  const enabled = (String(redEl.value).trim() === "1");
+  RED_DEPENDENT_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = !enabled;
+    const row = el.closest(".setari-field-row");
+    if (row) row.querySelectorAll("button").forEach(b => { b.disabled = !enabled; });
+    const field = el.closest(".setari-field");
+    if (field) field.classList.toggle("setari-field-disabled", !enabled);
+  });
 }
 
 function renderSetariTab(tabId) {
@@ -2735,6 +2781,9 @@ function renderSetariTab(tabId) {
     }
     grp.rows.forEach(r => wrap.appendChild(setariField(r)));
   });
+
+  // Campurile de discount depind de RED (le activeaza/dezactiveaza).
+  applyRedFieldsUI();
 }
 
 // --------------------------------------------------------------------------
@@ -3642,6 +3691,8 @@ let prodGroups = [];       // din tblGrp
 let prodSectii = [];       // din tblSectii
 let prodTvaList = [];      // din tblTVA
 let prodKpList = [];       // din tblKP (sectii de tiparire)
+let prodMagId = "";        // tblSet.MagID brut (poate fi o lista "1,2")
+let prodMagIdList = [];    // int-urile din tblSet.MagID
 
 function prodNum(v) {
   const s = (v === null || v === undefined) ? "" : String(v).trim();
@@ -3672,7 +3723,8 @@ function prodDefaultRow(poz, nrGrp) {
     IRP: null,
     IIVCN: null,
     Bold: false,
-    MZ: false
+    MZ: false,
+    MagID: prodMagIdList.length ? prodMagIdList[0] : null
   };
 }
 
@@ -3732,6 +3784,52 @@ function fillProdCombo(el, value, labelFn) {
   if (Array.from(el.options).some(o => o.value === prev)) el.value = prev;
 }
 
+// Randeaza campul MagID (magazia) din inspectorul de produse:
+// - daca tblSet.MagID este o lista (mai multe id-uri) -> combobox;
+// - daca este o valoare unica -> camp numeric, precompletat cu valoarea implicita.
+function renderProdMagIdField() {
+  const wrap = document.getElementById("prod-magid-field");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+
+  if (prodMagIdList.length > 1) {
+    const select = document.createElement("select");
+    select.id = "prod-magid-select";
+    select.className = "prod-combo";
+    prodMagIdList.forEach(id => {
+      const opt = document.createElement("option");
+      opt.value = id;
+      opt.textContent = id;
+      select.appendChild(opt);
+    });
+    select.onchange = onProdMagIdChange;
+    wrap.appendChild(select);
+  } else {
+    const rowWrap = document.createElement("div");
+    rowWrap.className = "tva-field-row";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.id = "prod-magid-input";
+    input.className = "tva-input";
+    input.value = (prodMagIdList.length === 1) ? String(prodMagIdList[0]) : "";
+    input.oninput = onProdMagIdChange;
+    rowWrap.appendChild(input);
+    const kb = document.createElement("button");
+    kb.className = "act-btn fkb-mini";
+    kb.textContent = "123";
+    kb.onclick = () => openNumericKeyboardFor("prod-magid-input", "MAGID");
+    rowWrap.appendChild(kb);
+    wrap.appendChild(rowWrap);
+  }
+}
+
+function onProdMagIdChange() {
+  const row = prodWorking[prodSelected];
+  if (!row) return;
+  syncProdFromInputs();
+  markProdDirty(row.key);
+}
+
 async function loadProdGroup() {
   try {
     const resp = await fetch("api/produse.php?nrgrp=" + prodCurGrup);
@@ -3741,6 +3839,9 @@ async function loadProdGroup() {
     prodSectii = data.sectii || [];
     prodTvaList = data.tva || [];
     prodKpList = data.kpList || [];
+    prodMagId = data.magId || "";
+    prodMagIdList = Array.isArray(data.magIdList) ? data.magIdList : [];
+    renderProdMagIdField();
 
     const headerSel = document.getElementById("prod-grup-select");
     if (headerSel) {
@@ -3770,7 +3871,7 @@ async function loadProdGroup() {
       });
     fillProdCombo(document.getElementById("prod-kp-select"),
       [""].concat(prodKpList.map(k => k.NrLogic)), v => {
-        if (v === "") return "(fara sectie de tiparire)";
+        if (v === "") return "(fara imprimanta)";
         const k = prodKpList.find(x => x.NrLogic === v);
         return v + (k ? " - " + k.Nume : "");
       });
@@ -3800,7 +3901,8 @@ async function loadProdGroup() {
         IRP: p.IRP,
         IIVCN: p.IIVCN,
         Bold: p.Bold,
-        MZ: p.MZ
+        MZ: p.MZ,
+        MagID: p.MagID
       };
     });
 
@@ -3974,6 +4076,22 @@ function renderProduseInspector() {
   setProdField("prod-imagine-input", row.Imagine);
   setProdField("prod-irp-input", row.IRP);
   setProdField("prod-iivcn-input", row.IIVCN);
+
+  const magIdVal = (row.MagID === null || row.MagID === undefined || row.MagID === "")
+    ? (prodMagIdList.length ? prodMagIdList[0] : "")
+    : row.MagID;
+  const magSel = document.getElementById("prod-magid-select");
+  const magInp = document.getElementById("prod-magid-input");
+  if (magSel) {
+    if (magIdVal !== "" && !Array.from(magSel.options).some(o => o.value === String(magIdVal))) {
+      const opt = document.createElement("option");
+      opt.value = String(magIdVal);
+      opt.textContent = String(magIdVal) + " (produs)";
+      magSel.appendChild(opt);
+    }
+    magSel.value = (magIdVal === "" || magIdVal === null) ? "" : String(magIdVal);
+  }
+  if (magInp) magInp.value = (magIdVal === null || magIdVal === undefined) ? "" : String(magIdVal);
   document.getElementById("prod-bg-custom").value = colorIntToHex(row.back !== null && row.back !== undefined ? row.back : 0xf0f0f0) || "#ffffff";
   document.getElementById("prod-fg-custom").value = colorIntToHex(row.fg !== null && row.fg !== undefined ? row.fg : 0x000000) || "#000000";
 
@@ -4026,6 +4144,10 @@ function syncProdFromInputs() {
   row.Imagine = prodFieldValue("prod-imagine-input", "");
   row.IRP = prodNum(document.getElementById("prod-irp-input") ? document.getElementById("prod-irp-input").value : "");
   row.IIVCN = prodNum(document.getElementById("prod-iivcn-input") ? document.getElementById("prod-iivcn-input").value : "");
+  const magSel = document.getElementById("prod-magid-select");
+  const magInp = document.getElementById("prod-magid-input");
+  if (magSel) row.MagID = prodNum(magSel.value);
+  else if (magInp) row.MagID = prodNum(magInp.value);
 }
 
 function bindProdInputs() {
@@ -4096,7 +4218,8 @@ async function saveProdusSelected() {
     Sectie: row.Sectie === null ? "" : row.Sectie,
     PV: row.PV === null ? "" : row.PV,
     Nr_TVA: row.Nr_TVA === null ? "" : row.Nr_TVA,
-    MZ: row.MZ ? 1 : 0
+    MZ: row.MZ ? 1 : 0,
+    MagID: (row.MagID === null || row.MagID === undefined) ? "" : row.MagID
   };
 
   try {

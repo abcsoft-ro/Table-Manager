@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>TableManager 1.5.0 - Modern Web POS</title>
-  <link rel="stylesheet" href="css/pos.css?v=20261012l">
+  <link rel="stylesheet" href="css/pos.css?v=20261014k">
   <script>
     /* Scalare UI libera pe AMBELE axe, plecand de la canvasul minim 1024x768.
        --pos-scale = factorul proportional (limitat de axa cu raportul cel mai mic);
@@ -307,11 +307,11 @@
         <button class="prog-btn" onclick="progAction('Imprimante sectii')">Imprimante sectii</button>
         <button class="prog-btn" onclick="progAction('Forme de plata')">Forme de plata</button>
         <button class="prog-btn" onclick="progAction('Cote TVA')">Cote TVA</button>
-        <button class="prog-btn" onclick="progAction('Conectare server')">Conectare server</button>
+        <button class="prog-btn" id="prog-btn-conectare" onclick="progAction('Conectare server')">Conectare server</button>
         <button class="prog-btn" id="prog-btn-sync" onclick="progAction('Sincronizare produse')">Sincronizare produse</button>
         <button class="prog-btn" id="prog-btn-update" onclick="progAction('Update')">Update</button>
         <button class="prog-btn" onclick="openPrintQueue()">Coada printare</button>
-        <button class="prog-btn" onclick="openSendQueue()">Coada export</button>
+        <button class="prog-btn" id="prog-btn-send-queue" onclick="openSendQueue()">Coada export</button>
       </div>
     </div>
 
@@ -320,6 +320,7 @@
       <div class="prog-header">
         <span>SETARI</span>
         <div style="display:flex; gap:8px;">
+          <button class="help-btn" title="Ajutor" aria-label="Ajutor" onclick="openHelp('setari')">?</button>
           <button class="act-btn" id="setari-save-btn" onclick="saveSetari()" style="background:#ffff00;">Salveaza</button>
           <button class="act-btn" onclick="closeProgSetari()">Inapoi</button>
         </div>
@@ -333,6 +334,7 @@
       <div class="prog-header">
         <span>ANTET</span>
         <div style="display:flex; gap:8px;">
+          <button class="help-btn" title="Ajutor" aria-label="Ajutor" onclick="openHelp('antet')">?</button>
           <button class="act-btn" onclick="saveAntet()" style="background:#ffff00;">Salveaza</button>
           <button class="act-btn" onclick="closeProgAntet()">Inapoi</button>
         </div>
@@ -471,6 +473,7 @@
       <div class="prog-header">
         <span>NOTA</span>
         <div style="display:flex; gap:8px;">
+          <button class="help-btn" title="Ajutor" aria-label="Ajutor" onclick="openHelp('nota')">?</button>
           <button class="act-btn" onclick="saveNota()" style="background:#ffff00;">Salveaza</button>
           <button class="act-btn" onclick="closeProgNota()">Inapoi</button>
         </div>
@@ -483,6 +486,7 @@
       <div class="prog-header">
         <span>CONECTARE SERVER</span>
         <div style="display:flex; gap:8px;">
+          <button class="help-btn" title="Ajutor" aria-label="Ajutor" onclick="openHelp('conectare')">?</button>
           <button class="act-btn" onclick="testConectare()">Testeaza conexiunea</button>
           <button class="act-btn" onclick="saveConectare()" style="background:#ffff00;">Salveaza</button>
           <button class="act-btn" onclick="closeProgConectare()">Inapoi</button>
@@ -570,6 +574,7 @@
       <div class="prog-header">
         <span>PAROLE</span>
         <div style="display:flex; gap:8px;">
+          <button class="help-btn" title="Ajutor" aria-label="Ajutor" onclick="openHelp('parole')">?</button>
           <button class="act-btn" onclick="saveParole()" style="background:#ffff00;">Salveaza</button>
           <button class="act-btn" onclick="closeProgParole()">Inapoi</button>
         </div>
@@ -739,6 +744,7 @@
       <div class="prog-header">
         <span>PROGRAMARE PRODUSE</span>
         <div style="display:flex; gap:8px; align-items:center;">
+          <button class="help-btn" title="Ajutor" aria-label="Ajutor" onclick="openHelp('produse')">?</button>
           <span style="font-size:14px; color:#fff; font-weight:bold;">Grupa:</span>
           <select id="prod-grup-select" class="prod-combo" onchange="onProdGrupChange()"></select>
           <button class="act-btn" onclick="reloadProduse(true)">Reload</button>
@@ -793,6 +799,11 @@
               <select id="prod-grup-field" class="prod-combo" onchange="markProdDirtyFromField()"></select>
             </div>
 
+            <div class="tva-field">
+              <label>Magazie (MagID)</label>
+              <div id="prod-magid-field"></div>
+            </div>
+
             <div class="mese-toggle-row">
               <div class="tva-field">
                 <label>UM</label>
@@ -802,7 +813,7 @@
                 </div>
               </div>
               <div class="tva-field">
-                <label>Sectie tiparire (KP)</label>
+                <label>Imprimanta KP</label>
                 <select id="prod-kp-select" class="prod-combo" onchange="markProdDirtyFromField()"></select>
               </div>
             </div>
@@ -919,6 +930,7 @@
       <div class="prog-header">
         <span>PROGRAMARE GRUPE</span>
         <div style="display:flex; gap:8px;">
+          <button class="help-btn" title="Ajutor" aria-label="Ajutor" onclick="openHelp('grupe')">?</button>
           <button class="act-btn" onclick="reloadGrupe(true)">Reload</button>
           <button class="act-btn" onclick="closeProgGrupe()">Inapoi</button>
         </div>
@@ -1019,6 +1031,7 @@
       <div class="prog-header">
         <span>PROGRAMARE MESE</span>
         <div style="display:flex; gap:8px;">
+          <button class="help-btn" title="Ajutor" aria-label="Ajutor" onclick="openHelp('mese')">?</button>
           <button class="act-btn" onclick="resetMese()" style="background:#ff0000;color:#fff;">Reset</button>
           <button class="act-btn" onclick="reloadMese(true)">Reload</button>
           <button class="act-btn" onclick="closeProgMese()">Inapoi</button>
@@ -1109,6 +1122,7 @@
       <div class="prog-header">
         <span>IMPRIMANTE</span>
         <div style="display:flex; gap:8px; align-items:center;">
+          <button class="help-btn" title="Ajutor" aria-label="Ajutor" onclick="openHelp('imprimante')">?</button>
           <span id="impr-service-badge" class="impr-badge off">Serviciu: ...</span>
           <button class="act-btn" onclick="reloadImprimante()">Reload</button>
           <button class="act-btn" style="background:#ffff00;" onclick="saveImprimante()">Salveaza</button>
@@ -1200,7 +1214,10 @@
     <div class="transfer-dialog">
       <div class="keyboard-dialog-header">
         <span>COTE TVA</span>
-        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeTVAModal()">Inchide</button>
+        <div class="help-header-actions">
+          <button class="help-btn" title="Ajutor" aria-label="Ajutor" onclick="openHelp('tva')">?</button>
+          <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeTVAModal()">Inchide</button>
+        </div>
       </div>
       <div class="transfer-body">
         <div class="transfer-subtitle">Atinge o cota pentru editare/stergere</div>
@@ -1265,7 +1282,10 @@
     <div class="transfer-dialog">
       <div class="keyboard-dialog-header">
         <span>MODURI PREPARARE</span>
-        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeMesajeModal()">Inchide</button>
+        <div class="help-header-actions">
+          <button class="help-btn" title="Ajutor" aria-label="Ajutor" onclick="openHelp('mesaje')">?</button>
+          <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeMesajeModal()">Inchide</button>
+        </div>
       </div>
       <div class="transfer-body">
         <div class="transfer-subtitle">Atinge un mod pentru editare/stergere</div>
@@ -1489,7 +1509,10 @@
     <div class="transfer-dialog">
       <div class="keyboard-dialog-header">
         <span>OSPATARI</span>
-        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeOspModal()">Inchide</button>
+        <div class="help-header-actions">
+          <button class="help-btn" title="Ajutor" aria-label="Ajutor" onclick="openHelp('ospatari')">?</button>
+          <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeOspModal()">Inchide</button>
+        </div>
       </div>
       <div class="transfer-body">
         <div class="transfer-subtitle">Atinge un ospatar pentru editare/stergere</div>
@@ -1563,7 +1586,10 @@
     <div class="transfer-dialog">
       <div class="keyboard-dialog-header">
         <span>SECTII</span>
-        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeSectModal()">Inchide</button>
+        <div class="help-header-actions">
+          <button class="help-btn" title="Ajutor" aria-label="Ajutor" onclick="openHelp('sectii')">?</button>
+          <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeSectModal()">Inchide</button>
+        </div>
       </div>
       <div class="transfer-body">
         <div class="transfer-subtitle">Atinge o sectie pentru editare/stergere</div>
@@ -1616,7 +1642,10 @@
     <div class="transfer-dialog">
       <div class="keyboard-dialog-header">
         <span>FORME DE PLATA</span>
-        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeFpModal()">Inchide</button>
+        <div class="help-header-actions">
+          <button class="help-btn" title="Ajutor" aria-label="Ajutor" onclick="openHelp('forme_plata')">?</button>
+          <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeFpModal()">Inchide</button>
+        </div>
       </div>
       <div class="transfer-body">
         <div class="transfer-subtitle">Atinge o forma de plata pentru editare/stergere</div>
@@ -2050,12 +2079,24 @@
     </div>
   </div>
 
+  <!-- Modal AJUTOR (help contextual per ecran de setari / editor) -->
+  <div class="modal-keyboard-overlay" id="modal-help" onclick="if(event.target===this) closeHelp()">
+    <div class="help-dialog">
+      <div class="keyboard-dialog-header">
+        <span id="modal-help-title">AJUTOR</span>
+        <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeHelp()">Inchide</button>
+      </div>
+      <div class="help-body" id="modal-help-body"></div>
+    </div>
+  </div>
+
   <!-- Toast Notification -->
   <div class="pos-toast" id="pos-toast">Notificare</div>
 
   </div><!-- /#pos-stage -->
 
   <!-- Script aplicatie -->
-  <script src="js/pos.js?v=20261012l"></script>
+  <script src="js/help.js?v=20261014k"></script>
+  <script src="js/pos.js?v=20261014k"></script>
 </body>
 </html>
