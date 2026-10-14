@@ -126,6 +126,35 @@ function ensureRaspunsCasaColumns($conn) {
 }
 
 /**
+ * Adauga coloanele folosite de fluxul de comanda daca lipsesc (deploy fara
+ * pasi manuali pe instalatiile vechi). In special tblProd.MagID, citita de
+ * add_product la selectarea produsului: fara ea, query-ul esueaza si
+ * sqlsrv_fetch_array(false) arunca un TypeError (raspuns HTML in loc de JSON).
+ *
+ * @param resource $conn
+ */
+function ensureOrderSchema($conn) {
+    static $done = false;
+    if ($done) { return; }
+    @sqlsrv_query(
+        $conn,
+        "IF COL_LENGTH('dbo.tblProd','MagID') IS NULL
+             ALTER TABLE dbo.tblProd ADD MagID int NULL;
+         IF COL_LENGTH('dbo.tblNoteD','Magid') IS NULL
+             ALTER TABLE dbo.tblNoteD ADD Magid smallint NULL;
+         IF COL_LENGTH('dbo.tblNoteD','StornoRef') IS NULL
+             ALTER TABLE dbo.tblNoteD ADD StornoRef int NULL;
+         IF COL_LENGTH('dbo.tblNoteD','Comment') IS NULL
+             ALTER TABLE dbo.tblNoteD ADD [Comment] nvarchar(50) NULL;
+         IF COL_LENGTH('dbo.tblBonCurent','MagID') IS NULL
+             ALTER TABLE dbo.tblBonCurent ADD MagID int NULL",
+        null,
+        ['QueryTimeout' => 15]
+    );
+    $done = true;
+}
+
+/**
  * Adauga coloana tblParola.ParolaUpdate daca lipseste (deploy fara pasi
  * manuali). Parola care protejeaza modulul de actualizare din GitHub.
  *

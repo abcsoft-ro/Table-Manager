@@ -1742,6 +1742,7 @@ function buildFiscalTextFiscalNet($items, $platiArr, $tvaMap = [], $cui = '') {
 }
 
 $conn = getDBConnection();
+ensureOrderSchema($conn);
 $raw = file_get_contents('php://input');
 $input = json_decode($raw, true);
 if (!$input || !is_array($input)) {

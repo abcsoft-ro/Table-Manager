@@ -74,3 +74,18 @@ function sendJsonResponse($data, $statusCode = 200) {
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     exit;
 }
+
+/**
+ * Orice eroare neasteptata (ex. un TypeError din sqlsrv cand o coloana lipseste
+ * pe o instalatie veche) este intoarsa ca JSON in loc de pagina HTML. Altfel
+ * clientul primeste un raspuns non-JSON si raporteaza "JSON.parse: unexpected
+ * character" in loc de eroarea reala.
+ */
+set_exception_handler(function ($e) {
+    if (!headers_sent()) {
+        sendJsonResponse([
+            "status" => "error",
+            "message" => "Eroare server: " . $e->getMessage()
+        ], 500);
+    }
+});
