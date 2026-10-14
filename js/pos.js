@@ -96,6 +96,9 @@ document.addEventListener("DOMContentLoaded", () => {
   setInterval(updateLiveClock, 1000);
   // Campul de scanare pastreaza focusul in ecranul de marcare (fara popup activ)
   setInterval(focusScanInput, 700);
+  // Eticheta "Coada printare" se sincronizeaza periodic cu coada (joburile
+  // asincrone trec in 'done' fara vreo actiune a utilizatorului).
+  setInterval(refreshPrintStatus, 5000);
 });
 
 async function initApp() {
@@ -614,12 +617,12 @@ async function loadOrder(nrMasa) {
 
     POS_STATE.masaCurenta = nrMasa;
     POS_STATE.docId = data.docId || null;
-    // CUI-ul apartine notei curente: se goleste cand trecem pe alta nota.
-    if (POS_STATE.cuiDocId !== POS_STATE.docId) {
-      POS_STATE.cuiDocId = POS_STATE.docId;
-      POS_STATE.cui = "";
-      updateCuiButton();
-    }
+    // CUI-ul (codul fiscal al clientului) este tinut pe nota in
+    // tblBonCurent.CodFiscBon; il preluam de la server ca sa fie pastrat si
+    // dupa un refresh al paginii sau la revenirea pe nota.
+    POS_STATE.cuiDocId = POS_STATE.docId;
+    POS_STATE.cui = (data.codFiscBon || "");
+    updateCuiButton();
     POS_STATE.articole = data.articole || [];
     // Proprietarul bonului (ospatarul care l-a deschis) - nu suprascriem
     // casierul curent (operatorul logat).
@@ -2031,7 +2034,7 @@ async function syncProducts() {
 
     // 2. Doar daca este permis, cerem confirmarea
     appConfirm(
-      "Sincronizarea inlocuieste produsele, grupele, ospatarii si formele de plata din sursa externa. Continuati?",
+      "Sincronizarea inlocuieste produsele si grupele din sursa externa. Continuati?",
       () => doSyncProducts(),
       "Da",
       "Nu"
@@ -2976,7 +2979,7 @@ async function saveSetari() {
 // --------------------------------------------------------------------------
 // PROGRAMARE MESE (tblMese) - harta live 10x8 + inspector
 // --------------------------------------------------------------------------
-let meseWorking = {};   // NrMasa -> {MasaID?, NrMasa, back, fg, bold, afisez, nrpos, obs}
+let meseWorking = {};   // NrMasa -> {MasaID?, NrMasa, back, fg, bold, afisez, obs}
 let meseDirty = {};     // NrMasa -> true daca are modificari nesalvate
 let meseSelected = null;
 let meseLoaded = false;
@@ -3044,6 +3047,25 @@ function closeProgMese() {
   navigateToScreen("screen-programare");
 }
 
+function resetMese() {
+  appConfirm("Resetati toate mesele la valorile implicite? Toate modificarile nesalvate vor fi pierdute.", () => doResetMese(), "Reset", "Anuleaza");
+}
+
+function doResetMese() {
+  fetch("api/mese.php", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "reset" })
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status !== "success") throw new Error(data.message || "Eroare");
+      showToast(data.message);
+      reloadMese(false);
+    })
+    .catch(err => appAlert("Eroare resetare mese: " + err.message));
+}
+
 function reloadMese(warn) {
   const hasDirty = Object.keys(meseDirty).length > 0;
   if (warn && hasDirty) {
@@ -3069,7 +3091,6 @@ function doReloadMese() {
           fg: m.ForeColor,
           bold: m.Bold,
           afisez: m.Afisez,
-          nrpos: m.NrPOS,
           obs: m.Obs
         };
       });
@@ -3172,7 +3193,7 @@ function renderMeseInspector() {
 
   // O pozitie libera selectata => cream automat un draft (implicit) de masa pentru editare
   if (!o) {
-    o = { MasaID: null, NrMasa: meseSelected, back: null, fg: null, bold: false, afisez: true, nrpos: null, obs: "" };
+    o = { MasaID: null, NrMasa: meseSelected, back: null, fg: null, bold: false, afisez: true, obs: "" };
     meseWorking[meseSelected] = o;
     renderMeseMap(); // celula isi schimba aspectul din "+" liber in masa editabila
   }
@@ -3271,7 +3292,6 @@ async function saveMeseSelected() {
     ForeColor: o.fg === null ? "" : o.fg,
     Bold: o.bold ? 1 : 0,
     Afisez: o.afisez ? 1 : 0,
-    NrPOS: o.nrpos === null ? "" : o.nrpos,
     Obs: o.obs || ""
   };
 
@@ -4377,6 +4397,125 @@ const CONECTARE_FIELDS = [
   { key: "ODBC_connect_string", id: "con-odbc" }
 ];
 
+// Mapari server -> local (tblMapKP / tblMapSectii), editate in Conectare server.
+let mapKpRows = [];
+let mapSectiiRows = [];
+let mapOptions = { localKP: [], serverKP: [], localSectii: [], serverSectii: [], serverError: null };
+
+// Optiunile unui <select>: lista server/local, plus valoarea curenta daca nu e
+// deja in lista (ca sa nu se piarda o mapare existenta).
+function mapOptionListHtml(options, currentValue) {
+  const cur = (currentValue === null || currentValue === undefined) ? "" : String(currentValue);
+  const list = (options || []).slice();
+  if (cur !== "" && !list.some(o => String(o.value) === cur)) {
+    list.unshift({ value: cur, label: cur + " (fara denumire)" });
+  }
+  let html = '<option value=""></option>';
+  list.forEach(o => {
+    const sel = String(o.value) === cur ? " selected" : "";
+    html += `<option value="${escapeHtml(o.value)}"${sel}>${escapeHtml(o.value)} - ${escapeHtml(o.label)}</option>`;
+  });
+  return html;
+}
+
+function renderMapKpList() {
+  const cont = document.getElementById("map-kp-list");
+  if (!cont) return;
+  if (!mapKpRows.length) {
+    cont.innerHTML = '<div style="color:#777;font-size:12px;">Nicio mapare (se folosesc valorile din server).</div>';
+    return;
+  }
+  let html = '<table class="raport-table" style="width:auto;"><thead><tr>'
+    + '<th>KP server</th><th>KP local</th><th></th></tr></thead><tbody>';
+  mapKpRows.forEach((r, i) => {
+    html += `<tr>
+      <td><select class="tva-input" id="map-kp-s-${i}">${mapOptionListHtml(mapOptions.serverKP, r.server)}</select></td>
+      <td><select class="tva-input" id="map-kp-l-${i}">${mapOptionListHtml(mapOptions.localKP, r.local)}</select></td>
+      <td><button class="act-btn" onclick="removeMapKpRow(${i})">Sterge</button></td>
+    </tr>`;
+  });
+  cont.innerHTML = html + '</tbody></table>';
+}
+
+function collectMapKp() {
+  return mapKpRows.map((r, i) => {
+    const s = document.getElementById(`map-kp-s-${i}`);
+    const l = document.getElementById(`map-kp-l-${i}`);
+    return { server: s ? s.value : (r.server ?? ""), local: l ? l.value : (r.local ?? "") };
+  });
+}
+
+function addMapKpRow() {
+  mapKpRows = collectMapKp();
+  mapKpRows.push({ server: "", local: "" });
+  renderMapKpList();
+}
+
+function removeMapKpRow(i) {
+  mapKpRows = collectMapKp();
+  mapKpRows.splice(i, 1);
+  renderMapKpList();
+}
+
+function renderMapSectiiList() {
+  const cont = document.getElementById("map-sectii-list");
+  if (!cont) return;
+  if (!mapSectiiRows.length) {
+    cont.innerHTML = '<div style="color:#777;font-size:12px;">Nicio mapare (se folosesc valorile din server).</div>';
+    return;
+  }
+  let html = '<table class="raport-table" style="width:auto;"><thead><tr>'
+    + '<th>Sectie server</th><th>Sectie locala</th><th></th></tr></thead><tbody>';
+  mapSectiiRows.forEach((r, i) => {
+    html += `<tr>
+      <td><select class="tva-input" id="map-sec-s-${i}">${mapOptionListHtml(mapOptions.serverSectii, r.server)}</select></td>
+      <td><select class="tva-input" id="map-sec-l-${i}">${mapOptionListHtml(mapOptions.localSectii, r.local)}</select></td>
+      <td><button class="act-btn" onclick="removeMapSectiiRow(${i})">Sterge</button></td>
+    </tr>`;
+  });
+  cont.innerHTML = html + '</tbody></table>';
+}
+
+function collectMapSectii() {
+  return mapSectiiRows.map((r, i) => {
+    const s = document.getElementById(`map-sec-s-${i}`);
+    const l = document.getElementById(`map-sec-l-${i}`);
+    return { server: s ? s.value : (r.server ?? ""), local: l ? l.value : (r.local ?? "") };
+  });
+}
+
+function addMapSectiiRow() {
+  mapSectiiRows = collectMapSectii();
+  mapSectiiRows.push({ server: "", local: "" });
+  renderMapSectiiList();
+}
+
+function removeMapSectiiRow(i) {
+  mapSectiiRows = collectMapSectii();
+  mapSectiiRows.splice(i, 1);
+  renderMapSectiiList();
+}
+
+// Incarca listele pentru combobox-uri (KP/Sectii de pe local si server).
+async function loadMapOptions() {
+  try {
+    const resp = await fetch("api/conectare.php?options=1");
+    const data = await resp.json();
+    if (data.status === "success" && data.mapOptions) {
+      mapOptions = data.mapOptions;
+    }
+  } catch (err) {
+    /* listele optionale; se pastreaza valorile curente */
+  }
+  const errEl = document.getElementById("map-server-error");
+  if (errEl) {
+    errEl.textContent = mapOptions.serverError ? ("Listele de pe server nu s-au putut incarca: " + mapOptions.serverError) : "";
+    errEl.style.display = mapOptions.serverError ? "block" : "none";
+  }
+  renderMapKpList();
+  renderMapSectiiList();
+}
+
 function openProgConectare() {
   navigateToScreen("screen-prog-conectare");
   loadConectare();
@@ -4398,6 +4537,14 @@ async function loadConectare() {
     });
     const tcEl = document.getElementById("con-tc");
     if (tcEl) tcEl.value = row.TC ? "1" : "0";
+
+    mapKpRows = Array.isArray(data.mapKP)
+      ? data.mapKP.map(m => ({ server: m.server, local: m.local }))
+      : [];
+    mapSectiiRows = Array.isArray(data.mapSectii)
+      ? data.mapSectii.map(m => ({ server: m.server, local: m.local }))
+      : [];
+    await loadMapOptions();
   } catch (err) {
     appAlert("Eroare conectare server: " + err.message);
   }
@@ -4411,6 +4558,8 @@ async function saveConectare() {
   });
   const tcEl = document.getElementById("con-tc");
   payload.TC = (tcEl && tcEl.value === "1") ? 1 : 0;
+  payload.mapKP = collectMapKp();
+  payload.mapSectii = collectMapSectii();
 
   try {
     const resp = await fetch("api/conectare.php", {
@@ -5942,8 +6091,7 @@ async function saveImprimante() {
         action: s.isNew ? "insert" : "update",
         NrLogic: s.NrLogic,
         Nume: String(s.Nume).trim(),
-        Stare: s.Stare ? 1 : 0,
-        DenumirePrinter: s.target.type === "windows" ? s.target.name : (s.target.type === "network" ? s.target.host : "")
+        Stare: s.Stare ? 1 : 0
       });
       if (res.status !== "success") throw new Error(res.message);
       s.isNew = false;
@@ -6556,10 +6704,11 @@ function cuiOk() {
     return;
   }
   POS_STATE.cui = raw;
-  if (POS_STATE.cui !== "") POS_STATE.cuiDocId = POS_STATE.docId;
+  POS_STATE.cuiDocId = (raw !== "") ? POS_STATE.docId : null;
   cuiSetError("");
   closeCuiModal();
   updateCuiButton();
+  saveCuiToServer(raw);
   showToast(POS_STATE.cui ? ("CUI: " + POS_STATE.cui) : "Cod fiscal sters");
 }
 
@@ -6570,7 +6719,31 @@ function cuiRemove() {
   cuiSetError("");
   closeCuiModal();
   updateCuiButton();
+  saveCuiToServer("");
   showToast("Cod fiscal sters");
+}
+
+// Salveaza codul fiscal al clientului pe nota deschisa (tblBonCurent.CodFiscBon),
+// ca sa fie pastrat si in afara memoriei clientului. Best-effort: la inchidere
+// codul este oricum trimis la close_bill.
+async function saveCuiToServer(cui) {
+  if (!POS_STATE.docId) return;
+  try {
+    const resp = await fetch("api/order_action.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set_cui", docId: POS_STATE.docId, cui: cui || "" })
+    });
+    const res = await resp.json();
+    if (res.status !== "success") throw new Error(res.message || "eroare necunoscuta");
+    if (typeof res.cui === "string") {
+      POS_STATE.cui = res.cui;
+      POS_STATE.cuiDocId = res.cui ? POS_STATE.docId : null;
+      updateCuiButton();
+    }
+  } catch (e) {
+    showToast("Eroare salvare cod fiscal: " + e.message);
+  }
 }
 
 function updateCuiButton() {
@@ -7041,28 +7214,32 @@ async function openPrintQueue() {
 function closePrintQueue() {
   document.getElementById("modal-print-queue").classList.remove("active");
   printQueueSelected = null;
+  refreshPrintStatus();
 }
 
 async function refreshPrintQueue() {
   try {
-    const resp = await fetch("api/print_queue.php?action=list");
+    const resp = await fetch("api/print_queue.php?action=list", { cache: "no-store" });
     const data = await resp.json();
     if (data.status !== "success") throw new Error(data.message || "Eroare");
     printQueueRows = data.rows || [];
     renderPrintQueue();
+    // Coada si eticheta de pe buton se citesc din aceeasi stare: le sincronizam.
+    refreshPrintStatus();
   } catch (err) {
     showToast("Eroare coada printare: " + err.message);
   }
 }
 
 async function refreshPrintStatus() {
+  // Fara butonul de pe ecran (ex. in alte ecrane) nu are rost sa interogam.
+  const btn = document.getElementById("btn-print-queue");
+  if (!btn) return;
   try {
-    const resp = await fetch("api/print_queue.php?action=status");
+    const resp = await fetch("api/print_queue.php?action=status", { cache: "no-store" });
     const data = await resp.json();
     if (data.status !== "success") return;
     const inLucru = (data.pending || 0) + (data.printing || 0);
-    const btn = document.getElementById("btn-print-queue");
-    if (!btn) return;
     if (inLucru > 0 || (data.failed || 0) > 0) {
       btn.innerHTML = `Coada<br>printare` + `<div style="font-size:11px; font-weight:bold; color:#000000;">${inLucru} in asteptare${(data.failed||0)>0 ? ', ' + data.failed + ' esuate' : ''}</div>`;
     } else {

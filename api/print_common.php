@@ -81,6 +81,51 @@ function ensureBillDiscountMotiveColumn($conn) {
 }
 
 /**
+ * Adauga coloana CodFiscBon (codul fiscal al clientului, afisat pe bonul
+ * fiscal) in tblBonCurent si tblBon daca lipseste (deploy fara pasi manuali).
+ * In tblBonCurent tine codul notei deschise/inchise, iar Z-ul il arhiveaza in
+ * tblBon.CodFiscBon.
+ *
+ * @param resource $conn
+ */
+function ensureCodFiscBonColumns($conn) {
+    static $done = false;
+    if ($done) { return; }
+    @sqlsrv_query(
+        $conn,
+        "IF COL_LENGTH('dbo.tblBonCurent','CodFiscBon') IS NULL
+             ALTER TABLE dbo.tblBonCurent ADD CodFiscBon nvarchar(50) NULL;
+         IF COL_LENGTH('dbo.tblBon','CodFiscBon') IS NULL
+             ALTER TABLE dbo.tblBon ADD CodFiscBon nvarchar(50) NULL",
+        null,
+        ['QueryTimeout' => 15]
+    );
+    $done = true;
+}
+
+/**
+ * Adauga coloana RaspunsCasa (continutul brut al raspunsului casei de marcat,
+ * cand tblSet.AsteaptaRaspunsCasa = 1) in tblBonCurent si tblBon daca lipseste.
+ * Aceeasi valoare ca temp_Send_Sql.RaspunsCasa; Z-ul o arhiveaza in tblBon.
+ *
+ * @param resource $conn
+ */
+function ensureRaspunsCasaColumns($conn) {
+    static $done = false;
+    if ($done) { return; }
+    @sqlsrv_query(
+        $conn,
+        "IF COL_LENGTH('dbo.tblBonCurent','RaspunsCasa') IS NULL
+             ALTER TABLE dbo.tblBonCurent ADD RaspunsCasa nvarchar(max) NULL;
+         IF COL_LENGTH('dbo.tblBon','RaspunsCasa') IS NULL
+             ALTER TABLE dbo.tblBon ADD RaspunsCasa nvarchar(max) NULL",
+        null,
+        ['QueryTimeout' => 15]
+    );
+    $done = true;
+}
+
+/**
  * Adauga coloana tblParola.ParolaUpdate daca lipseste (deploy fara pasi
  * manuali). Parola care protejeaza modulul de actualizare din GitHub.
  *

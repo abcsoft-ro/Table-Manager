@@ -13,7 +13,27 @@
  */
 require_once __DIR__ . '/db.php';
 
+/**
+ * Sterge coloanele legacy din tblKP daca mai exista (migrare idempotenta).
+ * Catalogul a fost simplificat la NrLogic, Nume, Stare; destinatia fizica se
+ * tine in print-service/config.json, nu in baza de date.
+ *
+ * @param resource $conn Conexiunea SQL Server.
+ * @return void
+ */
+function ensureKpSchema($conn) {
+    @sqlsrv_query(
+        $conn,
+        "IF COL_LENGTH('dbo.tblKP','Serie') IS NOT NULL ALTER TABLE dbo.tblKP DROP COLUMN Serie;
+         IF COL_LENGTH('dbo.tblKP','MagID') IS NOT NULL ALTER TABLE dbo.tblKP DROP COLUMN MagID;
+         IF COL_LENGTH('dbo.tblKP','CaleTSC') IS NOT NULL ALTER TABLE dbo.tblKP DROP COLUMN CaleTSC;
+         IF COL_LENGTH('dbo.tblKP','raport') IS NOT NULL ALTER TABLE dbo.tblKP DROP COLUMN raport;
+         IF COL_LENGTH('dbo.tblKP','DenumirePrinter') IS NOT NULL ALTER TABLE dbo.tblKP DROP COLUMN DenumirePrinter"
+    );
+}
+
 $conn = getDBConnection();
+ensureKpSchema($conn);
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     // Cate produse folosesc fiecare NrLogic (tblProd.KP).
@@ -26,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     }
 
     $rows = [];
-    $stmt = sqlsrv_query($conn, "SELECT NrLogic, Stare, Nume, DenumirePrinter FROM tblKP ORDER BY NrLogic");
+    $stmt = sqlsrv_query($conn, "SELECT NrLogic, Stare, Nume FROM tblKP ORDER BY NrLogic");
     if ($stmt) {
         while ($r = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
             $nr = (int)$r['NrLogic'];
@@ -34,7 +54,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 "NrLogic" => $nr,
                 "Stare" => (bool)$r['Stare'],
                 "Nume" => trim($r['Nume'] ?? ''),
-                "DenumirePrinter" => trim($r['DenumirePrinter'] ?? ''),
                 "usedCount" => $used[$nr] ?? 0
             ];
         }
@@ -59,20 +78,16 @@ switch ($action) {
         }
 
         $nume = trim($input['Nume'] ?? '');
-        $denPrinter = trim($input['DenumirePrinter'] ?? '');
         $stare = !empty($input['Stare']) ? 1 : 0;
         if ($nume === '') {
             sendJsonResponse(["status" => "error", "message" => "Numele sectiei este obligatoriu"], 400);
         }
 
-        $params = [($nume === '' ? null : $nume), $stare, ($denPrinter === '' ? null : $denPrinter)];
-
         if ($action === 'insert') {
             $stmt = sqlsrv_query(
                 $conn,
-                "INSERT INTO tblKP (NrLogic, Serie, Stare, Nume, MagID, CaleTSC, raport, DenumirePrinter)
-                 VALUES (?, NULL, ?, ?, NULL, NULL, NULL, ?)",
-                array_merge([$nrLogic], $params)
+                "INSERT INTO tblKP (NrLogic, Nume, Stare) VALUES (?, ?, ?)",
+                [$nrLogic, $nume, $stare]
             );
             if (!$stmt) {
                 sendJsonResponse(["status" => "error", "message" => "Eroare inserare sectie (posibil NrLogic duplicat): " . sqlsrv_errors()[0]['message']], 500);
@@ -81,8 +96,8 @@ switch ($action) {
         } else {
             $stmt = sqlsrv_query(
                 $conn,
-                "UPDATE tblKP SET Nume = ?, Stare = ?, DenumirePrinter = ? WHERE NrLogic = ?",
-                array_merge($params, [$nrLogic])
+                "UPDATE tblKP SET Nume = ?, Stare = ? WHERE NrLogic = ?",
+                [$nume, $stare, $nrLogic]
             );
             if (!$stmt) {
                 sendJsonResponse(["status" => "error", "message" => "Eroare actualizare sectie: " . sqlsrv_errors()[0]['message']], 500);

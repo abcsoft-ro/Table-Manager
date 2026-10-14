@@ -55,7 +55,10 @@ else
   HUMAN=""
 fi
 
-cat > "$SETUP_DIR/payload/app-version.json" <<EOF
+# Scriere atomica (tmp + mv) ca cititorii (VS Code, API) sa nu prinda niciodata
+# un fisier partial scris.
+APP_VER_TMP="$SETUP_DIR/payload/app-version.json.tmp"
+cat > "$APP_VER_TMP" <<EOF
 {
     "version": "$HUMAN",
     "sha": "$SHA",
@@ -65,10 +68,13 @@ cat > "$SETUP_DIR/payload/app-version.json" <<EOF
     "builtAt": "$BUILT_AT"
 }
 EOF
+mv -f "$APP_VER_TMP" "$SETUP_DIR/payload/app-version.json"
 
 # Marcheaza versiunea si pe masina de dezvoltare (logs/ e ignorat de git).
+# Scriere atomica (tmp + mv) ca VS Code / API sa nu vada un fisier partial.
 mkdir -p logs
-cat > logs/update_state.json <<EOF
+STATE_TMP="logs/update_state.json.tmp"
+cat > "$STATE_TMP" <<EOF
 {
     "sha": "$SHA",
     "short": "$SHORT",
@@ -79,6 +85,7 @@ cat > logs/update_state.json <<EOF
     "source": "dev"
 }
 EOF
+mv -f "$STATE_TMP" logs/update_state.json
 printf '[%s] VERSION SET: v%s %s build %s source=dev\n' "$BUILT_AT" "$HUMAN" "$SHORT" "$BUILD" >> logs/version.log
 
 tar -czf "$SETUP_DIR/payload/app.tgz" -C "$ROOT/.." \

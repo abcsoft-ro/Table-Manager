@@ -4,13 +4,18 @@
  * Parametri GET: masa (int, ex: 1)
  */
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/print_common.php';
 
 $conn = getDBConnection();
+
+// Coloana CodFiscBon poate lipsi pe o instalare mai veche (deploy fara pasi
+// manuali): o cream inainte de a o citi.
+ensureCodFiscBonColumns($conn);
 
 $nrMasa = isset($_GET['masa']) ? (int)$_GET['masa'] : 1;
 
 // Cautam ultimul bon deschis (Stare = 'D') pentru aceasta masa
-$sqlBon = "SELECT TOP 1 b.DocID, b.NrDoc, b.Data, b.Ora, b.NrOp, b.TotalB, b.Stare, b.NrMasa, o.Nume as NumeCasier
+$sqlBon = "SELECT TOP 1 b.DocID, b.NrDoc, b.Data, b.Ora, b.NrOp, b.TotalB, b.Stare, b.NrMasa, b.CodFiscBon, o.Nume as NumeCasier
            FROM tblBonCurent b
            LEFT JOIN tblOsp o ON b.NrOp = o.NrOsp
            WHERE b.NrMasa = ? AND b.Stare = 'D'
@@ -34,6 +39,7 @@ if (!$bon) {
         "docId" => null,
         "nrOp" => null,
         "casier" => "CASIER 1",
+        "codFiscBon" => "",
         "total" => 0,
         "subtotal" => 0,
         "reducere" => 0,
@@ -176,6 +182,7 @@ sendJsonResponse([
     "nrMasa" => $nrMasa,
     "nrOp" => $bon['NrOp'] === null ? null : (int)$bon['NrOp'],
     "casier" => $bon['NumeCasier'] ? trim($bon['NumeCasier']) : "CASIER 1",
+    "codFiscBon" => trim((string)($bon['CodFiscBon'] ?? '')),
     "dataOra" => $dataOraStr,
     "subtotal" => (float)$subtotalOriginal,
     "total" => (float)$subtotalNet,

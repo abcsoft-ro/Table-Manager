@@ -103,7 +103,7 @@ Alegerea se face din **Setări → General** (`TipVanz`). Aceeași bază de date
 
 ### Multi-stație & integrare
 - **Export către server** — la închiderea fiecărei note se scrie o comandă `EXEC EmitBon_Ext_NOU` (Restaurant) / `EmitBon_Ext_2` (FastFood) într-o coadă durabilă; un serviciu Python o execută pe serverul din `tblConectare`. Dacă serverul e oprit, comanda se reîncearcă **la infinit**, cu backoff.
-- **Import produse/grupe la pornire** — sincronizare de pe serverul extern prin procedura `dbo.ImportProd`.
+- **Import produse/grupe la pornire** — sincronizare de pe serverul extern prin procedura `dbo.ImportProd`. Se pot importa una sau mai multe magazii (`tblSet.MagID`, ex. `1,2`); la produsele prezente în mai multe magazii câștigă prima din listă.
 
 ---
 

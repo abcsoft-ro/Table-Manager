@@ -171,11 +171,12 @@ function getConectareDb($conn) {
 /**
  * Construieste comanda SQL EXEC pentru o nota, in coada temp_Send_Sql.
  *
- * sVanzare1 = "ProdID:Cant:PV:PVC:Tvac;" pentru fiecare linie de produs
- *             (modurile de preparare, ProdID = 0, sunt ignorate).
+ * sVanzare1 = "ProdID:Cant:PV:PVC:TVAc:MagID;" pentru fiecare linie de produs
+ *             (modurile de preparare, ProdID = 0, sunt ignorate). MagID-ul liniei
+ *             este tblProd.MagID (gestiunea produsului), cu fallback pe MagID-ul
+ *             setarii, ca operatiile de stoc sa aiba mereu o magazie valida.
  * sFP       = "FPID:Suma;" din trelDocIDFpID.
- * Procedura difera dupa TipVanz: Restaurant -> EmitBon_Ext_NOU,
- * FastFood -> EmitBon_Ext_2.
+ * Procedura de pe serverul extern: EmitBon_Ext_3.
  *
  * $nrBonOverride / $nrZOverride = numerele reale din raspunsul casei de marcat
  * (cand AsteaptaRaspunsCasa = 1). $raspunsCasa = continutul brut al fisierului
@@ -202,13 +203,19 @@ function enqueueBillSendSql($conn, $docId, $bon, $plati = [], $nrBonOverride = n
 
     ensureSendSqlTable($conn);
 
-    // sVanzare1: liniile de produs, in ordinea notei.
+    // MagID-ul bonului (setarea MagID; poate fi o lista '1,2' -> primul intreg).
+    $magId = getTblSetInt($conn, 'MagID', 0);
+
+    // sVanzare1: liniile de produs, in ordinea notei. MagID-ul fiecarei linii
+    // vine din tblProd.MagID (gestiunea produsului); daca lipseste, se foloseste
+    // MagID-ul setarii.
     $stmtArt = sqlsrv_query(
         $conn,
-        "SELECT ProdID, Cant, PV, PVC, TVAc
-         FROM tblNoteD
-         WHERE DocID = ? AND ProdID > 0
-         ORDER BY OraComanda, ECRID",
+        "SELECT n.ProdID, n.Cant, n.PV, n.PVC, n.TVac, p.MagID AS ProdMagID
+         FROM tblNoteD n
+         LEFT JOIN tblProd p ON p.ProdID = n.ProdID
+         WHERE n.DocID = ? AND n.ProdID > 0
+         ORDER BY n.OraComanda, n.ECRID",
         [$docId]
     );
     if ($stmtArt === false) { return false; }
@@ -217,11 +224,14 @@ function enqueueBillSendSql($conn, $docId, $bon, $plati = [], $nrBonOverride = n
     while ($r = sqlsrv_fetch_array($stmtArt, SQLSRV_FETCH_ASSOC)) {
         $pv = (float)$r['PV'];
         $pvc = ($r['PVC'] !== null) ? (float)$r['PVC'] : $pv;
+        $linieMag = ($r['ProdMagID'] !== null && $r['ProdMagID'] !== '')
+            ? (int)$r['ProdMagID'] : $magId;
         $sVanzare .= (int)$r['ProdID'] . ':'
             . sendFmtNum($r['Cant']) . ':'
             . sendFmtNum($pv) . ':'
             . sendFmtNum($pvc) . ':'
-            . (int)($r['TVAc'] ?? 0) . ';';
+            . (int)($r['TVAc'] ?? 0) . ':'
+            . $linieMag . ';';
     }
 
     // sFP: formele de plata ale notei (scrise mai sus in aceeasi tranzactie).
@@ -255,7 +265,6 @@ function enqueueBillSendSql($conn, $docId, $bon, $plati = [], $nrBonOverride = n
     if ($zRow) { $nrZ = (int)$zRow['NrZ']; }
 
     $statieId = getTblSetInt($conn, 'NrLogic', 0);
-    $magId = getTblSetInt($conn, 'MagID', 0);
     $nrBon = (int)($bon['NrDoc'] ?? 0);
 
     // Valorile reale din raspunsul casei de marcat au prioritate (daca exista).
@@ -271,10 +280,17 @@ function enqueueBillSendSql($conn, $docId, $bon, $plati = [], $nrBonOverride = n
     $sData = $nowRow ? trim((string)$nowRow['D']) : date('Y-m-d');
     $sOra = $nowRow ? trim((string)$nowRow['T']) : date('H:i:s');
 
-    // Procedura difera dupa TipVanz (1 = FastFood). Interogare locala, ca
-    // send_common.php sa nu depinda de functiile din order_action.php.
-    $tipVanz = getTblSetInt($conn, 'TipVanz', 0);
-    $proc = ($tipVanz === 1) ? 'EmitBon_Ext_2' : 'EmitBon_Ext_NOU';
+    // Procedura de pe serverul extern (DataRON) care proceseaza bonul.
+    $proc = 'EmitBon_Ext_3';
+
+    // Codul fiscal al clientului (CodFiscBon) de pe nota, arhivat de procedura
+    // in tblBon. null/'' => parametru NULL.
+    $codFiscBon = '';
+    $stmtCui = sqlsrv_query($conn, "SELECT CodFiscBon FROM tblBonCurent WHERE DocID = ?", [$docId]);
+    if ($stmtCui) {
+        $cuiRow = sqlsrv_fetch_array($stmtCui, SQLSRV_FETCH_ASSOC);
+        if ($cuiRow) { $codFiscBon = trim((string)($cuiRow['CodFiscBon'] ?? '')); }
+    }
 
     // Continutul brut al fisierului de confirmare .nrb al casei de marcat (cand
     // AsteaptaRaspunsCasa = 1). null cand nu exista raspuns (export clasic).
@@ -294,6 +310,8 @@ function enqueueBillSendSql($conn, $docId, $bon, $plati = [], $nrBonOverride = n
         . sendSqlNum($total) . ','
         . sendSqlNum($bon['ClientID'] ?? 0) . ','
         . sendSqlNum($statieId) . ','
+        // Codul fiscal al clientului (NULL cand nu e completat).
+        . ($codFiscBon === '' ? 'NULL' : sendSqlStr($codFiscBon)) . ','
         // Ultimul parametru: raspunsul brut al casei de marcat (NULL la exportul clasic).
         . ($raspunsCasaVal === null ? 'NULL' : sendSqlStr($raspunsCasaVal)) . ';';
 

@@ -19,7 +19,23 @@ function tblProdFloatOrNull($v) {
     return (float)$t;
 }
 
+/**
+ * Adauga coloana MagID (id-ul magaziei/gestiunii) in tblProd daca lipseste
+ * (migrare idempotenta). Nu e editata din ecranul de produse; este pastrata
+ * pentru consistenta cu restul tabelelor si pentru import/sincronizare.
+ *
+ * @param resource $conn Conexiunea SQL Server.
+ * @return void
+ */
+function ensureProdSchema($conn) {
+    @sqlsrv_query(
+        $conn,
+        "IF COL_LENGTH('dbo.tblProd','MagID') IS NULL ALTER TABLE dbo.tblProd ADD MagID int NULL"
+    );
+}
+
 $conn = getDBConnection();
+ensureProdSchema($conn);
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $nrgrp = isset($_GET['nrgrp']) ? (int)$_GET['nrgrp'] : 0;

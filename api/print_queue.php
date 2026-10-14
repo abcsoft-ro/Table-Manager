@@ -79,7 +79,7 @@ if ($isGet) {
         $jobId = (int)($_GET['jobId'] ?? 0);
         $stmt = sqlsrv_query($conn, "SELECT q.JobID, q.Tip, q.RefDocID, q.PrinterNr, q.Stare, q.Attempts, q.NextAttempt,
                                             q.LastError, q.CreatedAt, q.PrintedAt,
-                                            COALESCE(k.Nume, k.DenumirePrinter, '') AS PrinterName
+                                            COALESCE(k.Nume, '') AS PrinterName
                                      FROM tblPrintQueue q
                                      LEFT JOIN tblKP k ON q.PrinterNr = k.NrLogic
                                      WHERE q.JobID = ?", [$jobId]);
@@ -105,7 +105,7 @@ if ($isGet) {
     $stmt = sqlsrv_query($conn, "SELECT TOP 100 q.JobID, q.Tip, q.RefDocID, q.PrinterNr, q.Stare, q.Attempts, q.NextAttempt,
                                         q.LastError, q.CreatedAt, q.PrintedAt,
                                         JSON_VALUE(q.Payload, '$.title') AS Title,
-                                        COALESCE(k.Nume, k.DenumirePrinter, '') AS PrinterName
+                                        COALESCE(k.Nume, '') AS PrinterName
                                  FROM tblPrintQueue q
                                  LEFT JOIN tblKP k ON q.PrinterNr = k.NrLogic
                                  ORDER BY q.JobID DESC");

@@ -118,6 +118,12 @@ function ensureSetariMeta($conn) {
         );
     }
 
+    // Magazia (gestiunea) folosita la importul de pe server. Poate contine mai
+    // multe magazii separate prin virgula (ex. 1,2); la suprapuneri castiga
+    // prima din lista, iar exportul/facturarea folosesc primul MagID.
+    ensureSetariValue($conn, 'MagID', '11',
+        "Magazia (gestiunea) pentru importul grupelor/produselor/preturilor de pe server. Mai multe magazii separate prin virgula (ex. 1,2); la suprapuneri castiga prima din lista. La facturare se foloseste prima din lista.", 'General');
+
     // Discountul permis/interzis (RED): 1 = DA, 0 = NU.
     $redDesc = "Permite sau interzice discountul: 1 = DA (butonul Discount este afisat), 0 = NU (butonul Discount este ascuns pe desktop si pe tableta).";
     $chkRed = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'RED'");

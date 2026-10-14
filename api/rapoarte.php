@@ -1121,6 +1121,12 @@ if ($action === 'z') {
         }
     }
 
+    // CodFiscBon / RaspunsCasa pot lipsi pe o instalare mai veche: coloanele
+    // trebuie sa existe INAINTE de (re)crearea procedurii Z, altfel SQL Server
+    // refuza CREATE OR ALTER (tabelele exista, dar coloanele lipsesc).
+    ensureCodFiscBonColumns($conn);
+    ensureRaspunsCasaColumns($conn);
+
     if (!ensureZProcedure($conn)) {
         $err = sqlsrv_errors();
         sendJsonResponse(["status" => "error", "message" => "Nu pot crea procedura stocata dbo.RealizeazaZ: " . ($err[0]['message'] ?? 'eroare necunoscuta')], 500);

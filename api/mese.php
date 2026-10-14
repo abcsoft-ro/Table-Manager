@@ -2,10 +2,20 @@
 /**
  * API: Programare mese (tblMese)
  * GET  -> lista meselor (mapat pe pozitiile 1..80 dupa NrMasa)
- * POST -> actiuni: insert / update / delete
+ * POST -> actiuni: insert / update / delete / reset
  */
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/colors.php';
+
+/**
+ * Sterge coloana legacy NrPOS din tblMese daca mai exista (migrare idempotenta).
+ *
+ * @param resource $conn Conexiunea SQL Server.
+ * @return void
+ */
+function ensureMeseSchema($conn) {
+    @sqlsrv_query($conn, "IF COL_LENGTH('dbo.tblMese','NrPOS') IS NOT NULL ALTER TABLE dbo.tblMese DROP COLUMN NrPOS");
+}
 
 /**
  * Converteste o valoare in int, sau null cand e goala.
@@ -20,10 +30,11 @@ function tblMeseIntOrNull($v) {
 }
 
 $conn = getDBConnection();
+ensureMeseSchema($conn);
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $rows = [];
-    $stmt = sqlsrv_query($conn, "SELECT MasaID, NrMasa, BackColor, ForeColor, Bold, Afisez, NrPOS, Obs
+    $stmt = sqlsrv_query($conn, "SELECT MasaID, NrMasa, BackColor, ForeColor, Bold, Afisez, Obs
                                  FROM tblMese ORDER BY NrMasa");
     if ($stmt) {
         while ($m = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
@@ -38,7 +49,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 "ForeHex" => winColorToHex($fg),
                 "Bold" => (bool)$m['Bold'],
                 "Afisez" => (bool)$m['Afisez'],
-                "NrPOS" => tblMeseIntOrNull($m['NrPOS'] ?? ''),
                 "Obs" => trim($m['Obs'] ?? '')
             ];
         }
@@ -66,7 +76,6 @@ switch ($action) {
         $fg = tblMeseIntOrNull($input['ForeColor'] ?? '');
         $bold = !empty($input['Bold']) ? 1 : 0;
         $afisez = !empty($input['Afisez']) ? 1 : 0;
-        $nrPos = tblMeseIntOrNull($input['NrPOS'] ?? '');
         $obs = trim($input['Obs'] ?? '');
 
         if ($action === 'insert') {
@@ -76,9 +85,9 @@ switch ($action) {
             }
             $stmt = sqlsrv_query(
                 $conn,
-                "INSERT INTO tblMese (NrMasa, BackColor, ForeColor, Bold, Afisez, NrPOS, Obs)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)",
-                [$nrMasa, $bg, $fg, $bold, $afisez, $nrPos, ($obs === '' ? null : $obs)]
+                "INSERT INTO tblMese (NrMasa, BackColor, ForeColor, Bold, Afisez, Obs)
+                 VALUES (?, ?, ?, ?, ?, ?)",
+                [$nrMasa, $bg, $fg, $bold, $afisez, ($obs === '' ? null : $obs)]
             );
             if (!$stmt) {
                 sendJsonResponse(["status" => "error", "message" => "Eroare inserare masa: " . sqlsrv_errors()[0]['message']], 500);
@@ -90,15 +99,39 @@ switch ($action) {
             }
             $stmt = sqlsrv_query(
                 $conn,
-                "UPDATE tblMese SET BackColor = ?, ForeColor = ?, Bold = ?, Afisez = ?, NrPOS = ?, Obs = ?
+                "UPDATE tblMese SET BackColor = ?, ForeColor = ?, Bold = ?, Afisez = ?, Obs = ?
                  WHERE MasaID = ? AND NrMasa = ?",
-                [$bg, $fg, $bold, $afisez, $nrPos, ($obs === '' ? null : $obs), $masaId, $nrMasa]
+                [$bg, $fg, $bold, $afisez, ($obs === '' ? null : $obs), $masaId, $nrMasa]
             );
             if (!$stmt) {
                 sendJsonResponse(["status" => "error", "message" => "Eroare actualizare masa: " . sqlsrv_errors()[0]['message']], 500);
             }
             sendJsonResponse(["status" => "success", "message" => "Masa " . $nrMasa . " actualizata"]);
         }
+        break;
+
+    case 'reset':
+        // Reset factory: sterge toata configuratia meselor si recreeaza cele 80
+        // de pozitii cu aspectul implicit (culori NULL, numar Bold, afisate).
+        sqlsrv_begin_transaction($conn);
+        $del = sqlsrv_query($conn, "DELETE FROM tblMese");
+        if ($del === false) {
+            sqlsrv_rollback($conn);
+            sendJsonResponse(["status" => "error", "message" => "Eroare resetare mese: " . sqlsrv_errors()[0]['message']], 500);
+        }
+        for ($i = 1; $i <= 80; $i++) {
+            $ins = sqlsrv_query(
+                $conn,
+                "INSERT INTO tblMese (NrMasa, BackColor, ForeColor, Bold, Afisez) VALUES (?, NULL, NULL, 1, 1)",
+                [$i]
+            );
+            if ($ins === false) {
+                sqlsrv_rollback($conn);
+                sendJsonResponse(["status" => "error", "message" => "Eroare resetare mese: " . sqlsrv_errors()[0]['message']], 500);
+            }
+        }
+        sqlsrv_commit($conn);
+        sendJsonResponse(["status" => "success", "message" => "Mesele au fost resetate la valorile implicite"]);
         break;
 
     case 'delete':

@@ -8,6 +8,20 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/colors.php';
 
 /**
+ * Sterge coloana legacy NrKp din tblGrp daca mai exista (migrare idempotenta).
+ * Nu avea legatura cu tiparirea (produsele isi aleg sectia prin tblProd.KP).
+ *
+ * @param resource $conn Conexiunea SQL Server.
+ * @return void
+ */
+function ensureGrpSchema($conn) {
+    @sqlsrv_query(
+        $conn,
+        "IF COL_LENGTH('dbo.tblGrp','NrKp') IS NOT NULL ALTER TABLE dbo.tblGrp DROP COLUMN NrKp"
+    );
+}
+
+/**
  * Converteste o valoare in int, sau null cand e goala.
  *
  * @param mixed $v Valoarea de convertit.
@@ -20,10 +34,11 @@ function tblGrpIntOrNull($v) {
 }
 
 $conn = getDBConnection();
+ensureGrpSchema($conn);
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $rows = [];
-    $stmt = sqlsrv_query($conn, "SELECT NrGrp, Denumire, BackColor, FontColor, FontSize, Bold, FontType, Poz, Tint, NrKp
+    $stmt = sqlsrv_query($conn, "SELECT NrGrp, Denumire, BackColor, FontColor, FontSize, Bold, FontType, Poz, Tint
                                  FROM tblGrp ORDER BY Poz, NrGrp");
     if ($stmt) {
         while ($r = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
@@ -40,8 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 "Bold" => (bool)($r['Bold'] == -1 || $r['Bold'] == 1),
                 "FontType" => trim($r['FontType'] ?? ''),
                 "Poz" => tblGrpIntOrNull($r['Poz'] ?? ''),
-                "Tint" => (bool)($r['Tint'] == -1 || $r['Tint'] == 1),
-                "NrKp" => tblGrpIntOrNull($r['NrKp'] ?? '')
+                "Tint" => (bool)($r['Tint'] == -1 || $r['Tint'] == 1)
             ];
         }
     }
@@ -81,8 +95,8 @@ switch ($action) {
         if ($action === 'insert') {
             $stmt = sqlsrv_query(
                 $conn,
-                "INSERT INTO tblGrp (NrGrp, Denumire, BackColor, FontColor, FontSize, Bold, FontType, Poz, Tint, NrKp)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)",
+                "INSERT INTO tblGrp (NrGrp, Denumire, BackColor, FontColor, FontSize, Bold, FontType, Poz, Tint)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
                 [$nrGrp, $denumire, $bg, $fg, $fontSize, $bold, ($fontType === '' ? null : $fontType), $poz]
             );
             if (!$stmt) {
@@ -90,7 +104,7 @@ switch ($action) {
             }
             sendJsonResponse(["status" => "success", "message" => "Grupa adaugata"]);
         } else {
-            // Actualizam doar coloanele editabile; Tint si NrKp raman neschimbate
+            // Actualizam doar coloanele editabile; Tint ramane neschimbat
             $stmt = sqlsrv_query(
                 $conn,
                 "UPDATE tblGrp SET Denumire = ?, BackColor = ?, FontColor = ?, FontSize = ?, Bold = ?, FontType = ?, Poz = ?

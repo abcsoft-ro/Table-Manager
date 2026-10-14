@@ -540,6 +540,28 @@
             </div>
           </div>
         </div>
+
+        <div class="antet-grid" style="margin-top:16px;">
+          <div class="tva-field" style="grid-column: 1 / -1;">
+            <label>Mapare sectii de tiparire (KP): server &#8594; local</label>
+            <div style="font-size:12px;color:#555;margin:4px 0 6px;">
+              La importul produselor, sectia de tiparire din server (tblProd.KP) este inlocuita cu sectia locala aleasa.
+              Daca o valoare nu are mapare, se foloseste valoarea din server.
+            </div>
+            <div id="map-server-error" style="display:none;font-size:12px;color:#b00;margin-bottom:6px;"></div>
+            <div id="map-kp-list" style="margin-top:6px;"></div>
+            <button class="act-btn" style="margin-top:8px;" onclick="addMapKpRow()">+ Adauga mapare KP</button>
+          </div>
+          <div class="tva-field" style="grid-column: 1 / -1;">
+            <label>Mapare sectii: server &#8594; local</label>
+            <div style="font-size:12px;color:#555;margin:4px 0 6px;">
+              La importul produselor, sectia din server (tblProd.Sectie) este inlocuita cu sectia locala aleasa.
+              Daca o valoare nu are mapare, se foloseste valoarea din server.
+            </div>
+            <div id="map-sectii-list" style="margin-top:6px;"></div>
+            <button class="act-btn" style="margin-top:8px;" onclick="addMapSectiiRow()">+ Adauga mapare sectie</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -997,6 +1019,7 @@
       <div class="prog-header">
         <span>PROGRAMARE MESE</span>
         <div style="display:flex; gap:8px;">
+          <button class="act-btn" onclick="resetMese()" style="background:#ff0000;color:#fff;">Reset</button>
           <button class="act-btn" onclick="reloadMese(true)">Reload</button>
           <button class="act-btn" onclick="closeProgMese()">Inapoi</button>
         </div>

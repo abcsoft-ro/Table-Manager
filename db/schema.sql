@@ -46,6 +46,35 @@ IF NOT EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = N'PK_tblSectii')
 ALTER TABLE dbo.[tblSectii] ADD CONSTRAINT [PK_tblSectii] PRIMARY KEY CLUSTERED ([Sectie]);
 GO
 
+------------------------------------------------------------ tblMapKP
+-- Mapare sectii de tiparire (KP) server -> local, folosita la import (ImportProd).
+IF OBJECT_ID(N'dbo.tblMapKP', N'U') IS NULL
+BEGIN
+CREATE TABLE dbo.[tblMapKP] (
+    [KPServer] int NOT NULL,
+    [KPLocal] int NOT NULL
+);
+END
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = N'PK_tblMapKP')
+ALTER TABLE dbo.[tblMapKP] ADD CONSTRAINT [PK_tblMapKP] PRIMARY KEY CLUSTERED ([KPServer]);
+GO
+
+------------------------------------------------------------ tblMapSectii
+-- Mapare sectii (tblSectii) server -> local, folosita la import (ImportProd).
+IF OBJECT_ID(N'dbo.tblMapSectii', N'U') IS NULL
+BEGIN
+CREATE TABLE dbo.[tblMapSectii] (
+    [SectieServer] int NOT NULL,
+    [SectieLocal] int NOT NULL
+);
+END
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.key_constraints WHERE name = N'PK_tblMapSectii')
+ALTER TABLE dbo.[tblMapSectii] ADD CONSTRAINT [PK_tblMapSectii] PRIMARY KEY CLUSTERED ([SectieServer]);
+GO
+
+
 ------------------------------------------------------------ tblFP
 IF OBJECT_ID(N'dbo.tblFP', N'U') IS NULL
 BEGIN
@@ -66,13 +95,8 @@ IF OBJECT_ID(N'dbo.tblKP', N'U') IS NULL
 BEGIN
 CREATE TABLE dbo.[tblKP] (
     [NrLogic] tinyint NOT NULL,
-    [Serie] nvarchar(4) NULL,
-    [Stare] bit NOT NULL,
     [Nume] nvarchar(255) NULL,
-    [MagID] int NULL,
-    [CaleTSC] nvarchar(255) NULL,
-    [raport] nvarchar(100) NULL,
-    [DenumirePrinter] nvarchar(255) NULL
+    [Stare] bit NOT NULL
 );
 END
 GO
@@ -173,7 +197,6 @@ CREATE TABLE dbo.[tblMese] (
     [ForeColor] int NULL,
     [Bold] bit NOT NULL,
     [Afisez] bit NOT NULL,
-    [NrPOS] int NULL,
     [Obs] nvarchar(10) NULL
 );
 END
@@ -207,8 +230,7 @@ CREATE TABLE dbo.[tblGrp] (
     [Bold] bit NOT NULL,
     [FontType] nvarchar(50) NULL,
     [Tint] bit NOT NULL,
-    [Poz] int NULL,
-    [NrKp] int NULL
+    [Poz] int NULL
 );
 END
 GO
@@ -239,7 +261,8 @@ CREATE TABLE dbo.[tblProd] (
     [Sectie] int NULL CONSTRAINT [DF__tblProd__Sectie__4C364F0E] DEFAULT ((1)),
     [PV] float NULL CONSTRAINT [DF__tblProd__PV__4D2A7347] DEFAULT ((0)),
     [Nr_TVA] int NULL CONSTRAINT [DF__tblProd__Nr_TVA__4E1E9780] DEFAULT ((1)),
-    [MZ] int NULL CONSTRAINT [DF__tblProd__MZ__69C6B1F5] DEFAULT ((0))
+    [MZ] int NULL CONSTRAINT [DF__tblProd__MZ__69C6B1F5] DEFAULT ((0)),
+    [MagID] int NULL
 );
 END
 GO
@@ -281,7 +304,9 @@ CREATE TABLE dbo.[tblBonCurent] (
     [BonTableta] int NULL CONSTRAINT [DF_BonTableta_BonCurent] DEFAULT ((0)),
     [StatusBonTableta] int NULL CONSTRAINT [DF__tblBonCur__Statu__43D61337] DEFAULT ((0)),
     [StatieID] int NULL,
-    [OrderID] int NULL
+    [OrderID] int NULL,
+    [CodFiscBon] nvarchar(50) NULL,
+    [RaspunsCasa] nvarchar(max) NULL
 );
 END
 GO
@@ -352,7 +377,9 @@ CREATE TABLE dbo.[tblBon] (
     [Stare] nvarchar(2) NULL,
     [NrPrs] smallint NULL,
     [DocIDP] int NULL,
-    [ClientID] nvarchar(50) NULL
+    [ClientID] nvarchar(50) NULL,
+    [CodFiscBon] nvarchar(50) NULL,
+    [RaspunsCasa] nvarchar(max) NULL
 );
 END
 GO
@@ -675,11 +702,11 @@ BEGIN
         INSERT INTO tblBon
             (DocID, NrDoc, Data, RepID, ContR, MagID, TipDoc, NrOp, NrZ, TotalB,
              SC, TIB, Ora, TVAA, TVAB, TVAC, TVAD, TVAE, TVAF, TVAG, TVAH,
-             NrMasa, Stare, NrPrs, DocIDP, ClientID)
+             NrMasa, Stare, NrPrs, DocIDP, ClientID, CodFiscBon, RaspunsCasa)
         SELECT
              DocID, NrDoc, Data, RepID, ContR, MagID, TipDoc, NrOp, @nr, TotalB,
              SC, TIB, Ora, TVAA, TVAB, TVAC, TVAD, TVAE, TVAF, TVAG, TVAH,
-             NrMasa, Stare, NrPrs, NULL, ClientID
+             NrMasa, Stare, NrPrs, NULL, ClientID, CodFiscBon, RaspunsCasa
         FROM tblBonCurent;
 
         -- Arhivare linii in tempECR. ECRID este IDENTITY in tempECR (se genereaza
@@ -732,8 +759,8 @@ GO
 -- Create date: 31/07/2018
 -- Description:	Import produse StocManager DataRON
 -- Last Author: Adrian Zeldea
--- Last modified: 17.09.2026
--- Version: Ciorbarie - restaurant - import TIB default si grupe conform tabel relationare
+-- Last modified: 14.10.2026
+-- Version: Import din una sau mai multe magazii (tblSet.MagID = '1,2'); la suprapuneri castiga primul MagID din lista
 
 -- =============================================
 CREATE OR ALTER PROCEDURE [dbo].[ImportProd] 
@@ -748,14 +775,45 @@ BEGIN
 	-- interfering with SELECT statements.
 	SET NOCOUNT ON;
 
+	-- Tabele de mapare server -> local (create daca lipsesc). Sunt folosite in
+	-- SQL-ul dinamic de mai jos pentru a traduce tblProd.KP si tblProd.Sectie
+	-- din valorile serverului in valorile locale (fallback: valoarea serverului).
+	IF OBJECT_ID('dbo.tblMapKP','U') IS NULL
+		CREATE TABLE dbo.tblMapKP (KPServer int NOT NULL CONSTRAINT PK_tblMapKP PRIMARY KEY, KPLocal int NOT NULL);
+	IF OBJECT_ID('dbo.tblMapSectii','U') IS NULL
+		CREATE TABLE dbo.tblMapSectii (SectieServer int NOT NULL CONSTRAINT PK_tblMapSectii PRIMARY KEY, SectieLocal int NOT NULL);
+
     -- Insert statements for procedure here
 	Declare @Database as nvarchar(50)
 	Declare @StatieID as int=1
 	SELECT @Database = 'SourceDB'
     DECLARE	@return_value int=0
-    Declare @MagID int=0
-    --Select @MagID=MagID from tblMag
-	Select @MagID = CAST(Value AS int) From tblSet Where Setting = 'MagID'
+    -- MagID poate contine una sau mai multe magazii separate prin virgula (ex. '1,2').
+    -- Se filtreaza importul cu IN (@MagFilter), iar la suprapuneri castiga primul
+    -- MagID din lista (vezi ordonarea prin CHARINDEX de mai jos).
+    Declare @MagIDRaw nvarchar(200) = ''
+    Declare @MagList  nvarchar(400) = ''
+    Declare @MagFilter nvarchar(420) = ''
+    Declare @i int = 1
+    Declare @ch nchar(1)
+	Select @MagIDRaw = LTRIM(RTRIM(ISNULL(Value,''))) From tblSet Where Setting = 'MagID'
+    While @i <= LEN(@MagIDRaw)
+    Begin
+        Set @ch = SUBSTRING(@MagIDRaw, @i, 1)
+        If @ch Like '[0-9]' Or @ch = ',' Set @MagList = @MagList + @ch
+        Set @i = @i + 1
+    End
+    While CHARINDEX(',,', @MagList) > 0 Set @MagList = REPLACE(@MagList, ',,', ',')
+    While LEN(@MagList) > 0 And LEFT(@MagList, 1) = ',' Set @MagList = SUBSTRING(@MagList, 2, LEN(@MagList))
+    While LEN(@MagList) > 0 And RIGHT(@MagList, 1) = ',' Set @MagList = LEFT(@MagList, LEN(@MagList) - 1)
+    If @MagList = '' Set @MagList = '0'
+    Set @MagFilter = '(' + @MagList + ')'
+    -- Ordonare pentru deduplicarea produselor: castiga MagID-ul cel mai din
+    -- stanga in lista. tblPozGrupe nu se filtreaza dupa MagID, deci nu are nevoie
+    -- de aceasta ordonare (foloseste MagID crescator).
+    Declare @Q char(1) = CHAR(39)
+    Declare @MagCsv nvarchar(402) = ',' + @MagList + ','
+    Declare @OrderPv nvarchar(300) = 'CHARINDEX(' + @Q + ',' + @Q + ' + CAST(pv0.MagID AS varchar(10)) + ' + @Q + ',' + @Q + ', ' + @Q + @MagCsv + @Q + ')'
     Select @StatieID = CAST(Value AS int) From tblSet Where Setting = 'NrLogic'
     
 	Select @Database = DataBaseName FROM tblConectare WHERE ID=1
@@ -786,15 +844,37 @@ BEGIN
 
 		delete from tblGrp
 		
+		-- O grupa se importa daca are cel putin un produs eligibil (MagID-urile
+		-- alese, ProdID > 9, KP > 0, Poz intre 1 si 50) si are o pozitie de meniu
+		-- intre 1 si 50. Prioritate: tblGrp; daca grupa nu e eligibila in tblGrp
+		-- (Poz in afara intervalului 1..50), se cauta in tblPozGrupe; daca nu e
+		-- eligibila in niciuna, grupa nu se importa.
 		EXECUTE('INSERT INTO tblGrp
 		( NrGrp, Denumire, BackColor, Bold, FontColor, FontSize, FontType, Poz, Tint )
-		SELECT DISTINCT tblGrp.NrGrp, tblGrp.Denumire, tblPozGrupe.BackColor, ISNULL(tblPozGrupe.Bold,0), tblPozGrupe.FontColor, tblPozGrupe.FontSize, tblPozGrupe.FontType, tblPozGrupe.Poz, ISNULL(tblPozGrupe.Tint,1) 
-		FROM ['+@IP+'].'+ @Database + '.dbo.tblGrp
-			INNER JOIN  ['+@IP+'].'+ @Database + '.dbo.tblPozGrupe ON tblGrp.NrGrp = tblPozGrupe.NrGrp and tblPozGrupe.MagID = ' + @MagID + '
-			INNER JOIN ['+@IP+'].' + @Database + '.dbo.tblProd 
-			INNER JOIN ['+@IP+'].' + @Database + '.dbo.tblPV ON tblProd.ProdID = tblPV.ProdID AND tblPV.MagID = ' + @MagID + '
-			ON tblGrp.NrGrp = tblProd.NrGrp
-					WHERE tblPozGrupe.Poz Between 1 And 50 AND tblProd.KP > 0 AND tblPV.Poz > 0')
+		SELECT DISTINCT g.NrGrp, g.Denumire,
+			CASE WHEN g.Poz Between 1 And 50 THEN g.BackColor ELSE pg.BackColor END,
+			CASE WHEN g.Poz Between 1 And 50 THEN ISNULL(g.Bold,0) ELSE ISNULL(pg.Bold,0) END,
+			CASE WHEN g.Poz Between 1 And 50 THEN g.FontColor ELSE pg.FontColor END,
+			CASE WHEN g.Poz Between 1 And 50 THEN g.FontSize ELSE pg.FontSize END,
+			CASE WHEN g.Poz Between 1 And 50 THEN g.FontType ELSE pg.FontType END,
+			CASE WHEN g.Poz Between 1 And 50 THEN g.Poz ELSE pg.Poz END,
+			CASE WHEN g.Poz Between 1 And 50 THEN ISNULL(g.Tint,1) ELSE ISNULL(pg.Tint,1) END
+		FROM ['+@IP+'].'+ @Database + '.dbo.tblGrp g
+			-- tblPozGrupe NU se filtreaza dupa MagID: se ia cate un rand per grupa
+			-- (cel cu MagID cel mai mic), ca layout-ul de grupe sa fie disponibil
+			-- indiferent de magazia aleasa.
+			LEFT JOIN (
+				SELECT pg0.*, ROW_NUMBER() OVER (PARTITION BY pg0.NrGrp ORDER BY pg0.MagID) AS rn
+				FROM ['+@IP+'].'+ @Database + '.dbo.tblPozGrupe pg0
+			) pg ON g.NrGrp = pg.NrGrp AND pg.rn = 1
+			INNER JOIN ['+@IP+'].' + @Database + '.dbo.tblProd p ON g.NrGrp = p.NrGrp
+			INNER JOIN (
+				SELECT pv0.*, ROW_NUMBER() OVER (PARTITION BY pv0.ProdID ORDER BY ' + @OrderPv + ') AS rn
+				FROM ['+@IP+'].' + @Database + '.dbo.tblPV pv0
+				WHERE pv0.MagID IN ' + @MagFilter + '
+			) pv ON p.ProdID = pv.ProdID AND pv.rn = 1
+					WHERE p.ProdID > 9 AND p.KP > 0 AND pv.Poz Between 1 And 50
+						AND (g.Poz Between 1 And 50 OR pg.Poz Between 1 And 50)')
 		
 		/*
 		Delete  from tblOsp
@@ -808,20 +888,34 @@ BEGIN
 		--End Meniul Zilei
 		Delete  from tblProd 
 		EXECUTE('INSERT INTO tblProd
-			( ProdID, BarCod, Denumire, UM, IRP, IIVCN, DataUM, NrGrp, KP, BackColor, FontColor, FontSize, Bold, Poz, FontType, PV, Nr_TVA, MZ )
-		SELECT tblProd.ProdID, tblProd.BarCod, tblProd.Denumire, tblProd.UM, tblProd.IRP, TRY_CAST(tblProd.IIVCN AS int), tblProd.DataUM, tblProd.NrGrp, tblProd.KP, 
-		tblPV.BackColor, tblPV.FontColor, tblProd.FontSize, tblPV.Bold, tblPV.Poz, tblProd.FontType, tblPV.PV,
-		CASE tblProd.TVA WHEN 21 THEN 1 WHEN 11 THEN 2 ELSE 3 END, tblPV.Flag
-		FROM ['+@IP+'].' + @Database + '.dbo.tblProd INNER JOIN ['+@IP+'].' + @Database + '.dbo.tblPV ON tblProd.ProdID = tblPV.ProdID
-		WHERE tblProd.ProdID>9 AND tblProd.KP>0 AND tblPV.Poz<=50 and tblPV.Poz > 0 AND tblPV.MagID = ' + @MagID)
+			( ProdID, BarCod, Denumire, UM, IRP, IIVCN, DataUM, NrGrp, KP, BackColor, FontColor, FontSize, Bold, Poz, FontType, PV, Nr_TVA, MZ, MagID, Sectie )
+		SELECT p.ProdID, p.BarCod, p.Denumire, p.UM, p.IRP, TRY_CAST(p.IIVCN AS int), p.DataUM, p.NrGrp, COALESCE(mk.KPLocal, p.KP),
+		pv.BackColor, pv.FontColor, p.FontSize, pv.Bold, pv.Poz, p.FontType, pv.PV,
+		CASE p.TVA WHEN 21 THEN 1 WHEN 11 THEN 2 ELSE 3 END, pv.Flag, pv.MagID, COALESCE(ms.SectieLocal, p.Sectie)
+		FROM ['+@IP+'].' + @Database + '.dbo.tblProd p
+		INNER JOIN (
+			SELECT pv0.*, ROW_NUMBER() OVER (PARTITION BY pv0.ProdID ORDER BY ' + @OrderPv + ') AS rn
+			FROM ['+@IP+'].' + @Database + '.dbo.tblPV pv0
+			WHERE pv0.MagID IN ' + @MagFilter + '
+		) pv ON p.ProdID = pv.ProdID AND pv.rn = 1
+		LEFT JOIN dbo.tblMapKP mk ON mk.KPServer = p.KP
+		LEFT JOIN dbo.tblMapSectii ms ON ms.SectieServer = p.Sectie
+		WHERE p.ProdID>9 AND p.KP>0 AND pv.Poz<=50 and pv.Poz > 0')
 
 		EXECUTE('INSERT INTO tblProd
-			( ProdID, BarCod, Denumire, UM, IRP, IIVCN, DataUM, NrGrp, KP, BackColor, FontColor, FontSize, Bold, Poz, FontType, PV, Nr_TVA )
-		SELECT tblProd.ProdID, tblProd.BarCod1, tblProd.Denumire, tblProd.UM, tblProd.IRP, TRY_CAST(tblProd.IIVCN AS int), tblProd.DataUM, tblProd.NrGrp, tblProd.KP, 
-		tblPV.BackColor, tblPV.FontColor, tblProd.FontSize, tblPV.Bold, tblPV.Poz, tblProd.FontType, tblPV.PV,
-		CASE tblProd.TVA WHEN 21 THEN 1 WHEN 11 THEN 2 ELSE 3 END
-		FROM ['+@IP+'].' + @Database + '.dbo.tblProd INNER JOIN ['+@IP+'].' + @Database + '.dbo.tblPV ON tblProd.ProdID = tblPV.ProdID
-		WHERE tblProd.BarCod1=''REDUCERE'' AND tblPV.MagID = ' + @MagID)
+			( ProdID, BarCod, Denumire, UM, IRP, IIVCN, DataUM, NrGrp, KP, BackColor, FontColor, FontSize, Bold, Poz, FontType, PV, Nr_TVA, MagID, Sectie )
+		SELECT p.ProdID, p.BarCod1, p.Denumire, p.UM, p.IRP, TRY_CAST(p.IIVCN AS int), p.DataUM, p.NrGrp, COALESCE(mk.KPLocal, p.KP),
+		pv.BackColor, pv.FontColor, p.FontSize, pv.Bold, pv.Poz, p.FontType, pv.PV,
+		CASE p.TVA WHEN 21 THEN 1 WHEN 11 THEN 2 ELSE 3 END, pv.MagID, COALESCE(ms.SectieLocal, p.Sectie)
+		FROM ['+@IP+'].' + @Database + '.dbo.tblProd p
+		INNER JOIN (
+			SELECT pv0.*, ROW_NUMBER() OVER (PARTITION BY pv0.ProdID ORDER BY ' + @OrderPv + ') AS rn
+			FROM ['+@IP+'].' + @Database + '.dbo.tblPV pv0
+			WHERE pv0.MagID IN ' + @MagFilter + '
+		) pv ON p.ProdID = pv.ProdID AND pv.rn = 1
+		LEFT JOIN dbo.tblMapKP mk ON mk.KPServer = p.KP
+		LEFT JOIN dbo.tblMapSectii ms ON ms.SectieServer = p.Sectie
+		WHERE p.BarCod1=''REDUCERE'' ')
 
 
 		/*

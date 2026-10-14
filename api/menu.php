@@ -81,7 +81,7 @@ if ($search !== '') {
 }
 
 // 1. Incarcam grupurile din tblGrp
-$sqlGrp = "SELECT NrGrp, Denumire, BackColor, FontColor, FontSize, Bold, FontType, Poz, NrKp 
+$sqlGrp = "SELECT NrGrp, Denumire, BackColor, FontColor, FontSize, Bold, FontType, Poz
            FROM tblGrp 
            WHERE Denumire IS NOT NULL AND LTRIM(RTRIM(Denumire)) <> ''
            ORDER BY Poz, NrGrp";

@@ -171,6 +171,31 @@ function getCantMax($conn) {
 }
 
 /**
+ * Magazia (gestiunea) implicita a unei linii de nota: prima valoare din
+ * tblSet.MagID (poate fi o lista '1,2' -> primul intreg). Folosita cand
+ * produsul nu are o gestiune proprie (tblProd.MagID) sau la nivelul bonului.
+ *
+ * @param resource $conn
+ */
+function getMagIdDefault($conn) {
+    return getTblSetInt($conn, 'MagID', 0);
+}
+
+/**
+ * Magazia unei linii pentru un produs: tblProd.MagID daca exista, altfel
+ * magazia implicita (prima din lista tblSet.MagID).
+ *
+ * @param resource $conn
+ * @param mixed $prodMagID
+ */
+function getLineMagId($conn, $prodMagID) {
+    if ($prodMagID !== null && $prodMagID !== '') {
+        return (int)$prodMagID;
+    }
+    return getMagIdDefault($conn);
+}
+
+/**
  * Numarul de zecimale pentru cantitate (tblSet.NrZecCant): 0, 1 sau 2.
  * Implicit 1 cand setarea lipseste sau este invalida.
  *
@@ -406,12 +431,10 @@ function printKitchen($conn, $docId) {
 
     // 2. Numele imprimantelor (tblKP)
     $printerNames = [];
-    $stmtKp = sqlsrv_query($conn, "SELECT NrLogic, Nume, DenumirePrinter FROM tblKP");
+    $stmtKp = sqlsrv_query($conn, "SELECT NrLogic, Nume FROM tblKP");
     if ($stmtKp) {
         while ($p = sqlsrv_fetch_array($stmtKp, SQLSRV_FETCH_ASSOC)) {
-            $nume = trim((string)($p['Nume'] ?? ''));
-            if ($nume === '') { $nume = trim((string)($p['DenumirePrinter'] ?? '')); }
-            $printerNames[(int)$p['NrLogic']] = $nume;
+            $printerNames[(int)$p['NrLogic']] = trim((string)($p['Nume'] ?? ''));
         }
     }
 
@@ -677,14 +700,23 @@ function closeBillLocked($conn, $docId, $plati = [], $cui = '', $opts = []) {
     // tranzactie, ca un ALTER/CREATE sa nu afecteze business-ul.
     ensurePrintQueueTable($conn);
     ensureSendSqlTable($conn);
+    ensureCodFiscBonColumns($conn);
+    ensureRaspunsCasaColumns($conn);
     sqlsrv_begin_transaction($conn);
 
     // Marcam bonul ca inchis (Stare = 'I'). Conditia Stare = 'D' face
     // operatiunea idempotenta: daca nota a fost inchisa intre timp (sub lock
     // ar fi imposibil, dar pastram plasa de siguranta), nu mai raportam succes
-    // cu tiparire/export si nu emitem nimic dublu.
-    $sqlClose = "UPDATE tblBonCurent SET Stare = 'I', Ora = GETDATE() WHERE DocID = ? AND Stare = 'D'";
-    $upd = sqlsrv_query($conn, $sqlClose, [$docId]);
+    // cu tiparire/export si nu emitem nimic dublu. Codul fiscal al clientului
+    // (daca a fost introdus) si raspunsul casei de marcat (cand
+    // AsteaptaRaspunsCasa = 1) se salveaza odata cu inchiderea; o valoare goala
+    // nu sterge una deja salvata pe nota.
+    $raspunsCasa = array_key_exists('fiscalRaw', $opts) ? (string)$opts['fiscalRaw'] : '';
+    $sqlClose = "UPDATE tblBonCurent SET Stare = 'I', Ora = GETDATE(),
+                        CodFiscBon = COALESCE(NULLIF(?, ''), CodFiscBon),
+                        RaspunsCasa = COALESCE(NULLIF(?, ''), RaspunsCasa)
+                 WHERE DocID = ? AND Stare = 'D'";
+    $upd = sqlsrv_query($conn, $sqlClose, [$cui, $raspunsCasa, $docId]);
     if ($upd === false) {
         sqlsrv_rollback($conn);
         return ["status" => "error", "message" => "Eroare inchidere nota: " . sqlsrv_errors()[0]['message'], "http" => 500];
@@ -1741,7 +1773,7 @@ switch ($action) {
         // 1. Obtinem datele, pretul si cota de TVA a produsului.
         //    Pretul: tblProd.PV. Cota TVA: via tblProd.Nr_TVA -> tblTVA.Cota.
         $sqlP = "SELECT p.ProdID, p.Denumire, p.NrGrp, COALESCE(p.PV, 0) as Pret,
-                        COALESCE(tv.Cota, 0) as CotaTVA
+                        COALESCE(tv.Cota, 0) as CotaTVA, p.MagID AS ProdMagID
                  FROM tblProd p
                  LEFT JOIN tblTVA tv ON p.Nr_TVA = tv.Nr_TVA
                  WHERE p.ProdID = ?";
@@ -1756,6 +1788,9 @@ switch ($action) {
         $cotaTva = (float)$prod['CotaTVA'];
         $denumire = trim($prod['Denumire']);
         $nrGrp = (int)$prod['NrGrp'];
+        // Magazia liniei: gestiunea produsului (tblProd.MagID), cu fallback pe
+        // prima magazie din tblSet.MagID.
+        $lineMagID = getLineMagId($conn, $prod['ProdMagID'] ?? null);
 
         // 2. Cautam bonul deschis (Stare = 'D') pentru aceasta masa
         $sqlBon = "SELECT TOP 1 DocID, NrOp FROM tblBonCurent WHERE NrMasa = ? AND Stare = 'D' ORDER BY DocID DESC";
@@ -1769,9 +1804,9 @@ switch ($action) {
             $nextNrDoc = (int)$maxRow['NextNrDoc'];
 
             $sqlInsertBon = "INSERT INTO tblBonCurent (NrDoc, Data, Ora, NrMasa, NrOp, TotalB, Stare, MagID) 
-                             VALUES (?, GETDATE(), GETDATE(), ?, ?, 0, 'D', 11);
+                             VALUES (?, GETDATE(), GETDATE(), ?, ?, 0, 'D', ?);
                              SELECT SCOPE_IDENTITY() AS DocID;";
-            $stmtNewBon = sqlsrv_query($conn, $sqlInsertBon, [$nextNrDoc, $nrMasa, $nrOp]);
+            $stmtNewBon = sqlsrv_query($conn, $sqlInsertBon, [$nextNrDoc, $nrMasa, $nrOp, getMagIdDefault($conn)]);
             if (!$stmtNewBon) {
                 sendJsonResponse(["status" => "error", "message" => "Eroare creare bon: " . sqlsrv_errors()[0]['message']], 500);
             }
@@ -1790,8 +1825,8 @@ switch ($action) {
         //    Nu actualizam niciodata un rand existent al aceluiasi produs.
         //    PVC = pretul de catalog (pentru undo la discount), PV = pretul curent al liniei.
         $sqlInsertNote = "INSERT INTO tblNoteD (DocID, ProdID, Cant, PV, PVC, TVAc, OraComanda, Magid, H, Descriere, NrGrp, Preluat, Preluat1) 
-                          VALUES (?, ?, ?, ?, ?, ?, GETDATE(), 11, 0, ?, ?, 0, 0)";
-        $stmtIns = sqlsrv_query($conn, $sqlInsertNote, [$docId, $prodId, $cantitate, $pret, $pret, $cotaTva, $denumire, $nrGrp]);
+                          VALUES (?, ?, ?, ?, ?, ?, GETDATE(), ?, 0, ?, ?, 0, 0)";
+        $stmtIns = sqlsrv_query($conn, $sqlInsertNote, [$docId, $prodId, $cantitate, $pret, $pret, $cotaTva, $lineMagID, $denumire, $nrGrp]);
         if (!$stmtIns) {
             sendJsonResponse(["status" => "error", "message" => "Eroare inserare in tblNoteD: " . sqlsrv_errors()[0]['message']], 500);
         }
@@ -1847,8 +1882,8 @@ switch ($action) {
 
         // Rând de mod de preparare: Cant = 0, ProdID = 0, NrGrp = NrMesaj, textul in Descriere
         $sqlIns = "INSERT INTO tblNoteD (DocID, ProdID, Cant, PV, PVC, TVAc, OraComanda, Magid, H, Descriere, NrGrp, Preluat, Preluat1) 
-                   VALUES (?, 0, 0, 0, 0, 0, GETDATE(), 11, 0, ?, ?, 0, 0)";
-        $stmtIns = sqlsrv_query($conn, $sqlIns, [$docId, $textMesaj, $nrMesaj]);
+                   VALUES (?, 0, 0, 0, 0, 0, GETDATE(), ?, 0, ?, ?, 0, 0)";
+        $stmtIns = sqlsrv_query($conn, $sqlIns, [$docId, getMagIdDefault($conn), $textMesaj, $nrMesaj]);
         if (!$stmtIns) {
             sendJsonResponse(["status" => "error", "message" => "Eroare inserare mod preparare: " . sqlsrv_errors()[0]['message']], 500);
         }
@@ -1959,6 +1994,34 @@ switch ($action) {
         sqlsrv_query($conn, $sqlRecalc, [$docId, $docId]);
 
         sendJsonResponse(["status" => "success", "message" => "Cantitate actualizata", "docId" => $docId]);
+        break;
+
+    case 'set_cui':
+        // Salveaza codul fiscal al clientului (CUI) direct pe nota deschisa, in
+        // tblBonCurent.CodFiscBon, in momentul in care utilizatorul il introduce.
+        // Astfel codul nu ramane doar in memoria clientului (supravietuieste unui
+        // refresh) si ajunge in arhiva tblBon la raportul Z.
+        $docId = (int)($input['docId'] ?? 0);
+        $cui = normalizeCui($input['cui'] ?? '');
+        if ($docId <= 0) {
+            sendJsonResponse(["status" => "error", "message" => "DocID invalid"], 400);
+        }
+        if ($cui !== '' && !validateCui($cui)) {
+            sendJsonResponse(["status" => "error", "message" => "Cod fiscal (CUI) invalid: " . $cui], 400);
+        }
+        ensureCodFiscBonColumns($conn);
+        $upd = sqlsrv_query(
+            $conn,
+            "UPDATE tblBonCurent SET CodFiscBon = ? WHERE DocID = ? AND Stare = 'D'",
+            [($cui === '' ? null : $cui), $docId]
+        );
+        if ($upd === false) {
+            sendJsonResponse(["status" => "error", "message" => "Eroare salvare cod fiscal: " . sqlsrv_errors()[0]['message']], 500);
+        }
+        if (sqlsrv_rows_affected($upd) === 0) {
+            sendJsonResponse(["status" => "error", "message" => "Nu exista o nota deschisa cu acest DocID"], 404);
+        }
+        sendJsonResponse(["status" => "success", "docId" => $docId, "cui" => $cui]);
         break;
 
     case 'close_bill':
@@ -2107,9 +2170,9 @@ switch ($action) {
             $nextNrDoc = (int)$maxRow['NextNrDoc'];
 
             $sqlInsertBon = "INSERT INTO tblBonCurent (NrDoc, Data, Ora, NrMasa, NrOp, TotalB, Stare, MagID) 
-                             VALUES (?, GETDATE(), GETDATE(), ?, ?, 0, 'D', 11);
+                             VALUES (?, GETDATE(), GETDATE(), ?, ?, 0, 'D', ?);
                              SELECT SCOPE_IDENTITY() AS DocID;";
-            $stmtNewBon = sqlsrv_query($conn, $sqlInsertBon, [$nextNrDoc, $destNrMasa, $nrOp]);
+            $stmtNewBon = sqlsrv_query($conn, $sqlInsertBon, [$nextNrDoc, $destNrMasa, $nrOp, getMagIdDefault($conn)]);
             if (!$stmtNewBon) {
                 sendJsonResponse(["status" => "error", "message" => "Eroare deschidere nota destinatie: " . sqlsrv_errors()[0]['message']], 500);
             }
@@ -2626,9 +2689,15 @@ switch ($action) {
             $newPV = ($cantLinie > 0) ? ($pvc - ($discAfterC / 100) / $cantLinie) : $pvc;
             if ($newPV < 0) { $newPV = 0; }
 
-            // Linia de storno: Cant negativ, PV = PVC (pretul intreg de catalog)
+            // Linia de storno: Cant negativ, PV = PVC (pretul intreg de catalog).
+            // Magazia = gestiunea produsului (tblProd.MagID), cu fallback pe
+            // prima magazie din tblSet.MagID.
+            $stmtProdM = sqlsrv_query($conn, "SELECT MagID FROM tblProd WHERE ProdID = ?", [(int)$row['ProdID']]);
+            $prodM = $stmtProdM ? sqlsrv_fetch_array($stmtProdM, SQLSRV_FETCH_ASSOC) : null;
+            $stornoMagID = getLineMagId($conn, $prodM['MagID'] ?? null);
+
             $sqlIns = "INSERT INTO tblNoteD (DocID, ProdID, Cant, PV, PVC, TVAc, OraComanda, Magid, H, Descriere, NrGrp, Preluat, Preluat1, StornoRef, [Comment])
-                       VALUES (?, ?, ?, ?, ?, ?, GETDATE(), 11, 0, ?, ?, 0, 0, ?, ?)";
+                       VALUES (?, ?, ?, ?, ?, ?, GETDATE(), ?, 0, ?, ?, 0, 0, ?, ?)";
             $stmtIns = sqlsrv_query($conn, $sqlIns, [
                 $docId,
                 (int)$row['ProdID'],
@@ -2636,6 +2705,7 @@ switch ($action) {
                 $pvc,
                 $pvc,
                 (int)($row['TVAc'] ?? 0),
+                $stornoMagID,
                 trim((string)$row['Descriere']),
                 (int)$row['NrGrp'],
                 $ecrId,

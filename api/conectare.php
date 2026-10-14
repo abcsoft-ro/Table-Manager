@@ -6,9 +6,149 @@
  */
 require_once __DIR__ . '/db.php';
 
+/**
+ * Creeaza tabelele de mapare server->local daca lipsesc (deploy fara pasi
+ * manuali). Sunt folosite la import (ImportProd) si editate in ecranul
+ * Conectare server.
+ */
+function ensureMappingTables($conn) {
+    static $done = false;
+    if ($done) { return; }
+    @sqlsrv_query($conn,
+        "IF OBJECT_ID('dbo.tblMapKP','U') IS NULL
+             CREATE TABLE dbo.tblMapKP (KPServer int NOT NULL CONSTRAINT PK_tblMapKP PRIMARY KEY, KPLocal int NOT NULL);
+         IF OBJECT_ID('dbo.tblMapSectii','U') IS NULL
+             CREATE TABLE dbo.tblMapSectii (SectieServer int NOT NULL CONSTRAINT PK_tblMapSectii PRIMARY KEY, SectieLocal int NOT NULL)",
+        null,
+        ['QueryTimeout' => 15]
+    );
+    $done = true;
+}
+
+/**
+ * Citeste o tabela de mapare ca lista de randuri [server, local].
+ */
+function readMapping($conn, $table, $serverCol, $localCol) {
+    $rows = [];
+    $stmt = @sqlsrv_query($conn, "SELECT $serverCol AS S, $localCol AS L FROM $table ORDER BY $serverCol");
+    if ($stmt) {
+        while ($r = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+            $rows[] = ["server" => (int)$r['S'], "local" => (int)$r['L']];
+        }
+    }
+    return $rows;
+}
+
+/**
+ * Inlocuieste continutul unei tabele de mapare. Intoarce string de eroare sau null.
+ */
+function saveMapping($conn, $table, $serverCol, $localCol, $rows) {
+    if (!sqlsrv_query($conn, "DELETE FROM $table")) {
+        return "Eroare stergere $table: " . sqlsrv_errors()[0]['message'];
+    }
+    $seen = [];
+    foreach ((array)$rows as $row) {
+        $sRaw = $row['server'] ?? null;
+        $lRaw = $row['local'] ?? null;
+        if ($sRaw === null || $sRaw === '' || $lRaw === null || $lRaw === '') { continue; }
+        if (!is_numeric($sRaw) || !is_numeric($lRaw)) {
+            return "Valori invalide in $table (trebuie numere intregi).";
+        }
+        $s = (int)$sRaw;
+        $l = (int)$lRaw;
+        if (isset($seen[$s])) {
+            return "$serverCol=$s este duplicat (o singura mapare per valoare de server).";
+        }
+        $seen[$s] = true;
+        $stmt = sqlsrv_query($conn, "INSERT INTO $table ($serverCol, $localCol) VALUES (?, ?)", [$s, $l]);
+        if (!$stmt) {
+            return "Eroare salvare in $table: " . sqlsrv_errors()[0]['message'];
+        }
+    }
+    return null;
+}
+
+/**
+ * Optiunile pentru combobox-uri: KP si Sectii de pe serverul local.
+ */
+function readLocalOptions($conn) {
+    $kp = [];
+    $sec = [];
+    $r = @sqlsrv_query($conn, "SELECT NrLogic, Nume FROM tblKP ORDER BY NrLogic");
+    if ($r) {
+        while ($x = sqlsrv_fetch_array($r, SQLSRV_FETCH_ASSOC)) {
+            $kp[] = ["value" => (int)$x['NrLogic'], "label" => trim((string)($x['Nume'] ?? ''))];
+        }
+    }
+    $r = @sqlsrv_query($conn, "SELECT Sectie, Denumire FROM tblSectii ORDER BY Sectie");
+    if ($r) {
+        while ($x = sqlsrv_fetch_array($r, SQLSRV_FETCH_ASSOC)) {
+            $sec[] = ["value" => (int)$x['Sectie'], "label" => trim((string)($x['Denumire'] ?? ''))];
+        }
+    }
+    return [$kp, $sec];
+}
+
+/**
+ * Optiunile pentru combobox-uri: KP si Sectii de pe serverul extern, citite
+ * direct prin datele din tblConectare (daca serverul e indisponibil, listele
+ * sunt goale si se intoarce un mesaj).
+ */
+function readRemoteOptions($conn) {
+    $out = ["serverKP" => [], "serverSectii" => [], "error" => null];
+    $s = @sqlsrv_query($conn, "SELECT TOP 1 ServerIP, ServerName, DataBaseName, UserName, Password, TC FROM tblConectare WHERE ID = 1");
+    $c = $s ? sqlsrv_fetch_array($s, SQLSRV_FETCH_ASSOC) : null;
+    if (!$c) { $out['error'] = "Nu exista configurarea de conectare."; return $out; }
+
+    $server = trim((string)$c['ServerIP']);
+    $instance = trim((string)$c['ServerName']);
+    $srv = ($instance !== '' && strcasecmp($instance, $server) !== 0) ? $server . '\\' . $instance : $server;
+    if ($srv === '') { $out['error'] = "ServerIP lipsa."; return $out; }
+
+    $ci = ["CharacterSet" => "UTF-8", "LoginTimeout" => 3];
+    if (trim((string)$c['DataBaseName']) !== '') { $ci["Database"] = $c['DataBaseName']; }
+    if ((int)$c['TC'] !== 1) { $ci["UID"] = $c['UserName']; $ci["PWD"] = $c['Password']; }
+
+    $cn = @sqlsrv_connect($srv, $ci);
+    if (!$cn) { $out['error'] = "Server indisponibil (" . $srv . ")."; return $out; }
+
+    $r = @sqlsrv_query($cn, "SELECT KP, DenKP FROM tblKP ORDER BY KP");
+    if ($r) {
+        while ($x = sqlsrv_fetch_array($r, SQLSRV_FETCH_ASSOC)) {
+            $out['serverKP'][] = ["value" => (int)$x['KP'], "label" => trim((string)($x['DenKP'] ?? ''))];
+        }
+    }
+    $r = @sqlsrv_query($cn, "SELECT Sectie, Denumire FROM tblSectii ORDER BY Sectie");
+    if ($r) {
+        while ($x = sqlsrv_fetch_array($r, SQLSRV_FETCH_ASSOC)) {
+            $out['serverSectii'][] = ["value" => (int)$x['Sectie'], "label" => trim((string)($x['Denumire'] ?? ''))];
+        }
+    }
+    @sqlsrv_close($cn);
+    return $out;
+}
+
 $conn = getDBConnection();
+ensureMappingTables($conn);
 
 $ID = 1;
+
+// Listele pentru combobox-urile de mapare (local + server). Se cer separat, ca
+// incarcarea formularului de conectare sa nu depinda de serverul extern.
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['options'])) {
+    list($localKP, $localSectii) = readLocalOptions($conn);
+    $remote = readRemoteOptions($conn);
+    sendJsonResponse([
+        "status"     => "success",
+        "mapOptions" => [
+            "localKP"     => $localKP,
+            "serverKP"    => $remote['serverKP'],
+            "localSectii" => $localSectii,
+            "serverSectii"=> $remote['serverSectii'],
+            "serverError" => $remote['error']
+        ]
+    ]);
+}
 
 $CAMPURI = [
     'ServerIP'            => 50,
@@ -35,7 +175,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     foreach ($CAMPURI as $col => $len) {
         $row[$col] = trim($r[$col] ?? '');
     }
-    sendJsonResponse(["status" => "success", "row" => $row]);
+    sendJsonResponse([
+        "status"    => "success",
+        "row"       => $row,
+        "mapKP"     => readMapping($conn, 'tblMapKP', 'KPServer', 'KPLocal'),
+        "mapSectii" => readMapping($conn, 'tblMapSectii', 'SectieServer', 'SectieLocal')
+    ]);
 }
 
 $raw = file_get_contents('php://input');
@@ -57,6 +202,10 @@ switch ($action) {
             $values[$col] = $val;
         }
         $tc = (int)($input['TC'] ?? 0) ? 1 : 0;
+        $hasMaps = array_key_exists('mapKP', $input) || array_key_exists('mapSectii', $input);
+
+        // Conexiunea si maparile se salveaza impreuna (totul sau nimic).
+        sqlsrv_begin_transaction($conn);
 
         $sql = "UPDATE tblConectare SET
                     ServerIP = ?, ServerName = ?, DataBaseName = ?, UserName = ?,
@@ -68,8 +217,22 @@ switch ($action) {
         ];
         $stmt = sqlsrv_query($conn, $sql, $params);
         if (!$stmt) {
+            sqlsrv_rollback($conn);
             sendJsonResponse(["status" => "error", "message" => "Eroare actualizare conectare: " . sqlsrv_errors()[0]['message']], 500);
         }
+
+        if ($hasMaps) {
+            $err = saveMapping($conn, 'tblMapKP', 'KPServer', 'KPLocal', $input['mapKP'] ?? []);
+            if ($err === null) {
+                $err = saveMapping($conn, 'tblMapSectii', 'SectieServer', 'SectieLocal', $input['mapSectii'] ?? []);
+            }
+            if ($err !== null) {
+                sqlsrv_rollback($conn);
+                sendJsonResponse(["status" => "error", "message" => $err], 400);
+            }
+        }
+
+        sqlsrv_commit($conn);
         sendJsonResponse(["status" => "success", "message" => "Conectare server actualizata"]);
         break;
 

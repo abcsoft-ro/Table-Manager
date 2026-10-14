@@ -48,11 +48,11 @@ BEGIN
         INSERT INTO tblBon
             (DocID, NrDoc, Data, RepID, ContR, MagID, TipDoc, NrOp, NrZ, TotalB,
              SC, TIB, Ora, TVAA, TVAB, TVAC, TVAD, TVAE, TVAF, TVAG, TVAH,
-             NrMasa, Stare, NrPrs, DocIDP, ClientID)
+             NrMasa, Stare, NrPrs, DocIDP, ClientID, CodFiscBon, RaspunsCasa)
         SELECT
              DocID, NrDoc, Data, RepID, ContR, MagID, TipDoc, NrOp, @nr, TotalB,
              SC, TIB, Ora, TVAA, TVAB, TVAC, TVAD, TVAE, TVAF, TVAG, TVAH,
-             NrMasa, Stare, NrPrs, NULL, ClientID
+             NrMasa, Stare, NrPrs, NULL, ClientID, CodFiscBon, RaspunsCasa
         FROM tblBonCurent;
 
         -- Arhivare linii in tempECR. ECRID este IDENTITY in tempECR (se genereaza
