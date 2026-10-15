@@ -7,6 +7,7 @@
  */
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/print_common.php';
+require_once __DIR__ . '/api_common.php';
 
 /**
  * Tipul de vanzare din tblSet.TipVanz: "fastfood" cand Value = 1, altfel "restaurant".
@@ -270,6 +271,20 @@ function ensureSetariMeta($conn) {
         "Calea catre fisierul in care POS-ul bancar scrie raspunsul.", 'PoSbanca');
     @sqlsrv_query($conn, "DELETE FROM tblSet WHERE Setting = 'CaleFisierComenziPoSbanca'");
 
+    // Integrare / API public pentru aplicatii terte (grup 'Integrare'): o
+    // singura cheie globala, trimisa in headerul X-Api-Key. In baza de date se
+    // pastreaza doar SHA-256 al cheii (ApiKeyHash), generata din ecranul Setari.
+    ensureSetariValue($conn, 'ApiEnabled', '0',
+        "API public pentru aplicatii terte: 1 = DA (activ), 0 = NU (dezactivat, implicit). Cand este activ, aplicatiile terte se autentifica cu cheia API generata aici.", 'Integrare');
+    ensureSetariValue($conn, 'ApiAllowedIps', '',
+        "Lista de adrese IP / retele CIDR permise pentru API, separate prin virgula (ex. 192.168.1.0/24,10.0.0.5). Gol = fara restrictie. Recomandat cand API-ul este expus in afara retelei locale.", 'Integrare');
+    ensureSetariValue($conn, 'ApiRateLimit', '120',
+        "Numarul maxim de cereri pe minut per adresa IP pentru API. 0 = fara limita. Implicit 120.", 'Integrare');
+    ensureSetariValue($conn, 'ApiCorsOrigin', '',
+        "Rezervat pentru CORS (consumatori care ruleaza in browser). Lasati gol pentru integrari server-la-server.", 'Integrare');
+    ensureSetariValue($conn, 'ApiKeyHash', '',
+        "SHA-256 al cheii API. Se seteaza automat la generarea cheii; cheia in clar se afiseaza o singura data si nu este pastrata.", 'Integrare');
+
     // Chei legacy, fara efect in aplicatie: se sterg din tblSet daca exista
     // (nu mai apar nici in ecranul Setari).
     @sqlsrv_query(
@@ -294,12 +309,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $stmt = sqlsrv_query($conn, "SELECT Setting, Value, Descriere, Grup FROM tblSet ORDER BY Grup, Setting");
     if ($stmt) {
         while ($r = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC)) {
+            $setting = trim($r['Setting'] ?? '');
+            // Hash-ul cheii API nu se trimite niciodata catre client.
+            if ($setting === 'ApiKeyHash') { continue; }
             $rows[] = [
-                "Setting" => trim($r['Setting'] ?? ''),
+                "Setting" => $setting,
                 "Value" => $r['Value'],
                 "Descriere" => $r['Descriere'],
                 "Grup" => trim($r['Grup'] ?? '')
             ];
+        }
+    }
+    // Starea cheii API (existenta + ultima utilizare) pentru tabul Integrare.
+    $apiKeySet = (apiSetting($conn, 'ApiKeyHash', '') !== '');
+    $apiLastUsed = null;
+    apiEnsureTables($conn);
+    $stmtLu = @sqlsrv_query($conn, "SELECT TOP 1 CreatedAt FROM tblApiLog ORDER BY Id DESC");
+    $luRow = $stmtLu ? sqlsrv_fetch_array($stmtLu, SQLSRV_FETCH_ASSOC) : null;
+    if ($luRow && $luRow['CreatedAt'] !== null) {
+        try {
+            $apiLastUsed = (new DateTime((string)$luRow['CreatedAt']))->format('d-m-Y H:i:s');
+        } catch (Exception $e) {
+            $apiLastUsed = (string)$luRow['CreatedAt'];
         }
     }
     // In modul Restaurant, numarul de zecimale poate fi modificat doar daca
@@ -311,7 +342,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         "rows" => $rows,
         "tipVanz" => $tipVanz,
         "openBills" => $openBills,
-        "canEditNrZecCant" => ($tipVanz === "fastfood" || $openBills === 0)
+        "canEditNrZecCant" => ($tipVanz === "fastfood" || $openBills === 0),
+        "apiKeySet" => $apiKeySet,
+        "apiLastUsed" => $apiLastUsed
     ]);
 }
 
@@ -353,6 +386,30 @@ if ($action === 'update') {
     sqlsrv_commit($conn);
 
     sendJsonResponse(["status" => "success", "message" => "Setarile au fost salvate"]);
+}
+
+// Generare cheie API noua (globala). Cheia in clar se intoarce o singura data;
+// in baza de date se pastreaza doar SHA-256.
+if ($action === 'apikey_generate') {
+    ensureSetariMeta($conn);
+    $key = 'tm_' . bin2hex(random_bytes(32));
+    $hash = hash('sha256', $key);
+    $stmt = sqlsrv_query($conn, "UPDATE tblSet SET Value = ? WHERE Setting = 'ApiKeyHash'", [$hash]);
+    if ($stmt === false) {
+        sendJsonResponse(["status" => "error", "message" => "Eroare salvare cheie: " . sqlsrv_errors()[0]['message']], 500);
+    }
+    sendJsonResponse([
+        "status" => "success",
+        "apiKey" => $key,
+        "message" => "Cheie API generata. Copiati-o acum: nu va mai fi afisata."
+    ]);
+}
+
+// Sterge cheia API (revocare). API-ul devine inutilizabil pana la generarea alteia.
+if ($action === 'apikey_revoke') {
+    ensureSetariMeta($conn);
+    sqlsrv_query($conn, "UPDATE tblSet SET Value = '' WHERE Setting = 'ApiKeyHash'");
+    sendJsonResponse(["status" => "success", "message" => "Cheia API a fost revocata"]);
 }
 
 sendJsonResponse(["status" => "error", "message" => "Actiune necunoscuta"], 400);

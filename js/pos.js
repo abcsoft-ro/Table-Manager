@@ -2284,6 +2284,7 @@ function applyRollback() {
 const SETARI_TABS = [
   { id: "general",    label: "General",    groups: ["General", "Discount"] },
   { id: "device",     label: "Device-uri", groups: ["Casa", "Afiseaj", "Cantar", "PoSbanca"] },
+  { id: "integrare",  label: "Integrare",  groups: ["Integrare"], special: true },
   { id: "servicii",   label: "Servicii",   groups: [], special: true },
   { id: "altele",     label: "Altele",     groups: null } // null = toate cele neincluse mai sus
 ];
@@ -2293,6 +2294,11 @@ let setariActiveTab = "general";
 let setariDirty = {};
 // In modul Restaurant, NrZecCant e editabil doar cand toate mesele sunt inchise.
 let setariCanEditNrZecCant = true;
+// Starea cheii API (tabul Integrare): exista cheie + ultima utilizare.
+let setariApiKeySet = false;
+let setariApiLastUsed = null;
+// Cheia nou generata, afisata o singura data (nu vine niciodata din server).
+let setariNewApiKey = null;
 
 // Confirmare in-app (nu depinde de dialogul nativ confirm(), care poate fi
 // suprimat de browser). Fallback pe confirm() daca modalul nu exista.
@@ -2389,7 +2395,7 @@ function closeProgSetari() {
 }
 
 // Setari tblSet ascunse in ecranul Setari (legacy / fara efect).
-const SETARI_ASCUNSE = new Set(["start", "nrboncmd", "paradiscount", "storno_parola", "retea"]);
+const SETARI_ASCUNSE = new Set(["start", "nrboncmd", "paradiscount", "storno_parola", "retea", "apikeyhash"]);
 
 async function loadSetari() {
   try {
@@ -2399,6 +2405,9 @@ async function loadSetari() {
     setariRows = (data.rows || []).filter(r => !SETARI_ASCUNSE.has((r.Setting || "").trim().toLowerCase()));
     // Restrictia pentru NrZecCant (Restaurant + mese deschise) vine de la server.
     setariCanEditNrZecCant = (data.canEditNrZecCant !== false);
+    // Starea cheii API pentru tabul Integrare.
+    setariApiKeySet = (data.apiKeySet === true);
+    setariApiLastUsed = data.apiLastUsed || null;
     renderSetariTabs();
     renderSetariTab(setariActiveTab);
   } catch (err) {
@@ -2525,6 +2534,10 @@ function setariField(row) {
   }
   // Export/sincronizare cu serverul extern: lista DA / NU (implicit NU).
   if (row.Setting === "Server") {
+    return setariDaNuField(row.Setting, row.Value, row.Descriere, true);
+  }
+  // API public pentru aplicatii terte: lista DA / NU (implicit NU).
+  if (row.Setting === "ApiEnabled") {
     return setariDaNuField(row.Setting, row.Value, row.Descriere, true);
   }
 
@@ -2900,6 +2913,11 @@ function renderSetariTab(tabId) {
     return;
   }
 
+  if (tabId === "integrare") {
+    renderIntegrareTab(wrap);
+    return;
+  }
+
   const groups = setariGroupsForTab(tabId);
   const total = groups.reduce((n, g) => n + g.rows.length, 0);
 
@@ -3063,6 +3081,158 @@ async function serviceAction(service, action, btn) {
     },
     "Da",
     "Nu"
+  );
+}
+
+// --------------------------------------------------------------------------
+// INTEGRARE / API public (/api/v1/): cheie globala + setari
+// --------------------------------------------------------------------------
+function renderIntegrareTab(wrap) {
+  const info = document.createElement("div");
+  info.className = "setari-desc";
+  info.style.marginBottom = "12px";
+  info.textContent = "API public pentru aplicatii terte (servere/backend-uri): export (citire) si import (scriere) de date prin /api/v1/. Autentificarea se face cu o singura cheie globala, trimisa in headerul X-Api-Key.";
+  wrap.appendChild(info);
+
+  const vpnNote = document.createElement("div");
+  vpnNote.className = "setari-desc";
+  vpnNote.style.marginBottom = "12px";
+  vpnNote.innerHTML = 'Accesul din exterior se face exclusiv prin VPN, fara expunere pe internet: recomandat <strong>SoftEther VPN Azure + SecureNAT</strong>, alternativ <strong>Tailscale / ZeroTier</strong>. SoftEther VPN se descarca de la <a href="https://www.softether.org/5-download" target="_blank" rel="noopener">softether.org/5-download</a>.';
+  wrap.appendChild(vpnNote);
+
+  const card = document.createElement("div");
+  card.className = "setari-field";
+  card.style.marginBottom = "16px";
+
+  const title = document.createElement("label");
+  title.className = "setari-label";
+  title.textContent = "Cheie API";
+  card.appendChild(title);
+
+  const status = document.createElement("div");
+  status.className = "setari-desc";
+  let stText = setariApiKeySet ? "Cheie configurata." : "Nu exista nicio cheie configurata.";
+  if (setariApiKeySet && setariApiLastUsed) stText += " Ultima utilizare: " + setariApiLastUsed + ".";
+  status.textContent = stText;
+  card.appendChild(status);
+
+  if (setariNewApiKey) {
+    const keyRow = document.createElement("div");
+    keyRow.className = "setari-field-row";
+    const keyInput = document.createElement("input");
+    keyInput.type = "text";
+    keyInput.readOnly = true;
+    keyInput.className = "tva-input setari-input";
+    keyInput.value = setariNewApiKey;
+    keyInput.onclick = () => keyInput.select();
+    keyRow.appendChild(keyInput);
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "act-btn";
+    copyBtn.textContent = "Copiaza";
+    copyBtn.onclick = () => copyApiKey(setariNewApiKey);
+    keyRow.appendChild(copyBtn);
+    card.appendChild(keyRow);
+
+    const warn = document.createElement("div");
+    warn.className = "setari-desc";
+    warn.style.color = "#b00";
+    warn.style.fontWeight = "bold";
+    warn.textContent = "Copiati cheia acum: nu va mai fi afisata.";
+    card.appendChild(warn);
+  }
+
+  const btnRow = document.createElement("div");
+  btnRow.className = "setari-field-row";
+  btnRow.style.marginTop = "8px";
+
+  const genBtn = document.createElement("button");
+  genBtn.className = "act-btn";
+  genBtn.textContent = setariApiKeySet ? "Regenereaza cheia" : "Genereaza cheia";
+  genBtn.onclick = () => generateApiKey();
+  btnRow.appendChild(genBtn);
+
+  if (setariApiKeySet) {
+    const revBtn = document.createElement("button");
+    revBtn.className = "act-btn";
+    revBtn.textContent = "Revoca";
+    revBtn.onclick = () => revokeApiKey();
+    btnRow.appendChild(revBtn);
+  }
+  card.appendChild(btnRow);
+  wrap.appendChild(card);
+
+  // Setarile din grupul Integrare (ApiEnabled, ApiAllowedIps, ApiRateLimit, ApiCorsOrigin).
+  const groups = setariGroupsForTab("integrare");
+  groups.forEach(grp => grp.rows.forEach(r => wrap.appendChild(setariField(r))));
+}
+
+function copyApiKey(key) {
+  if (!key) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(key).then(
+      () => showToast("Cheie copiata"),
+      () => showToast("Copiati manual cheia")
+    );
+  } else {
+    showToast("Copiati manual cheia");
+  }
+}
+
+function generateApiKey() {
+  if (setariApiKeySet) {
+    appConfirm(
+      "Regenerarea cheii API va invalida cheia curenta si va intrerupe orice integrare activa. Continuati?",
+      () => doGenerateApiKey(),
+      "Regenereaza",
+      "Renunta"
+    );
+    return;
+  }
+  doGenerateApiKey();
+}
+
+async function doGenerateApiKey() {
+  try {
+    const resp = await fetch("api/setari.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ action: "apikey_generate" })
+    });
+    const data = await resp.json();
+    if (data.status !== "success") throw new Error(data.message || "Eroare");
+    setariNewApiKey = data.apiKey;
+    setariApiKeySet = true;
+    renderSetariTab("integrare");
+    showToast("Cheie API generata");
+  } catch (err) {
+    appAlert("Eroare generare cheie: " + err.message);
+  }
+}
+
+function revokeApiKey() {
+  appConfirm(
+    "Revocarea cheii API intrerupe toate integrarile active pana la generarea unei chei noi. Continuati?",
+    async () => {
+      try {
+        const resp = await fetch("api/setari.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ action: "apikey_revoke" })
+        });
+        const data = await resp.json();
+        if (data.status !== "success") throw new Error(data.message || "Eroare");
+        setariNewApiKey = null;
+        setariApiKeySet = false;
+        renderSetariTab("integrare");
+        showToast("Cheie API revocata");
+      } catch (err) {
+        appAlert("Eroare revocare cheie: " + err.message);
+      }
+    },
+    "Revoca",
+    "Renunta"
   );
 }
 

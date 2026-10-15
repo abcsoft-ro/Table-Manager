@@ -1,0 +1,9 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  # Rutele API-ului v1 (/api/v1/<resursa>) sunt servite de front controller-ul
+  # index.php. Fisierele reale (index.php, _common.php, read.php, write.php)
+  # sunt servite direct.
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ index.php [QSA,L]
+</IfModule>

@@ -1,4 +1,4 @@
-# TableManager 1.5.0
+# TableManager 1.6.0
 
 ### POS complet pentru restaurante și fast-food — instalare automată, fiabilitate în exploatare, fără dependențe grele.
 
@@ -8,7 +8,7 @@ TableManager gestionează **mesele, bonurile, ospătarii, meniul, discounturile,
 
 Aceeași aplicație rulează în **două moduri** — **Restaurant** (comandă la masă) și **FastFood** (vânzare rapidă la tejghea) — alese dintr-o singură setare. Este rescrisă de la zero pe tehnologii moderne și ușoare, cu **cozi durabile**: *nu se pierde nicio comandă și niciun bon*.
 
-`Versiune 1.5.0` · `PHP 8.3 + MSSQL` · `Fără build step` · `Windows + Apache` · `Modul mobil inclus`
+`Versiune 1.6.0` · `PHP 8.3 + MSSQL` · `Fără build step` · `Windows + Apache` · `Modul mobil inclus`
 
 ---
 

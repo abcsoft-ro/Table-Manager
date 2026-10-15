@@ -23,8 +23,8 @@ const HELP_CONTENT = {
         cantarul, POS-ul bancar si exportul catre server.
       </p>
       <p class="help-tip">
-        Setarile sunt impartite in taburi (General / Device-uri / Servicii /
-        Altele). Modificarea unui camp il marcheaza ca nesalvat; apasati
+        Setarile sunt impartite in taburi (General / Device-uri / Integrare /
+        Servicii / Altele). Modificarea unui camp il marcheaza ca nesalvat; apasati
         <strong>Salveaza</strong> (galben) pentru a scrie toate modificarile
         intr-o singura tranzactie. Butonul <strong>Inapoi</strong> atentioneaza
         daca aveti modificari nesalvate.
@@ -116,6 +116,43 @@ const HELP_CONTENT = {
         Afiseaza starea serviciilor locale Python (tiparire si sincronizare) si
         permite pornirea, oprirea sau repornirea lor. Badge-ul arata ONLINE /
         OFFLINE. Butonul Salveaza nu se foloseste pe acest tab.
+      </p>
+
+      <h4 class="help-section">Tab Integrare</h4>
+      <p>
+        Configureaza <strong>API-ul public pentru aplicatii terte</strong>
+        (servere / backend-uri), care ofera export (citire) si import (scriere)
+        de date prin <em>/api/v1/</em>. Autentificarea se face cu o singura cheie
+        globala, trimisa in headerul <em>X-Api-Key</em>.
+      </p>
+      <ul class="help-list">
+        <li><span class="help-field">Cheie API</span> - apasati
+          <strong>Genereaza cheia</strong> pentru a crea o cheie noua. Cheia se
+          afiseaza <strong>o singura data</strong>; copiati-o atunci. Se pastreaza
+          doar o amprenta (SHA-256), nu cheia in clar. <strong>Regenereaza</strong>
+          invalideaza cheia curenta, <strong>Revoca</strong> o sterge.</li>
+        <li><span class="help-field">ApiEnabled</span> - <em>DA</em> activeaza
+          API-ul, <em>NU</em> il dezactiveaza (implicit NU).</li>
+        <li><span class="help-field">ApiAllowedIps</span> - lista de IP-uri /
+          retele CIDR permise, separate prin virgula. Setati aici subreteaua
+          virtuala a VPN-ului (ex. 192.168.30.0/24) ca al doilea strat de
+          aparare. Gol = fara restrictie.</li>
+        <li><span class="help-field">ApiRateLimit</span> - numarul maxim de cereri
+          pe minut per IP (0 = fara limita).</li>
+        <li><span class="help-field">ApiCorsOrigin</span> - rezervat pentru CORS
+          (consumatori din browser); lasati gol pentru integrari server-la-server.</li>
+      </ul>
+      <p class="help-tip">
+        Accesul din exterior se face <strong>exclusiv prin VPN</strong>, nu prin
+        internet. Recomandat <strong>SoftEther VPN Azure + SecureNAT</strong>:
+        SoftEther VPN Server (<a href="https://www.softether.org/5-download"
+        target="_blank" rel="noopener">descarcare</a>) ruleaza pe aceasta statie,
+        iar clientul (serverul cloud) se conecteaza la hostname-ul
+        <em>vpn…vpnazure.net</em>; API-ul se acceseaza apoi prin IP-ul virtual al
+        retelei VPN (ex. <em>http://192.168.30.1/rual/api/v1/</em>), fara domeniu,
+        certificat sau porturi deschise pe router. Alternativ, o retea
+        <strong>Tailscale / ZeroTier</strong>. Nu uitati sa apasati
+        <strong>Salveaza</strong> dupa modificarea setarilor.
       </p>
 
       <h4 class="help-section">Tab Altele</h4>
