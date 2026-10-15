@@ -6,6 +6,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/print_common.php';
 require_once __DIR__ . '/send_common.php';
+require_once __DIR__ . '/i18n.php';
 
 /**
  * Tipul de vanzare configurat in tblSet (TipVanz): "fastfood" cand valoarea
@@ -2771,8 +2772,8 @@ switch ($action) {
         }
 
         $message = ($result['jobs'] > 0)
-            ? "Comanda (bon " . ($result['nrBon'] ?? '-') . ") a fost trimisa la bucatarie (" . $result['jobs'] . " bon(uri))"
-            : "Nu exista linii netrimise";
+            ? tr("Comanda (bon {bon}) a fost trimisa la bucatarie ({nr} bon(uri))", ["bon" => ($result['nrBon'] ?? '-'), "nr" => $result['jobs']])
+            : tr("Nu exista linii netrimise");
 
         sendJsonResponse([
             "status" => "success",

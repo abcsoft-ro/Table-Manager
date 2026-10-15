@@ -23,7 +23,13 @@ if (is_file($__dbLocalFile)) {
 }
 unset($__dbLocalFile, $__dbLocal);
 
-function getDBConnection() {
+/**
+ * @param bool $silent Cand e true, intoarce null in loc sa raspunda cu eroare
+ *                      JSON si sa opreasca executia (folosit de i18n la
+ *                      randarea paginilor, unde lipsa DB-ului nu trebuie sa
+ *                      transforme pagina in JSON; se cade pe limba implicita).
+ */
+function getDBConnection($silent = false) {
     global $DB_CONFIG;
     static $conn = null;
     if ($conn !== null) {
@@ -48,6 +54,11 @@ function getDBConnection() {
         }
     }
 
+    if ($silent) {
+        $conn = null;
+        return null;
+    }
+
     // Daca nu s-a putut conecta
     $errors = sqlsrv_errors();
     $errMsg = $errors ? $errors[0]['message'] : 'Eroare necunoscuta la conectarea la MSSQL.';
@@ -69,6 +80,16 @@ function getDBConnection() {
  * @return void
  */
 function sendJsonResponse($data, $statusCode = 200) {
+    // Traducem campul "message" (text de interfata) in limba activa
+    // (tblSet.Limba). Mesajele sunt chei sursa romane (gettext-style).
+    if (is_array($data) && isset($data['message']) && is_string($data['message'])) {
+        if (!function_exists('tr')) {
+            @require_once __DIR__ . '/i18n.php';
+        }
+        if (function_exists('tr')) {
+            $data['message'] = tr($data['message']);
+        }
+    }
     http_response_code($statusCode);
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);

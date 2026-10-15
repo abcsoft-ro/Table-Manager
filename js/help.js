@@ -628,6 +628,602 @@ const HELP_CONTENT = {
 
 };
 
+/* ENGLISH help content (mirrors HELP_CONTENT keys). Used when window.LANG = "en". */
+const HELP_CONTENT_EN = {
+
+  setari: {
+    title: "HELP - SETTINGS",
+    html: `
+      <p class="help-intro">
+        The <strong>Settings</strong> screen edits the general POS configuration
+        (<em>tblSet</em> table). Here you change how the application works: sale
+        type, discount, fiscal printer, customer display, scale, bank POS and
+        server export.
+      </p>
+      <p class="help-tip">
+        Settings are grouped in tabs (General / Devices / Integration / Services /
+        Other). Editing a field marks it as unsaved; press <strong>Save</strong>
+        (yellow) to write all changes in a single transaction. The
+        <strong>Back</strong> button warns if you have unsaved changes.
+      </p>
+
+      <h4 class="help-section">General tab - Discount group</h4>
+      <ul class="help-list">
+        <li><span class="help-field">RED</span> - allow or forbid discounts.
+          <em>1 = YES</em> (Discount buttons shown on desktop and tablet);
+          <em>0 = NO</em> (buttons hidden, the server rejects any discount and the
+          other discount settings below become inactive).</li>
+        <li><span class="help-field">TipDiscount</span> - apply mode:
+          <em>0</em> = full (per product or subtotal, percent or value, with a
+          detail window); <em>1</em> = percent on subtotal only (a numeric keypad
+          0-100); <em>2</em> = fixed percent on subtotal, applied directly with a
+          single click, no window.</li>
+        <li><span class="help-field">ProcentDiscountFix</span> - the percent (0-100)
+          used when TipDiscount = 2.</li>
+        <li><span class="help-field">MotivDiscount</span> - the list of reasons
+          offered in the discount window, separated by semicolon (;).</li>
+      </ul>
+
+      <h4 class="help-section">General tab - General group</h4>
+      <ul class="help-list">
+        <li><span class="help-field">NrLogic</span> - the logical number of the
+          station / fiscal printer (used as StatieID on export and invoicing).</li>
+        <li><span class="help-field">MagID</span> - the warehouse used at import.
+          Multiple warehouses separated by comma (e.g. 1,2); the first wins on
+          overlaps.</li>
+        <li><span class="help-field">TipVanz</span> - <em>Restaurant</em> (tables
+          screen, order goes to the section, receipt can be printed) or
+          <em>FastFood</em> (no tables screen, fiscal receipt only, no send/transfer).
+          Menu buttons are hidden automatically in FastFood.</li>
+        <li><span class="help-field">Server</span> - <em>YES</em>: the app loads
+          groups and products from an external server and exports sales to it
+          (through sync-service); <em>NO</em>: the app works independently. When
+          YES, the Groups/Products buttons are locked and Sync products becomes
+          active.</li>
+        <li><span class="help-field">CantMax</span> - maximum quantity allowed on a
+          receipt line (protects against mistyping). Default 1000.</li>
+        <li><span class="help-field">NrZecCant</span> - quantity decimals: 0, 1 or
+          2. In Restaurant mode it can be changed only when all tables are closed.</li>
+        <li><span class="help-field">PlataCombinata</span> - <em>1 = YES</em>
+          (several payment forms can be combined with the numpad); <em>0 = NO</em>
+          (only payment buttons, no numpad - one click closes the whole receipt).</li>
+        <li><span class="help-field">MeniulZilei</span> - shows the Menu of the Day
+          button when products with MZ = YES exist.</li>
+        <li><span class="help-field">NrBon</span> - the section ticket counter
+          (number printed on the kitchen ticket). It resets on the Z report and can
+          be restarted manually here.</li>
+        <li><span class="help-field">MotivStornare</span> - the list of void (VD)
+          reasons, separated by semicolon (;).</li>
+        <li><span class="help-field">SerieFactura</span> / <span class="help-field">TextFactura</span>
+          - the invoice series and footer text for the Invoicing screen.</li>
+      </ul>
+
+      <h4 class="help-section">Devices tab - Fiscal Printer</h4>
+      <ul class="help-list">
+        <li><span class="help-field">TipCasaMarcat</span> - the fiscal printer
+          driver: FiscalWire, FiscalNet, Fisco or fprwin.</li>
+        <li><span class="help-field">AsteaptaRaspunsCasa</span> - <em>1 = YES</em>:
+          the receipt is closed only after the fiscal printer confirms it
+          (FiscalWire / FiscalNet); <em>0 = NO</em>: asynchronous printing, as in
+          classic mode.</li>
+        <li><span class="help-field">AsteptareCasaSec</span> - maximum time
+          (seconds) to wait for the fiscal printer response.</li>
+        <li><span class="help-field">BonFiscalDiscStorno</span> - shows the discount
+          and void lines on the fiscal receipt (1 = YES, 0 = NO).</li>
+        <li><span class="help-field">CaleFisierComenziECR</span> /
+          <span class="help-field">CaleFisierRaspunsECR</span> - the folders where
+          commands to the fiscal printer are written and responses are read.</li>
+      </ul>
+
+      <h4 class="help-section">Devices tab - Display / Scale / Bank POS</h4>
+      <ul class="help-list">
+        <li><span class="help-field">AfiseajClient</span> - enables the customer
+          display (1 = YES, 0 = NO), with its driver and command folder.
+          <strong>Under development.</strong></li>
+        <li><span class="help-field">Cantar</span> - enables the electronic scale
+          (1 = YES, 0 = NO), with its driver and response file. When YES, the
+          <strong>QTY</strong> button launches the driver, waits <em>Delay_cantar</em>
+          and writes the read quantity <strong>directly into the receipt</strong>;
+          if it does not respond, the numeric keypad opens for manual entry.</li>
+        <li><span class="help-field">PoSbanca</span> - enables the card bank
+          terminal (1 = YES, 0 = NO), with its driver and response file.</li>
+      </ul>
+
+      <h4 class="help-section">Services tab</h4>
+      <p>
+        Shows the status of the local Python services (printing and sync) and
+        allows starting, stopping or restarting them. The badge shows ONLINE /
+        OFFLINE. The Save button is not used on this tab.
+      </p>
+
+      <h4 class="help-section">Integration tab</h4>
+      <p>
+        Configures the <strong>public API for third-party applications</strong>
+        (servers / backends), which offers export (read) and import (write) of
+        data via <em>/api/v1/</em>. Authentication uses a single global key sent
+        in the <em>X-Api-Key</em> header.
+      </p>
+      <ul class="help-list">
+        <li><span class="help-field">Cheie API</span> - press
+          <strong>Generate key</strong> to create a new key. The key is shown
+          <strong>only once</strong>; copy it then. Only a fingerprint (SHA-256) is
+          stored, not the clear-text key. <strong>Regenerate</strong> invalidates
+          the current key, <strong>Revoke</strong> removes it.</li>
+        <li><span class="help-field">ApiEnabled</span> - <em>YES</em> enables the
+          API, <em>NO</em> disables it (default NO).</li>
+        <li><span class="help-field">ApiAllowedIps</span> - the list of allowed
+          IPs / CIDR networks, separated by comma. Set the VPN virtual subnet here
+          (e.g. 192.168.30.0/24) as a second layer of defence. Empty = no
+          restriction.</li>
+        <li><span class="help-field">ApiRateLimit</span> - maximum requests per
+          minute per IP (0 = no limit).</li>
+        <li><span class="help-field">ApiCorsOrigin</span> - reserved for CORS
+          (browser consumers); leave empty for server-to-server integrations.</li>
+      </ul>
+      <p class="help-tip">
+        External access is done <strong>exclusively through VPN</strong>, not over
+        the internet. Recommended <strong>SoftEther VPN Azure + SecureNAT</strong>:
+        SoftEther VPN Server (<a href="https://www.softether.org/5-download"
+        target="_blank" rel="noopener">download</a>) runs on this station, and the
+        client (cloud server) connects to the hostname <em>vpn…vpnazure.net</em>;
+        the API is then reached through the VPN virtual IP (e.g.
+        <em>http://192.168.30.1/rual/api/v1/</em>), with no domain, certificate or
+        open router ports. Alternatively, a <strong>Tailscale / ZeroTier</strong>
+        network. Do not forget to press <strong>Save</strong> after changing
+        settings.
+      </p>
+
+      <h4 class="help-section">Other tab</h4>
+      <p>Contains the remaining settings that are not part of the groups above.</p>
+    `
+  },
+
+  antet: {
+    title: "HELP - HEADER",
+    html: `
+      <p class="help-intro">
+        The <strong>Header</strong> screen edits the company data that appears on
+        documents (fiscal receipt, note, invoice). It writes the row in
+        <em>tblAntet</em> with Series <em>0001</em>.
+      </p>
+      <h4 class="help-section">How to use</h4>
+      <ul class="help-list">
+        <li>Edit the desired fields; for text use the <strong>&#9000;</strong>
+          button (alphanumeric keyboard).</li>
+        <li>Numeric fields (SizeModeLogo) use the <strong>123</strong> keypad.</li>
+        <li>Press <strong>Save</strong> (yellow) to write the changes.</li>
+      </ul>
+      <h4 class="help-section">Fields</h4>
+      <ul class="help-list">
+        <li><span class="help-field">Nume / Denumire2</span> - the company name.</li>
+        <li><span class="help-field">Adresa / Oras / CodPostal / Judet</span> - the
+          registered address.</li>
+        <li><span class="help-field">CodFiscF / RegCom</span> - VAT number and trade
+          register number.</li>
+        <li><span class="help-field">Cont / Banca</span> - IBAN account and bank.</li>
+        <li><span class="help-field">PersContact / email / website / telefon</span> -
+          contact details.</li>
+        <li><span class="help-field">PlatitorTVA</span> - YES/NO.</li>
+        <li><span class="help-field">CaleDateLogo</span> - path to the logo image,
+          <span class="help-field">SizeModeLogo</span> - the logo sizing mode.
+          <em>(under development)</em></li>
+        <li><span class="help-field">QRCodeText</span> - the text encoded in the QR
+          code on the document. <em>(under development)</em></li>
+      </ul>
+    `
+  },
+
+  nota: {
+    title: "HELP - RECEIPT",
+    html: `
+      <p class="help-intro">
+        The <strong>Receipt</strong> screen configures the header and footer rows
+        printed on the receipt (and on the proforma). It edits rows <em>H1-H3</em>
+        (header) and <em>F1-F2</em> (footer), plus <em>P1-P2</em> which appear only
+        on the proforma.
+      </p>
+      <h4 class="help-section">Fields for each row</h4>
+      <ul class="help-list">
+        <li><span class="help-field">Nume</span> - the row text (leave empty to not
+          print the row).</li>
+        <li><span class="help-field">NumeFont</span> - the ESC/POS font
+          (Font A / B / C / D / E).</li>
+        <li><span class="help-field">Size</span> - the size (1x1, 2x1, 1x2, 2x2,
+          3x3).</li>
+        <li><span class="help-field">Bold</span> - YES/NO.</li>
+      </ul>
+      <p class="help-tip">
+        Changes are saved all at once with <strong>Save</strong>. The result can be
+        seen in the preview in the Print queue.
+      </p>
+    `
+  },
+
+  conectare: {
+    title: "HELP - SERVER CONNECTION",
+    html: `
+      <p class="help-intro">
+        The <strong>Server connection</strong> screen configures the external data
+        source (<em>tblConectare</em> table, single row) used for product sync and
+        sales export, plus the server &#8594; local mapping tables.
+      </p>
+      <h4 class="help-section">Connection details</h4>
+      <ul class="help-list">
+        <li><span class="help-field">ServerIP / ServerName</span> - address / name
+          of the SQL server.</li>
+        <li><span class="help-field">DataBaseName</span> - the database name.</li>
+        <li><span class="help-field">UserName / Password</span> - user and password
+          (not used when TC = YES).</li>
+        <li><span class="help-field">TC (Trusted Connection)</span> - YES = Windows
+          auth, NO = user/password.</li>
+        <li><span class="help-field">ODBC_connect_string</span> - the full ODBC
+          string, if used directly.</li>
+      </ul>
+      <p class="help-tip">
+        The <strong>Test connection</strong> button tries to connect with the
+        on-screen values, without saving.
+      </p>
+      <h4 class="help-section">Server &#8594; local mappings</h4>
+      <ul class="help-list">
+        <li><span class="help-field">Printing section mapping (KP)</span> -
+          translates the server printing section into the local one at import.</li>
+        <li><span class="help-field">Section mapping</span> - translates the section
+          (tblProd.Sectie) from the server into the local one at import.</li>
+      </ul>
+      <p>
+        If a server value has no mapping, the server value is kept. Use the
+        <strong>+ Add mapping</strong> buttons and then <strong>Save</strong>.
+      </p>
+    `
+  },
+
+  parole: {
+    title: "HELP - PASSWORDS",
+    html: `
+      <p class="help-intro">
+        The <strong>Passwords</strong> screen sets the POS passwords
+        (<em>tblParola</em> table, single row). Passwords are <strong>numeric</strong>.
+        A field left empty means that password is not requested.
+      </p>
+      <h4 class="help-section">Passwords</h4>
+      <ul class="help-list">
+        <li><span class="help-field">Parola programare</span> - asks for the
+          password to enter the programming screen (Settings, Products, etc.).</li>
+        <li><span class="help-field">Parola rapoarte</span> - asks for the password
+          to open the X / Z reports screen.</li>
+        <li><span class="help-field">Parola stornare</span> - asks for the password
+          and reason when voiding (VD) a line already sent to the kitchen.</li>
+        <li><span class="help-field">Parola discount</span> - asks for the password
+          before applying a discount.</li>
+        <li><span class="help-field">Parola inchidere aplicatie</span> - asks for the
+          password when closing the application (exit).</li>
+        <li><span class="help-field">Parola update</span> - protects the application
+          update. If empty, the update is blocked.</li>
+      </ul>
+      <p class="help-tip">Press <strong>Save</strong> (yellow) to write the changes.</p>
+    `
+  },
+
+  produse: {
+    title: "HELP - PRODUCT PROGRAMMING",
+    html: `
+      <p class="help-intro">
+        The <strong>Products</strong> screen edits the product catalogue
+        (<em>tblProd</em>). At the top you choose the group; the grid on the left
+        shows its products on positions 1-50, exactly like the sales menu.
+      </p>
+      <h4 class="help-section">How to use</h4>
+      <ul class="help-list">
+        <li>Choose the group from the <strong>Group</strong> list at the top.</li>
+        <li>Tap a product on the grid to edit it, or a dotted (free) slot to add a
+          new product.</li>
+        <li>Changes are kept in memory (marked <em>* unsaved</em>) and written with
+          <strong>Save</strong>.</li>
+        <li><strong>Reload</strong> reloads the data from the server (loses unsaved
+          changes).</li>
+      </ul>
+      <h4 class="help-section">Main fields</h4>
+      <ul class="help-list">
+        <li><span class="help-field">ProdID</span> - the product code (editable only
+          on add).</li>
+        <li><span class="help-field">BarCod</span> - the barcode used by the
+          scanner.</li>
+        <li><span class="help-field">Denumire</span> - the name shown on the menu
+          and receipt.</li>
+        <li><span class="help-field">Grupa (NrGrp)</span> - the group the product
+          belongs to.</li>
+        <li><span class="help-field">Poz</span> - the position in the menu (1-50).</li>
+        <li><span class="help-field">PV</span> - the sale price.</li>
+        <li><span class="help-field">Nr_TVA</span> - the VAT rate applied.</li>
+        <li><span class="help-field">Imprimanta KP</span> - the section printer the
+          product goes to on Send.</li>
+        <li><span class="help-field">Sectie</span> - the reporting section.</li>
+        <li><span class="help-field">Magazie (MagID)</span> - the product warehouse.
+          If <em>tblSet.MagID</em> contains a single value, the field is prefilled
+          with it; if it is a list of ids, it appears as a drop-down.</li>
+        <li><span class="help-field">UM</span> - the unit of measure.</li>
+        <li><span class="help-field">MZ</span> - whether the product is part of the
+          Menu of the Day (YES/NO).</li>
+      </ul>
+      <p>
+        Deleting a product asks for confirmation. In "server" mode (products come
+        from sync) the screen is locked.
+      </p>
+    `
+  },
+
+  grupe: {
+    title: "HELP - GROUP PROGRAMMING",
+    html: `
+      <p class="help-intro">
+        The <strong>Groups</strong> screen edits the menu groups
+        (<em>tblGrp</em>). The grid on the left mirrors the group grid on the sales
+        screen (positions 1-50).
+      </p>
+      <h4 class="help-section">How to use</h4>
+      <ul class="help-list">
+        <li>Tap a group or a free slot on the grid to edit it.</li>
+        <li>Changes are marked <em>* unsaved</em> and written with
+          <strong>Save</strong>.</li>
+        <li><strong>Reload</strong> reloads the data from the server.</li>
+      </ul>
+      <h4 class="help-section">Fields</h4>
+      <ul class="help-list">
+        <li><span class="help-field">NrGrp</span> - the group code (editable only on
+          add).</li>
+        <li><span class="help-field">Denumire</span> - the group name.</li>
+        <li><span class="help-field">Poz</span> - the position in the menu (1-50).</li>
+        <li><span class="help-field">FontSize / FontType</span> - the size and font
+          of the button text.</li>
+        <li><span class="help-field">Culoare fundal / Culoare text</span> - the
+          button appearance (palette or custom color).</li>
+        <li><span class="help-field">Bold</span> - bold text (YES/NO).</li>
+      </ul>
+      <p>Groups have no delete; to remove a group from the menu, move it to another
+        position or leave it without products.</p>
+    `
+  },
+
+  mese: {
+    title: "HELP - TABLE LAYOUT",
+    html: `
+      <p class="help-intro">
+        The <strong>Table layout</strong> screen edits the table appearance
+        (<em>tblMese</em>). The map on the left is exactly the tables screen
+        (10 columns x 8 rows = 80 positions).
+      </p>
+      <h4 class="help-section">How to use</h4>
+      <ul class="help-list">
+        <li>Tap a table on the map to edit it, or a free slot to add a new table
+          (<strong>Add table</strong>).</li>
+        <li>Changes are marked <em>* unsaved</em> and written with
+          <strong>Save</strong>.</li>
+        <li><strong>Reset</strong> deletes everything and recreates the 80 tables
+          with the default appearance (asks for confirmation).</li>
+        <li><strong>Reload</strong> reloads the data from the server.</li>
+      </ul>
+      <h4 class="help-section">Fields</h4>
+      <ul class="help-list">
+        <li><span class="help-field">NrMasa</span> - the position number (1-80).</li>
+        <li><span class="help-field">Culoare fundal / Culoare text</span> - the table
+          appearance on the map.</li>
+        <li><span class="help-field">Bold</span> - bold text.</li>
+        <li><span class="help-field">Afisez</span> - whether the table appears on
+          the tables screen when free (a table with an open receipt is shown
+          anyway).</li>
+        <li><span class="help-field">Obs</span> - notes.</li>
+      </ul>
+    `
+  },
+
+  imprimante: {
+    title: "HELP - PRINTERS",
+    html: `
+      <p class="help-intro">
+        The <strong>Section printers</strong> screen associates each printing
+        section (kitchen, bar, etc.) with a physical printer, and sets the
+        destinations for the receipt, reports and fiscal printer.
+      </p>
+      <h4 class="help-section">How to use</h4>
+      <ul class="help-list">
+        <li>On the left is the list of sections (<em>tblKP</em> table). Choose a
+          section and configure its name, status and destination.</li>
+        <li>On the right you choose the global destinations: <em>receipt</em>,
+          <em>reports</em>, <em>fiscal printer</em> and the default printer.</li>
+        <li>The badge at the top shows whether the printing service is
+          ONLINE/OFFLINE.</li>
+        <li><strong>Save</strong> writes the sections to the database and the
+          printing configuration (the Python service hot-reloads it).</li>
+      </ul>
+      <h4 class="help-section">Destination types</h4>
+      <ul class="help-list">
+        <li><span class="help-field">Retea</span> - printer with IP and port
+          (default 9100).</li>
+        <li><span class="help-field">Windows / USB</span> - a local printer
+          installed in Windows (including USB).</li>
+        <li><span class="help-field">Preview</span> - does not print physically;
+          writes the content to the preview (useful until the printer is
+          installed).</li>
+        <li><span class="help-field">Fisier</span> - writes the content to a
+          file.</li>
+      </ul>
+      <p>
+        The <strong>Test</strong> button (per section or per destination) sends a
+        test receipt.
+      </p>
+    `
+  },
+
+  tva: {
+    title: "HELP - VAT RATES",
+    html: `
+      <p class="help-intro">
+        The <strong>VAT rates</strong> screen edits the <em>tblTVA</em> table: the
+        list of VAT rates available on products.
+      </p>
+      <h4 class="help-section">How to use</h4>
+      <ul class="help-list">
+        <li>Tap a rate in the list to select it.</li>
+        <li><strong>Add</strong> opens the form for a new rate, with the numeric
+          keypad (<strong>123</strong> for Nr_TVA, <strong>.</strong> for
+          decimals).</li>
+        <li><strong>Edit</strong> / <strong>Delete</strong> act on the selected
+          rate; deleting asks for confirmation.</li>
+      </ul>
+      <h4 class="help-section">Fields</h4>
+      <ul class="help-list">
+        <li><span class="help-field">Nr_TVA</span> - the rate identifier.</li>
+        <li><span class="help-field">Cota (%)</span> - the VAT percentage.</li>
+      </ul>
+      <p class="help-tip">
+        POS prices are VAT-inclusive; the rate is used to break down VAT in
+        reports.
+      </p>
+    `
+  },
+
+  mesaje: {
+    title: "HELP - PREP MODES",
+    html: `
+      <p class="help-intro">
+        The <strong>Prep modes</strong> screen edits the <em>tblMesaj</em> table:
+        the "prep mode" texts (e.g. "no onion", "well done") that can be attached
+        to a product on the receipt.
+      </p>
+      <h4 class="help-section">How to use</h4>
+      <ul class="help-list">
+        <li>Tap a mode in the list to select it.</li>
+        <li><strong>Add</strong> opens the form; NrMesaj uses the
+          <strong>123</strong> keypad, Mesaj uses the <strong>&#9000;</strong>
+          keyboard.</li>
+        <li><strong>Edit</strong> / <strong>Delete</strong> act on the selected
+          mode; deleting asks for confirmation.</li>
+      </ul>
+      <p>
+        An attached mode becomes a separate row on the receipt, under the product,
+        and does not change the total.
+      </p>
+    `
+  },
+
+  ospatari: {
+    title: "HELP - WAITERS",
+    html: `
+      <p class="help-intro">
+        The <strong>Waiters</strong> screen edits the list of waiters / cashiers
+        (<em>tblOsp</em>). They authenticate with a password to take orders.
+      </p>
+      <h4 class="help-section">How to use</h4>
+      <ul class="help-list">
+        <li>Tap a waiter in the list to select it.</li>
+        <li><strong>Add</strong> opens the add form.</li>
+        <li><strong>Edit</strong> / <strong>Delete</strong> act on the selected
+          waiter; deleting asks for confirmation.</li>
+      </ul>
+      <h4 class="help-section">Fields</h4>
+      <ul class="help-list">
+        <li><span class="help-field">NrOsp</span> - the code (max 2 characters).</li>
+        <li><span class="help-field">Nume</span> - the displayed name.</li>
+        <li><span class="help-field">Expl</span> - description / role.</li>
+        <li><span class="help-field">Parola</span> - the POS login password.</li>
+        <li><span class="help-field">Blocat</span> - YES = cannot log in.</li>
+      </ul>
+    `
+  },
+
+  sectii: {
+    title: "HELP - SECTIONS",
+    html: `
+      <p class="help-intro">
+        The <strong>Sections</strong> screen edits the <em>tblSectii</em> table:
+        the product reporting sections (for example kitchen, bar).
+      </p>
+      <h4 class="help-section">How to use</h4>
+      <ul class="help-list">
+        <li>Tap a section in the list to select it.</li>
+        <li><strong>Add</strong> opens the form; the Sectie code uses the
+          <strong>123</strong> keypad, the Name uses the <strong>&#9000;</strong>
+          keyboard.</li>
+        <li><strong>Edit</strong> / <strong>Delete</strong> act on the selected
+          section. Sections 1 and 2 are protected and cannot be deleted.</li>
+      </ul>
+      <h4 class="help-section">Fields</h4>
+      <ul class="help-list">
+        <li><span class="help-field">Sectie</span> - the section code (key).</li>
+        <li><span class="help-field">Denumire</span> - the name (max 10 characters).</li>
+      </ul>
+    `
+  },
+
+  forme_plata: {
+    title: "HELP - PAYMENT FORMS",
+    html: `
+      <p class="help-intro">
+        The <strong>Payment forms</strong> screen edits the <em>tblFP</em> table:
+        the payment buttons shown on the receipt-closing screen (cash, card,
+        vouchers, etc.).
+      </p>
+      <h4 class="help-section">How to use</h4>
+      <ul class="help-list">
+        <li>Tap a payment form in the list to select it.</li>
+        <li><strong>Add</strong> opens the form; FPID and Poz use the
+          <strong>123</strong> keypad, the Name uses the <strong>&#9000;</strong>
+          keyboard.</li>
+        <li><strong>Edit</strong> / <strong>Delete</strong> act on the selected
+          form; deleting asks for confirmation.</li>
+      </ul>
+      <h4 class="help-section">Fields</h4>
+      <ul class="help-list">
+        <li><span class="help-field">FPID</span> - the payment form identifier
+          (<em>FPID = 1</em> is reserved for card / bank POS).</li>
+        <li><span class="help-field">Denumire</span> - the button text.</li>
+        <li><span class="help-field">Poz</span> - the display order; the form with
+          Poz = 1 is selected by default.</li>
+        <li><span class="help-field">Status</span> - 1 = active (shown on the
+          payment screen), 0 = hidden.</li>
+      </ul>
+    `
+  },
+
+  rollback: {
+    title: "HELP - ROLLBACK",
+    html: `
+      <p class="help-intro">
+        <strong>Rollback</strong> reverts to a previous version of the application
+        if the current one has problems. Only code files are affected; local
+        settings (connection, printers, fiscal printer, bank POS) are
+        <strong>not</strong> touched. The database is not modified.
+      </p>
+      <h4 class="help-section">Restore points (this computer)</h4>
+      <p>
+        Before every update a full snapshot of the current version is saved
+        automatically. The last 5 are kept. Choose one to return exactly to the
+        version that was running then.
+      </p>
+      <h4 class="help-section">Versions from history (GitHub)</h4>
+      <p>
+        If there is internet, the latest versions from the GitHub history are also
+        listed; you can return to any of them.
+      </p>
+      <h4 class="help-section">How to use</h4>
+      <ul class="help-list">
+        <li>Press <strong>Rollback</strong>; you are asked for the
+          <strong>update password</strong> (the same as for Update).</li>
+        <li>Choose a restore point or a version from the list.</li>
+        <li>Press <strong>Apply rollback</strong> (yellow) and confirm.</li>
+        <li>After rollback, <strong>restart the services</strong> (Settings ->
+          Services) and reload the page.</li>
+      </ul>
+      <p class="help-tip">
+        The current version is marked "(current)". After a rollback, the
+        <strong>Update</strong> button will again offer the move to the latest
+        version.
+      </p>
+    `
+  }
+
+};
+
 /* Rezerva pentru tastele care nu au continut definit. */
 const HELP_FALLBACK = {
   title: "AJUTOR",
@@ -639,12 +1235,15 @@ const HELP_FALLBACK = {
  * @param {string} key Cheia din HELP_CONTENT (ex. "setari", "produse").
  */
 function openHelp(key) {
-  const data = HELP_CONTENT[key] || HELP_FALLBACK;
+  const isEn = (typeof window.LANG === "string" && window.LANG === "en");
+  const data = (isEn && typeof HELP_CONTENT_EN !== "undefined" && HELP_CONTENT_EN[key])
+    ? HELP_CONTENT_EN[key]
+    : (HELP_CONTENT[key] || HELP_FALLBACK);
   const modal = document.getElementById("modal-help");
   if (!modal) return;
   const title = document.getElementById("modal-help-title");
   const body = document.getElementById("modal-help-body");
-  if (title) title.textContent = data.title || "AJUTOR";
+  if (title) title.textContent = data.title || (isEn ? "HELP" : "AJUTOR");
   if (body) body.innerHTML = data.html || "";
   modal.classList.add("active");
   if (body) body.scrollTop = 0;

@@ -6,6 +6,7 @@
  */
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/colors.php';
+require_once __DIR__ . '/i18n.php';
 
 $conn = getDBConnection();
 
@@ -398,5 +399,6 @@ sendJsonResponse([
     "motivDiscount" => $motivDiscount,
     "motivStornare" => $motivStornare,
     "distrRand1" => $distrRand1,
-    "distrRand2" => $distrRand2
+    "distrRand2" => $distrRand2,
+    "lang" => appLang($conn)
 ]);

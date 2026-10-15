@@ -21,6 +21,8 @@ const POS_STATE = {
   // In FastFood nu se afiseaza ecranul de mese, comanda nu pleaca la sectie si
   // nota de plata nu se tipareste (doar bonul fiscal).
   tipVanz: "restaurant",
+  // Limba interfetei (tblSet.Limba): "ro" (default) sau "en".
+  lang: "ro",
   // Cantitatea maxima admisa pe o linie (tblSet.CantMax, implicit 1000).
   cantMax: 1000,
   // Numarul de zecimale pentru cantitate (tblSet.NrZecCant: 0, 1 sau 2).
@@ -90,6 +92,16 @@ const POS_STATE = {
   cuiDocId: null
 };
 
+// Traducere gettext-style: daca sirul (text-sursa romana) exista in catalog,
+// intoarce traducerea; altfel il lasa neschimbat. Suporta placeholdere {nume}.
+// Folosit si de functiile-funnel (appAlert/appConfirm/showToast), ca mesajele
+// scrise direct in romana sa fie traduse automat fara a edita fiecare apel.
+function tr(s, params) {
+  if (typeof window.trText === "function") return window.trText(s, params);
+  if (typeof window.t === "function") return window.t(s, params);
+  return s;
+}
+
 // Initializare la incarcarea paginii
 document.addEventListener("DOMContentLoaded", () => {
   initApp();
@@ -148,7 +160,7 @@ function populateMotiveSelect(id, list, fallback) {
   const el = document.getElementById(id);
   if (!el) return;
   const items = (Array.isArray(list) && list.length > 0) ? list : fallback;
-  el.innerHTML = '<option value="">— selectati motivul —</option>';
+  el.innerHTML = '<option value="">' + escapeHtml(tr("— selectati motivul —")) + '</option>';
   items.forEach(m => {
     const opt = document.createElement("option");
     opt.value = m;
@@ -176,6 +188,7 @@ async function loadMenu() {
   POS_STATE.meniulZilei = (data.meniulZilei == 1) ? 1 : 0;
   POS_STATE.modLogare = (data.modLogare == 0) ? 0 : 1;
   POS_STATE.tipVanz = (data.tipVanz === "fastfood") ? "fastfood" : "restaurant";
+  POS_STATE.lang = (data.lang === "en") ? "en" : "ro";
   POS_STATE.cantMax = (Number(data.cantMax) > 0) ? Number(data.cantMax) : 1000;
   const nz = parseInt(data.nrZecCant, 10);
   POS_STATE.nrZecCant = (nz >= 0 && nz <= 2) ? nz : 1;
@@ -191,6 +204,9 @@ async function loadMenu() {
   POS_STATE.plataCombinata = (data.plataCombinata == 0) ? 0 : 1;
   POS_STATE.parolaDiscount = (data.parolaDiscount == 1) ? 1 : 0;
   POS_STATE.parolaStornare = (data.parolaStornare == 1) ? 1 : 0;
+
+  // Traducem elementele statice marcate cu data-i18n* (limba din tblSet.Limba).
+  if (typeof window.applyI18n === "function") window.applyI18n();
 
   renderMenuGrid();
   updateMeniulZileiButton();
@@ -351,7 +367,7 @@ function renderMenuGrid() {
 function openCategory(nrGrp, groupName) {
   const produse = POS_STATE.productsByGroup[nrGrp] || [];
   if (produse.length === 0) {
-    showToast(`Grupa "${groupName}" nu contine produse active`);
+    showToast(tr("msg.grupa_fara_produse", { grupa: groupName }));
     return;
   }
 
@@ -366,7 +382,7 @@ function openCategory(nrGrp, groupName) {
     header.style.display = "flex";
     title.innerText = groupName;
     if (backBtn) {
-      backBtn.innerText = "⬅ INAPOI LA GRUPE";
+      backBtn.innerText = tr("⬅ INAPOI LA GRUPE");
       backBtn.onclick = () => returnToGroups();
     }
   }
@@ -384,7 +400,7 @@ function showMenuHeader(titleText) {
     header.style.display = "flex";
     title.innerText = titleText;
     if (backBtn) {
-      backBtn.innerText = "⬅ INAPOI LA GRUPE";
+      backBtn.innerText = tr("⬅ INAPOI LA GRUPE");
       backBtn.onclick = () => returnToGroups();
     }
   }
@@ -639,7 +655,7 @@ async function loadOrder(nrMasa) {
     // Sincronizam interfata
     document.getElementById("current-table-btn").innerText = nrMasa;
     const cashierEl = document.getElementById("current-cashier-label");
-    if (cashierEl) cashierEl.innerText = POS_STATE.loggedIn ? (POS_STATE.casierCurent || "") : "Neautentificat";
+    if (cashierEl) cashierEl.innerText = POS_STATE.loggedIn ? (POS_STATE.casierCurent || "") : tr("Neautentificat");
     
     const dtEl = document.getElementById("order-datetime");
     if (data.dataOra && dtEl) {
@@ -748,7 +764,7 @@ function renderOrderItems(subtotalCalculat = null, totalCalculat = null) {
       mrow.className = "order-mod-row";
       mrow.innerHTML = `
         <span class="order-mod-text">${escapeHtml(m.text)}</span>
-        <button class="mod-del-btn" title="Sterge modul" onclick="deleteMod(${m.ecrId})">✕</button>
+        <button class="mod-del-btn" title="${tr('Sterge modul')}" onclick="deleteMod(${m.ecrId})">✕</button>
       `;
       container.appendChild(mrow);
     });
@@ -901,7 +917,7 @@ function renderTablesGrid() {
     if (t.isOccupied) {
       const occ = document.createElement("div");
       occ.className = "table-cell-btn table-occupied";
-      occ.innerHTML = `<div>${t.nrMasa}</div><div style="font-size: 11px;">${escapeHtml(t.casier || "OCUPAT")}<br>${t.total.toFixed(0)} L</div>`;
+      occ.innerHTML = `<div>${t.nrMasa}</div><div style="font-size: 11px;">${escapeHtml(t.casier || tr("OCUPAT"))}<br>${t.total.toFixed(0)} L</div>`;
       occ.onclick = () => selectTableAndOpen(t.nrMasa);
       container.appendChild(occ);
       return;
@@ -957,7 +973,7 @@ async function selectTableAndOpen(numarMasa) {
   // Verificare rapida din starea meselor (cea autoritara se face pe server).
   const t = POS_STATE.tables.find(x => x.nrMasa === numarMasa);
   if (t && t.isOccupied && t.nrOp != null && Number(t.nrOp) !== Number(POS_STATE.nrOp)) {
-    appAlert("Masa " + numarMasa + " este deschisa de alt ospatar (" + (t.casier || "?") + ").");
+    appAlert(tr("msg.masa_alt_ospatar", { masa: numarMasa, casier: t.casier || "?" }));
     return;
   }
 
@@ -966,7 +982,7 @@ async function selectTableAndOpen(numarMasa) {
 
   // Un ospatar nu poate intra pe masa deschisa de alt ospatar.
   if (POS_STATE.docId && POS_STATE.bonNrOp != null && Number(POS_STATE.bonNrOp) !== Number(POS_STATE.nrOp)) {
-    appAlert("Masa " + numarMasa + " este deschisa de alt ospatar (" + (POS_STATE.bonCasier || "?") + ").");
+    appAlert(tr("msg.masa_alt_ospatar", { masa: numarMasa, casier: POS_STATE.bonCasier || "?" }));
     return;
   }
 
@@ -1109,8 +1125,8 @@ function updatePaymentProgress() {
   });
 
   el.innerText = parts.length
-    ? parts.join("   |   ") + "   |   Rest: " + rest.toFixed(2)
-    : "Total de plata: " + total.toFixed(2);
+    ? parts.join("   |   ") + "   |   " + tr("Rest: ") + rest.toFixed(2)
+    : tr("Total de plata: ") + total.toFixed(2);
 }
 
 function payNumpadKey(key) {
@@ -1349,7 +1365,7 @@ async function executeClose(total, rest) {
 
     let msgHtml = `NOTA A FOST TRIMISA LA APARATUL FISCAL<br>${detalii}<br>Total: ${total.toFixed(2)} Lei`;
     if (rest > 0) {
-      msgHtml += `<br><span style="font-size:22px; font-weight:bold;">Rest de dat: ${rest.toFixed(2)} Lei</span>`;
+      msgHtml += `<br><span style="font-size:22px; font-weight:bold;">${tr("Rest de dat: ")}${rest.toFixed(2)} Lei</span>`;
     }
     if (res.fiscal) {
       let casaLinie = `<br>Casa de marcat: NR ${res.fiscal.nr != null ? res.fiscal.nr : "-"}`;
@@ -1559,7 +1575,7 @@ const WAITER_STORAGE_KEY = "rual_waiter";
 
 function updateCashierLabel() {
   const el = document.getElementById("current-cashier-label");
-  if (el) el.innerText = POS_STATE.loggedIn ? (POS_STATE.casierCurent || "") : "Neautentificat";
+  if (el) el.innerText = POS_STATE.loggedIn ? (POS_STATE.casierCurent || "") : tr("Neautentificat");
 }
 
 // Seteaza ospatarul autentificat. Daca Mod_logare = 1, sesiunea se pastreaza
@@ -1610,8 +1626,8 @@ function openLoginModal(callback) {
   pendingLoginCallback = callback || null;
   const title = document.getElementById("kb-title");
   const subtitle = document.getElementById("kb-subtitle");
-  if (title) title.innerText = "AUTENTIFICARE OSPATAR";
-  if (subtitle) subtitle.innerText = "Introduceti parola";
+  if (title) title.innerText = tr("AUTENTIFICARE OSPATAR");
+  if (subtitle) subtitle.innerText = tr("Introduceti parola");
   const modal = document.getElementById("modal-keyboard");
   const input = document.getElementById("virtual-keyboard-input");
   if (input) { input.type = "password"; input.value = ""; }
@@ -1625,8 +1641,8 @@ function openKeyboardModal(mode) {
   keyboardAction = mode === "Cautare" ? "search" : "parola";
   const title = document.getElementById("kb-title");
   const subtitle = document.getElementById("kb-subtitle");
-  if (title) title.innerText = keyboardAction === "search" ? "CAUTARE PRODUS" : "AUTENTIFICARE";
-  if (subtitle) subtitle.innerText = keyboardAction === "search" ? "Introduceti textul cautarii" : "Introduceti parola";
+  if (title) title.innerText = tr(keyboardAction === "search" ? "CAUTARE PRODUS" : "AUTENTIFICARE");
+  if (subtitle) subtitle.innerText = tr(keyboardAction === "search" ? "Introduceti textul cautarii" : "Introduceti parola");
 
   const modal = document.getElementById("modal-keyboard");
   const input = document.getElementById("virtual-keyboard-input");
@@ -1857,9 +1873,9 @@ function renderSearchResults(query, products) {
   const backBtn = document.getElementById("btn-group-back");
   if (header && title) {
     header.style.display = "flex";
-    title.innerText = "REZULTATE: " + query;
+    title.innerText = tr("REZULTATE: ") + query;
     if (backBtn) {
-      backBtn.innerText = "⬅ INAPOI LA GRUPE";
+      backBtn.innerText = tr("⬅ INAPOI LA GRUPE");
       backBtn.onclick = () => renderMenuGrid();
     }
   }
@@ -1971,7 +1987,7 @@ async function loadAppVersion() {
       document.title = "TableManager " + data.version + " - Modern Web POS";
     }
   } catch (err) {
-    if (label) { label.textContent = "versiune indisponibila"; }
+    if (label) { label.textContent = tr("versiune indisponibila"); }
   }
   return APP_VERSION_INFO;
 }
@@ -2115,15 +2131,15 @@ async function runUpdate() {
     showToast("Verific versiunea disponibila...");
     const data = await fetchJsonNoStore("api/update.php?check=1");
 
-    const curent = data.label ? ("Versiune curenta: " + data.label + ".\n") : "";
+    const curent = data.label ? (tr("Versiune curenta: ") + data.label + ".\n") : "";
 
     if (!data.updateAvailable) {
-      appAlert(curent + "Ai deja ultima versiune (" + data.latest + ").");
+      appAlert(curent + tr("Ai deja ultima versiune (") + data.latest + ").");
       return;
     }
 
     appConfirm(
-      curent + "Exista o versiune noua (" + data.latest + "). Configurarile locale nu sunt afectate. Actualizati acum?",
+      curent + tr("Exista o versiune noua ({v}). Configurarile locale nu sunt afectate. Actualizati acum?", { v: data.latest }),
       () => promptUpdateParola(),
       "Da",
       "Nu"
@@ -2260,7 +2276,7 @@ function applyRollback() {
     return;
   }
   appConfirm(
-    "Reveniti la versiunea: " + rollbackSelected.label + "? Configurarile locale nu sunt afectate.",
+    tr("Reveniti la versiunea: ") + rollbackSelected.label + tr("? Configurarile locale nu sunt afectate."),
     async () => {
       try {
         showToast("Se aplica rollback...");
@@ -2290,11 +2306,11 @@ function applyRollback() {
 // Doar coloana Value este editabila; Setting si Descriere sunt doar afisate.
 // --------------------------------------------------------------------------
 const SETARI_TABS = [
-  { id: "general",    label: "General",    groups: ["General", "Discount"] },
-  { id: "device",     label: "Device-uri", groups: ["Casa", "Afiseaj", "Cantar", "PoSbanca"] },
-  { id: "integrare",  label: "Integrare",  groups: ["Integrare"], special: true },
-  { id: "servicii",   label: "Servicii",   groups: [], special: true },
-  { id: "altele",     label: "Altele",     groups: null } // null = toate cele neincluse mai sus
+  { id: "general",    label: "setari.tab.general",   groups: ["General", "Discount"] },
+  { id: "device",     label: "setari.tab.device",    groups: ["Casa", "Afiseaj", "Cantar", "PoSbanca"] },
+  { id: "integrare",  label: "setari.tab.integrare", groups: ["Integrare"], special: true },
+  { id: "servicii",   label: "setari.tab.servicii",  groups: [], special: true },
+  { id: "altele",     label: "setari.tab.altele",    groups: null } // null = toate cele neincluse mai sus
 ];
 
 let setariRows = [];
@@ -2313,6 +2329,7 @@ let setariNewApiKey = null;
 let _appConfirmCb = null;
 
 function appConfirm(message, onYes, yesLabel, noLabel) {
+  message = tr(message);
   const modal = document.getElementById("modal-confirm");
   if (!modal) {
     if (window.confirm(message) && typeof onYes === "function") onYes();
@@ -2321,8 +2338,8 @@ function appConfirm(message, onYes, yesLabel, noLabel) {
   document.getElementById("confirm-message").textContent = message;
   const yes = document.getElementById("confirm-yes");
   const no = document.getElementById("confirm-no");
-  yes.textContent = yesLabel || "Da";
-  no.textContent = noLabel || "Nu";
+  yes.textContent = tr(yesLabel || "Da");
+  no.textContent = tr(noLabel || "Nu");
   _appConfirmCb = (typeof onYes === "function") ? onYes : null;
 
   yes.onclick = () => {
@@ -2343,6 +2360,7 @@ function closeAppConfirm() {
 
 // Mesaj in-app (nu depinde de alert() nativ, care poate fi suprimat de browser)
 function appAlert(message, onOk) {
+  message = tr(message);
   const modal = document.getElementById("modal-alert");
   if (!modal) {
     window.alert(message);
@@ -2434,7 +2452,7 @@ function renderSetariTabs() {
   SETARI_TABS.forEach(t => {
     const b = document.createElement("button");
     b.className = "setari-tab" + (t.id === setariActiveTab ? " active" : "");
-    b.textContent = t.label;
+    b.textContent = (typeof window.t === "function") ? window.t(t.label) : t.label;
     b.onclick = () => {
       setariActiveTab = t.id;
       renderSetariTabs();
@@ -2447,7 +2465,7 @@ function renderSetariTabs() {
 // Ordinea explicita a setarilor in cadrul unui grup (dupa tblSet.Setting).
 // Cele care nu apar in lista raman dupa ele, in ordinea primita de la server.
 const SETARI_ORDINE = {
-  "general": ["NrLogic", "MagID", "TipVanz", "Server"],
+  "general": ["Limba", "NrLogic", "MagID", "TipVanz", "Server"],
   "discount": ["RED", "TipDiscount", "ProcentDiscountFix", "MotivDiscount"],
   "casa": ["TipCasaMarcat", "AsteaptaRaspunsCasa", "AsteptareCasaSec", "BonFiscalDiscStorno", "CaleFisierComenziECR", "CaleFisierRaspunsECR"],
   "afiseaj": ["AfiseajClient", "PortComAfiseaj", "BaudRateAfisaj", "CaleDriverAfiseajClient", "CaleFisierComenziAfiseajClient"],
@@ -2456,7 +2474,14 @@ const SETARI_ORDINE = {
 };
 
 // Etichete prietenoase pentru grupuri (altfel se afiseaza numele brut din tblSet.Grup).
-const SETARI_GRUP_LABELS = { "discount": "Discount", "casa": "Casa Marcat", "posbanca": "POS Banca" };
+const SETARI_GRUP_LABELS = {
+  "discount": "setari.grup.discount",
+  "casa": "setari.grup.casa",
+  "posbanca": "setari.grup.posbanca",
+  "afiseaj": "setari.grup.afiseaj",
+  "cantar": "setari.grup.cantar",
+  "integrare": "setari.grup.integrare"
+};
 
 function setariSortRows(grup, rows) {
   const ord = SETARI_ORDINE[setariNorm(grup)];
@@ -2474,10 +2499,13 @@ function setariGroupsForTab(tabId) {
 
   if (tab && tab.groups) {
     return tab.groups
-      .map(g => ({
-        label: SETARI_GRUP_LABELS[setariNorm(g)] || g,
-        rows: setariSortRows(g, setariRows.filter(r => setariNorm(r.Grup) === setariNorm(g)))
-      }))
+      .map(g => {
+        const lk = SETARI_GRUP_LABELS[setariNorm(g)];
+        return {
+          label: lk ? ((typeof window.t === "function") ? window.t(lk) : g) : g,
+          rows: setariSortRows(g, setariRows.filter(r => setariNorm(r.Grup) === setariNorm(g)))
+        };
+      })
       .filter(grp => grp.rows.length > 0);
   }
 
@@ -2488,6 +2516,10 @@ function setariGroupsForTab(tabId) {
 }
 
 function setariField(row) {
+  // Limba interfetei: lista Romana / Engleza.
+  if (row.Setting === "Limba") {
+    return setariLimbaField(row);
+  }
   // Tipul de vanzare se editeaza ca lista (Restaurant / FastFood), nu ca text.
   if (row.Setting === "TipVanz") {
     return setariTipVanzField(row);
@@ -2593,6 +2625,43 @@ function setariField(row) {
   return div;
 }
 
+// Combobox pentru tblSet.Limba: ro = Romana, en = Engleza.
+function setariLimbaField(row) {
+  const div = document.createElement("div");
+  div.className = "setari-field";
+
+  const label = document.createElement("label");
+  label.className = "setari-label";
+  label.textContent = (typeof window.t === "function") ? window.t("setari.limba") : row.Setting;
+  div.appendChild(label);
+
+  const select = document.createElement("select");
+  select.className = "tva-input setari-input";
+  select.id = "setari-inp-" + row.Setting;
+
+  const cur = (String(row.Value === null || row.Value === undefined ? "" : row.Value).trim().toLowerCase() === "en") ? "en" : "ro";
+  const lblRo = (typeof window.t === "function") ? window.t("setari.limba.ro") : "Romana";
+  const lblEn = (typeof window.t === "function") ? window.t("setari.limba.en") : "Engleza";
+  [["ro", lblRo], ["en", lblEn]].forEach(pair => {
+    const opt = document.createElement("option");
+    opt.value = pair[0];
+    opt.textContent = tr(pair[1]);
+    if (pair[0] === cur) opt.selected = true;
+    select.appendChild(opt);
+  });
+  select.onchange = () => { setariDirty[row.Setting] = select.value; };
+  div.appendChild(select);
+
+  if (row.Descriere && String(row.Descriere).trim() !== "") {
+    const d = document.createElement("div");
+    d.className = "setari-desc";
+    d.textContent = row.Descriere;
+    div.appendChild(d);
+  }
+
+  return div;
+}
+
 // Combobox pentru tblSet.TipVanz: 0 = Restaurant, 1 = FastFood.
 function setariTipVanzField(row) {
   const div = document.createElement("div");
@@ -2611,7 +2680,7 @@ function setariTipVanzField(row) {
   [["0", "Restaurant"], ["1", "FastFood"]].forEach(pair => {
     const opt = document.createElement("option");
     opt.value = pair[0];
-    opt.textContent = pair[1];
+    opt.textContent = tr(pair[1]);
     if (pair[0] === cur) opt.selected = true;
     select.appendChild(opt);
   });
@@ -2646,7 +2715,7 @@ function setariNrZecCantField(row) {
   [["0", "0 zecimale (numere intregi)"], ["1", "1 zecimala"], ["2", "2 zecimale"]].forEach(pair => {
     const opt = document.createElement("option");
     opt.value = pair[0];
-    opt.textContent = pair[1];
+    opt.textContent = tr(pair[1]);
     if (pair[0] === (cur === "1" || cur === "2" ? cur : "0")) opt.selected = true;
     select.appendChild(opt);
   });
@@ -2664,7 +2733,7 @@ function setariNrZecCantField(row) {
     lock.className = "setari-desc";
     lock.style.color = "#b00";
     lock.style.fontWeight = "bold";
-    lock.textContent = "Toate mesele trebuie sa fie inchise pentru a modifica zecimalele cantitatii.";
+    lock.textContent = tr("Toate mesele trebuie sa fie inchise pentru a modifica zecimalele cantitatii.");
     div.appendChild(lock);
   }
 
@@ -2696,7 +2765,7 @@ function setariRedField(row) {
   [["1", "DA"], ["0", "NU"]].forEach(pair => {
     const opt = document.createElement("option");
     opt.value = pair[0];
-    opt.textContent = pair[1];
+    opt.textContent = tr(pair[1]);
     if (pair[0] === (cur === "0" ? "0" : "1")) opt.selected = true;
     select.appendChild(opt);
   });
@@ -2736,7 +2805,7 @@ function setariTipDiscountField(row) {
   ].forEach(pair => {
     const opt = document.createElement("option");
     opt.value = pair[0];
-    opt.textContent = pair[1];
+    opt.textContent = tr(pair[1]);
     if (pair[0] === (cur === "1" || cur === "2" ? cur : "0")) opt.selected = true;
     select.appendChild(opt);
   });
@@ -2771,7 +2840,7 @@ function setariTransferMasaField(row) {
   [["1", "DA"], ["0", "NU"]].forEach(pair => {
     const opt = document.createElement("option");
     opt.value = pair[0];
-    opt.textContent = pair[1];
+    opt.textContent = tr(pair[1]);
     if (pair[0] === (cur === "0" ? "0" : "1")) opt.selected = true;
     select.appendChild(opt);
   });
@@ -2871,7 +2940,7 @@ function setariDaNuField(setting, value, descriere, defaultToNu) {
   [["1", "DA"], ["0", "NU"]].forEach(pair => {
     const opt = document.createElement("option");
     opt.value = pair[0];
-    opt.textContent = pair[1];
+    opt.textContent = tr(pair[1]);
     if (pair[0] === (cur === "0" ? "0" : "1")) opt.selected = true;
     select.appendChild(opt);
   });
@@ -2960,13 +3029,13 @@ function renderServiciiTab(wrap) {
   const info = document.createElement("div");
   info.className = "setari-desc";
   info.style.marginBottom = "12px";
-  info.textContent = "Serviciile locale ruleaza pe acest calculator. Pornirea, oprirea si repornirea se fac de aici.";
+  info.textContent = tr("Serviciile locale ruleaza pe acest calculator. Pornirea, oprirea si repornirea se fac de aici.");
   wrap.appendChild(info);
 
   const ver = document.createElement("div");
   ver.className = "serviciu-version";
   ver.id = "serviciu-version";
-  ver.textContent = "Versiune: ...";
+  ver.textContent = tr("Versiune: ") + "...";
   wrap.appendChild(ver);
   loadAppVersion().then(v => {
     if (!v) { return; }
@@ -2976,8 +3045,8 @@ function renderServiciiTab(wrap) {
     if (v.build) parts.push("build " + v.build);
     if (v.builtAt) parts.push(v.builtAt.slice(0, 10));
     if (v.source) parts.push("(" + v.source + ")");
-    ver.textContent = "Versiune: " + (parts.join(" · ") || "necunoscuta")
-      + (v.host ? " — stația " + v.host : "");
+    ver.textContent = tr("Versiune: ") + (parts.join(" · ") || tr("necunoscuta"))
+      + (v.host ? tr(" — stația ") + v.host : "");
   });
 
   SERVICES_DEF.forEach(svc => {
@@ -2988,7 +3057,7 @@ function renderServiciiTab(wrap) {
     head.className = "serviciu-head";
     const nume = document.createElement("span");
     nume.className = "serviciu-nume";
-    nume.textContent = svc.label;
+    nume.textContent = tr(svc.label);
     const badge = document.createElement("span");
     badge.className = "serviciu-badge";
     badge.id = "serviciu-badge-" + svc.key;
@@ -3002,7 +3071,7 @@ function renderServiciiTab(wrap) {
     [["start", "Porneste"], ["stop", "Opreste"], ["restart", "Reporneste"]].forEach(pair => {
       const b = document.createElement("button");
       b.className = "act-btn";
-      b.textContent = pair[1];
+      b.textContent = tr(pair[1]);
       b.onclick = () => serviceAction(svc.key, pair[0], b);
       actions.appendChild(b);
     });
@@ -3019,7 +3088,7 @@ function renderServiciiTab(wrap) {
     const b = document.createElement("button");
     b.className = "act-btn";
     b.id = item[0];
-    b.textContent = item[1];
+    b.textContent = tr(item[1]);
     b.onclick = item[2];
     bar.appendChild(b);
   });
@@ -3052,21 +3121,21 @@ function applyServicesStatus(services) {
 
 function serviceLabel(key) {
   const def = SERVICES_DEF.find(s => s.key === key);
-  return def ? def.label : key;
+  return def ? tr(def.label) : key;
 }
 
 async function serviceAction(service, action, btn) {
   const actiune = { start: "pornirea", stop: "oprirea", restart: "repornirea" }[action] || action;
-  const tinta = (service === "all") ? "tuturor serviciilor" : ("serviciului " + serviceLabel(service));
+  const tinta = (service === "all") ? tr("tuturor serviciilor") : (tr("serviciului ") + serviceLabel(service));
   appConfirm(
-    "Confirmati " + actiune + " " + tinta + "?",
+    tr("Confirmati ") + tr(actiune) + " " + tinta + "?",
     async () => {
       const buttons = document.querySelectorAll("#setari-content button");
       buttons.forEach(b => { b.disabled = true; });
       const old = btn ? btn.textContent : null;
       if (btn) btn.textContent = "...";
       try {
-        showToast("Se executa: " + actiune + " ...");
+        showToast(tr("Se executa: ") + tr(actiune) + " ...");
         const resp = await fetch("api/services.php", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -3076,9 +3145,9 @@ async function serviceAction(service, action, btn) {
         const data = await resp.json();
         applyServicesStatus(data.services || {});
         if (data.status !== "success") {
-          appAlert(data.message || "Operatiunea nu a reusit");
+          appAlert(data.message || tr("Operatiunea nu a reusit"));
         } else {
-          showToast(data.message || "Gata");
+          showToast(data.message || tr("Gata"));
         }
       } catch (err) {
         appAlert("Eroare servicii: " + err.message);
@@ -3099,13 +3168,13 @@ function renderIntegrareTab(wrap) {
   const info = document.createElement("div");
   info.className = "setari-desc";
   info.style.marginBottom = "12px";
-  info.textContent = "API public pentru aplicatii terte (servere/backend-uri): export (citire) si import (scriere) de date prin /api/v1/. Autentificarea se face cu o singura cheie globala, trimisa in headerul X-Api-Key.";
+  info.textContent = tr("API public pentru aplicatii terte (servere/backend-uri): export (citire) si import (scriere) de date prin /api/v1/. Autentificarea se face cu o singura cheie globala, trimisa in headerul X-Api-Key.");
   wrap.appendChild(info);
 
   const vpnNote = document.createElement("div");
   vpnNote.className = "setari-desc";
   vpnNote.style.marginBottom = "12px";
-  vpnNote.innerHTML = 'Accesul din exterior se face exclusiv prin VPN, fara expunere pe internet: recomandat <strong>SoftEther VPN Azure + SecureNAT</strong>, alternativ <strong>Tailscale / ZeroTier</strong>. SoftEther VPN se descarca de la <a href="https://www.softether.org/5-download" target="_blank" rel="noopener">softether.org/5-download</a>.';
+  vpnNote.innerHTML = tr('Accesul din exterior se face exclusiv prin VPN, fara expunere pe internet: recomandat <strong>SoftEther VPN Azure + SecureNAT</strong>, alternativ <strong>Tailscale / ZeroTier</strong>. SoftEther VPN se descarca de la <a href="https://www.softether.org/5-download" target="_blank" rel="noopener">softether.org/5-download</a>.');
   wrap.appendChild(vpnNote);
 
   const card = document.createElement("div");
@@ -3114,13 +3183,13 @@ function renderIntegrareTab(wrap) {
 
   const title = document.createElement("label");
   title.className = "setari-label";
-  title.textContent = "Cheie API";
+  title.textContent = tr("Cheie API");
   card.appendChild(title);
 
   const status = document.createElement("div");
   status.className = "setari-desc";
-  let stText = setariApiKeySet ? "Cheie configurata." : "Nu exista nicio cheie configurata.";
-  if (setariApiKeySet && setariApiLastUsed) stText += " Ultima utilizare: " + setariApiLastUsed + ".";
+  let stText = setariApiKeySet ? tr("Cheie configurata.") : tr("Nu exista nicio cheie configurata.");
+  if (setariApiKeySet && setariApiLastUsed) stText += tr(" Ultima utilizare: ") + setariApiLastUsed + ".";
   status.textContent = stText;
   card.appendChild(status);
 
@@ -3136,7 +3205,7 @@ function renderIntegrareTab(wrap) {
     keyRow.appendChild(keyInput);
     const copyBtn = document.createElement("button");
     copyBtn.className = "act-btn";
-    copyBtn.textContent = "Copiaza";
+    copyBtn.textContent = tr("Copiaza");
     copyBtn.onclick = () => copyApiKey(setariNewApiKey);
     keyRow.appendChild(copyBtn);
     card.appendChild(keyRow);
@@ -3145,7 +3214,7 @@ function renderIntegrareTab(wrap) {
     warn.className = "setari-desc";
     warn.style.color = "#b00";
     warn.style.fontWeight = "bold";
-    warn.textContent = "Copiati cheia acum: nu va mai fi afisata.";
+    warn.textContent = tr("Copiati cheia acum: nu va mai fi afisata.");
     card.appendChild(warn);
   }
 
@@ -3155,14 +3224,14 @@ function renderIntegrareTab(wrap) {
 
   const genBtn = document.createElement("button");
   genBtn.className = "act-btn";
-  genBtn.textContent = setariApiKeySet ? "Regenereaza cheia" : "Genereaza cheia";
+  genBtn.textContent = setariApiKeySet ? tr("Regenereaza cheia") : tr("Genereaza cheia");
   genBtn.onclick = () => generateApiKey();
   btnRow.appendChild(genBtn);
 
   if (setariApiKeySet) {
     const revBtn = document.createElement("button");
     revBtn.className = "act-btn";
-    revBtn.textContent = "Revoca";
+    revBtn.textContent = tr("Revoca");
     revBtn.onclick = () => revokeApiKey();
     btnRow.appendChild(revBtn);
   }
@@ -3329,6 +3398,16 @@ async function saveSetari() {
     if (keys.indexOf("PlataCombinata") !== -1) {
       POS_STATE.plataCombinata = (String(setariDirty["PlataCombinata"]).trim() === "0") ? 0 : 1;
       applyPlataCombinataUI();
+    }
+
+    // Limba interfetei: reincarcam pagina ca sa se aplice la randare
+    // (server-side in index.php) si sa se retraduca toate ecranele.
+    if (keys.indexOf("Limba") !== -1) {
+      POS_STATE.lang = (String(setariDirty["Limba"]).trim().toLowerCase() === "en") ? "en" : "ro";
+      setariDirty = {};
+      showToast(res.message);
+      setTimeout(() => window.location.reload(), 600);
+      return;
     }
 
     setariDirty = {};
@@ -3543,12 +3622,12 @@ function renderMeseInspector() {
 
   // Nimic selectat: doar mesajul introductiv, fara formular / buton
   if (meseSelected === null) {
-    if (title) title.innerText = "MASA";
+    if (title) title.innerText = tr("MASA");
     if (dirtyBadge) dirtyBadge.style.display = "none";
     if (nrDisplay) nrDisplay.innerText = "-";
     if (emptyMsg) {
       emptyMsg.style.display = "block";
-      emptyMsg.innerHTML = 'Atinge o pozitie pe harta pentru a o edita';
+      emptyMsg.innerHTML = tr('Atinge o pozitie pe harta pentru a o edita');
     }
     if (form) form.style.display = "none";
     return;
@@ -3564,7 +3643,7 @@ function renderMeseInspector() {
   const saveBtn = document.getElementById("mese-save-btn");
   saveBtn.onclick = saveMeseSelected;
 
-  document.getElementById("mese-insp-title").innerText = "MASA " + meseSelected;
+  document.getElementById("mese-insp-title").innerText = tr("MASA ") + meseSelected;
   dirtyBadge.style.display = meseDirty[meseSelected] ? "inline" : "none";
   emptyMsg.style.display = "none";
   form.style.display = "block";
@@ -3591,7 +3670,7 @@ function renderMeseInspector() {
   buildMeseSwatches("mese-bg-swatches", () => o.back, v => { o.back = v; });
   buildMeseSwatches("mese-fg-swatches", () => o.fg, v => { o.fg = v; });
 
-  saveBtn.innerText = "Salveaza";
+  saveBtn.innerText = tr("Salveaza");
   saveBtn.onclick = saveMeseSelected;
   saveBtn.disabled = false;
 }
@@ -3599,7 +3678,7 @@ function renderMeseInspector() {
 function renderMeseToggle(id, on, yesTxt, noTxt) {
   const btn = document.getElementById(id);
   if (!btn) return;
-  btn.innerText = on ? yesTxt : noTxt;
+  btn.innerText = on ? tr(yesTxt) : tr(noTxt);
   btn.style.background = on ? "#008000" : "#ffff00";
   btn.style.color = on ? "#ffffff" : "#000000";
 }
@@ -3850,11 +3929,11 @@ function renderGrupeInspector() {
   const row = grupSelected === null ? null : grupWorking[grupSelected];
 
   if (!row) {
-    if (title) title.innerText = "GRUPA";
+    if (title) title.innerText = tr("GRUPA");
     if (dirtyBadge) dirtyBadge.style.display = "none";
     if (emptyMsg) {
       emptyMsg.style.display = "block";
-      emptyMsg.innerHTML = 'Atinge o grupa sau o pozitie libera de pe grila pentru a o edita';
+      emptyMsg.innerHTML = tr('Atinge o grupa sau o pozitie libera de pe grila pentru a o edita');
     }
     if (form) form.style.display = "none";
     return;
@@ -3863,7 +3942,7 @@ function renderGrupeInspector() {
   const saveBtn = document.getElementById("grup-save-btn");
   saveBtn.onclick = saveGrupeSelected;
 
-  document.getElementById("grup-insp-title").innerText = row.isNew ? "GRUPA NOUA" : ("GRUPA " + row.NrGrp);
+  document.getElementById("grup-insp-title").innerText = row.isNew ? tr("GRUPA NOUA") : (tr("GRUPA ") + row.NrGrp);
   dirtyBadge.style.display = grupDirty[row.key] ? "inline" : "none";
   emptyMsg.style.display = "none";
   form.style.display = "block";
@@ -4357,7 +4436,7 @@ function renderProduseInspector() {
   const row = prodSelected === null ? null : prodWorking[prodSelected];
 
   if (!row) {
-    if (title) title.innerText = "PRODUS";
+    if (title) title.innerText = tr("PRODUS");
     if (dirtyBadge) dirtyBadge.style.display = "none";
     if (emptyMsg) emptyMsg.style.display = "block";
     if (form) form.style.display = "none";
@@ -4368,7 +4447,7 @@ function renderProduseInspector() {
   const delBtn = document.getElementById("prod-del-btn");
   saveBtn.onclick = saveProdusSelected;
 
-  document.getElementById("prod-insp-title").innerText = row.isNew ? "PRODUS NOU" : ("PRODUS " + row.ProdID);
+  document.getElementById("prod-insp-title").innerText = row.isNew ? tr("PRODUS NOU") : (tr("PRODUS ") + row.ProdID);
   dirtyBadge.style.display = prodDirty[row.key] ? "inline" : "none";
   emptyMsg.style.display = "none";
   form.style.display = "block";
@@ -4633,7 +4712,7 @@ async function loadAntet() {
 function renderAntetPlatitor() {
   const btn = document.getElementById("antet-platitor-toggle");
   if (!btn) return;
-  btn.innerText = antetPlatitorTVA ? "Da" : "Nu";
+  btn.innerText = antetPlatitorTVA ? tr("Da") : tr("Nu");
   btn.style.background = antetPlatitorTVA ? "#008000" : "#ffff00";
   btn.style.color = antetPlatitorTVA ? "#ffffff" : "#000000";
 }
@@ -4728,7 +4807,7 @@ function notaFontOptions(selected) {
   const val = NOTA_FONTS.some(f => f.value === selected) ? selected : "A";
   return NOTA_FONTS.map(f =>
     '<option value="' + f.value + '"' + (f.value === val ? " selected" : "") + '>' +
-    escapeHtml(f.label) + '</option>'
+    escapeHtml(tr(f.label)) + '</option>'
   ).join("");
 }
 
@@ -4738,7 +4817,7 @@ function notaSizeOptions(selected) {
   const val = NOTA_SIZES.some(s => s.value === selected) ? selected : 0;
   return NOTA_SIZES.map(s =>
     '<option value="' + s.value + '"' + (s.value === val ? " selected" : "") + '>' +
-    escapeHtml(s.label) + '</option>'
+    escapeHtml(tr(s.label)) + '</option>'
   ).join("");
 }
 
@@ -4748,24 +4827,24 @@ function renderNota() {
   wrap.innerHTML = "";
 
   notaRows.forEach(r => {
-    const label = NOTA_LABELS[r.Seria] || r.Seria;
+    const label = tr(NOTA_LABELS[r.Seria] || r.Seria);
     const rec = document.createElement("div");
     rec.className = "nota-record";
     rec.innerHTML =
       '<div class="nota-record-title">' + escapeHtml(label) + ' (' + escapeHtml(r.Seria) + ')</div>' +
       '<div class="nota-fields">' +
-        '<div class="tva-field"><label>Nume</label><div class="tva-field-row">' +
+        '<div class="tva-field"><label>' + tr("Nume") + '</label><div class="tva-field-row">' +
           '<input type="text" id="nota-nume-' + r.Seria + '" class="tva-input" maxlength="40">' +
           '<button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor(\'nota-nume-' + r.Seria + '\')">⌨️</button>' +
         '</div></div>' +
-        '<div class="tva-field"><label>NumeFont (ESC/POS)</label>' +
+        '<div class="tva-field"><label>' + tr("NumeFont (ESC/POS)") + '</label>' +
           '<select id="nota-font-' + r.Seria + '" class="tva-input">' + notaFontOptions(r.NumeFont) + '</select>' +
         '</div>' +
-        '<div class="tva-field"><label>Size (ESC/POS)</label>' +
+        '<div class="tva-field"><label>' + tr("Size (ESC/POS)") + '</label>' +
           '<select id="nota-size-' + r.Seria + '" class="tva-input">' + notaSizeOptions(r.Size) + '</select>' +
         '</div>' +
-        '<div class="tva-field"><label>Bold</label>' +
-          '<button class="act-btn" id="nota-bold-' + r.Seria + '" onclick="toggleNotaBold(\'' + r.Seria + '\')" style="width:100%;">Nu</button>' +
+        '<div class="tva-field"><label>' + tr("Bold") + '</label>' +
+          '<button class="act-btn" id="nota-bold-' + r.Seria + '" onclick="toggleNotaBold(\'' + r.Seria + '\')" style="width:100%;">' + tr("Nu") + '</button>' +
         '</div>' +
       '</div>';
     wrap.appendChild(rec);
@@ -4782,7 +4861,7 @@ function renderNotaBold(seria) {
   const row = notaRows.find(x => x.Seria === seria);
   if (!btn || !row) return;
   const on = !!row.Bold;
-  btn.innerText = on ? "Da" : "Nu";
+  btn.innerText = on ? tr("Da") : tr("Nu");
   btn.style.background = on ? "#008000" : "#ffff00";
   btn.style.color = on ? "#ffffff" : "#000000";
 }
@@ -5125,7 +5204,7 @@ function renderReportsTabs() {
   REPORTS_TABS.forEach(t => {
     const b = document.createElement("button");
     b.className = "setari-tab" + (t === reportsActiveTab ? " active" : "");
-    b.textContent = "Raport " + t;
+    b.textContent = tr("Raport ") + t;
     b.onclick = () => {
       reportsActiveTab = t;
       renderReportsTabs();
@@ -5145,7 +5224,7 @@ function renderReportsGrid() {
     REPORTS_TYPES.forEach(ty => {
       const b = document.createElement("button");
       b.className = "prog-btn";
-      b.textContent = ty;
+      b.textContent = tr(ty);
       b.onclick = () => runReport("X", ty);
       wrap.appendChild(b);
     });
@@ -5156,13 +5235,13 @@ function renderReportsGrid() {
   REPORTS_Z_OPTIONS.forEach(ty => {
     const label = document.createElement("label");
     label.className = "rapoarte-check";
-    label.innerHTML = '<input type="checkbox" id="z-chk-' + ty + '"> <span>' + ty + '</span>';
+    label.innerHTML = '<input type="checkbox" id="z-chk-' + ty + '"> <span>' + tr(ty) + '</span>';
     wrap.appendChild(label);
   });
 
   const btn = document.createElement("button");
   btn.className = "prog-btn rapoarte-z-btn";
-  btn.textContent = "Efectueaza Golirea Z";
+  btn.textContent = tr("Efectueaza Golirea Z");
   btn.onclick = actionGolireZ;
   wrap.appendChild(btn);
 }
@@ -5272,6 +5351,7 @@ function renderReportModal(data) {
       html += '<div style="padding:14px; color:#888;">Nu exista note inchise in sesiunea curenta.</div>';
     }
     content.innerHTML = html;
+    if (typeof window.applyI18nText === "function") window.applyI18nText(content);
     document.getElementById("modal-raport").classList.add("active");
     return;
   }
@@ -5316,6 +5396,7 @@ function renderReportModal(data) {
     html += '</tbody></table>';
 
     content.innerHTML = html;
+    if (typeof window.applyI18nText === "function") window.applyI18nText(content);
     document.getElementById("modal-raport").classList.add("active");
     return;
   }
@@ -5353,6 +5434,7 @@ function renderReportModal(data) {
     html += '</tbody></table>';
 
     content.innerHTML = html;
+    if (typeof window.applyI18nText === "function") window.applyI18nText(content);
     document.getElementById("modal-raport").classList.add("active");
     return;
   }
@@ -5376,6 +5458,7 @@ function renderReportModal(data) {
       html += '<div style="padding:14px; color:#888;">Nu exista date pentru raport.</div>';
     }
     content.innerHTML = html;
+    if (typeof window.applyI18nText === "function") window.applyI18nText(content);
     document.getElementById("modal-raport").classList.add("active");
     return;
   }
@@ -5408,6 +5491,7 @@ function renderReportModal(data) {
   }
 
   content.innerHTML = html;
+  if (typeof window.applyI18nText === "function") window.applyI18nText(content);
   document.getElementById("modal-raport").classList.add("active");
 }
 
@@ -5429,7 +5513,7 @@ async function openNoteDetail(docId) {
     const resp = await fetch(`api/rapoarte.php?tab=X&tip=NOTE&docId=${encodeURIComponent(docId)}`);
     const data = await resp.json();
     if (data.status !== "success") throw new Error(data.message);
-    if (titleEl) titleEl.innerText = "NOTA " + data.nrNota + " - MASA " + data.nrMasa;
+    if (titleEl) titleEl.innerText = tr("msg.nota_masa", { nota: data.nrNota, masa: data.nrMasa });
     content.innerHTML = renderNoteDetailHtml(data);
   } catch (err) {
     content.innerHTML = '<div style="padding:14px; color:#b00000;">Eroare: ' + escapeHtml(err.message) + '</div>';
@@ -5581,7 +5665,7 @@ function openTVAInsert() {
   keyInput.readOnly = false;
   keyInput.value = "";
   valInput.value = "";
-  document.getElementById("tva-edit-title").innerText = "COTA TVA NOUA";
+  document.getElementById("tva-edit-title").innerText = tr("COTA TVA NOUA");
   keyInput.onfocus = () => { tvaActive = "key"; };
   valInput.onfocus = () => { tvaActive = "val"; };
   tvaActive = "key";
@@ -5603,7 +5687,7 @@ function openTVAEdit() {
   keyInput.readOnly = true;
   keyInput.value = found.Nr_TVA;
   valInput.value = found.Cota;
-  document.getElementById("tva-edit-title").innerText = "EDITARE COTA TVA";
+  document.getElementById("tva-edit-title").innerText = tr("EDITARE COTA TVA");
   keyInput.onfocus = () => { tvaActive = "key"; };
   valInput.onfocus = () => { tvaActive = "val"; };
   tvaActive = "val";
@@ -5770,7 +5854,7 @@ function openMesajeInsert() {
   keyInput.readOnly = false;
   keyInput.value = "";
   document.getElementById("mesaje-val-input").value = "";
-  document.getElementById("mesaje-edit-title").innerText = "MOD PREPARARE NOU";
+  document.getElementById("mesaje-edit-title").innerText = tr("MOD PREPARARE NOU");
   document.getElementById("modal-mesaje-edit").classList.add("active");
 }
 
@@ -5787,7 +5871,7 @@ function openMesajeEdit() {
   keyInput.readOnly = true;
   keyInput.value = found.NrMesaj;
   document.getElementById("mesaje-val-input").value = found.Mesaj;
-  document.getElementById("mesaje-edit-title").innerText = "EDITARE MOD PREPARARE";
+  document.getElementById("mesaje-edit-title").innerText = tr("EDITARE MOD PREPARARE");
   document.getElementById("modal-mesaje-edit").classList.add("active");
 }
 
@@ -5907,7 +5991,7 @@ function renderOspList() {
     row.className = `osp-row ${r.NrOsp === ospSelected ? "selected" : ""}`;
     row.innerHTML = `
       <span><b>${escapeHtml(r.NrOsp)}</b></span>
-      <span class="osp-cell-mid ${r.Blocat ? "osp-blocked" : ""}">${escapeHtml(r.Nume)}${r.Blocat ? " (Blocat)" : ""}</span>
+      <span class="osp-cell-mid ${r.Blocat ? "osp-blocked" : ""}">${escapeHtml(r.Nume)}${r.Blocat ? " (" + tr("Blocat") + ")" : ""}</span>
       <span class="osp-cell-r">${escapeHtml(r.Expl)}</span>
     `;
     row.onclick = () => {
@@ -5932,7 +6016,7 @@ function updateOspBtns() {
 function renderOspBlocatToggle() {
   const btn = document.getElementById("osp-blocat-toggle");
   if (!btn) return;
-  btn.innerText = ospBlocat ? "Da - Blocat" : "Nu";
+  btn.innerText = ospBlocat ? tr("Da - Blocat") : tr("Nu");
   btn.style.background = ospBlocat ? "#e30707" : "#ffff00";
   btn.style.color = ospBlocat ? "#ffffff" : "#000000";
 }
@@ -5950,7 +6034,7 @@ function openOspInsert() {
   document.getElementById("osp-nume-input").value = "";
   document.getElementById("osp-expl-input").value = "";
   document.getElementById("osp-parola-input").value = "";
-  document.getElementById("osp-edit-title").innerText = "OSPATAR NOU";
+  document.getElementById("osp-edit-title").innerText = tr("OSPATAR NOU");
   renderOspBlocatToggle();
   document.getElementById("modal-osp-edit").classList.add("active");
 }
@@ -5970,7 +6054,7 @@ function openOspEdit() {
   document.getElementById("osp-expl-input").value = found.Expl;
   document.getElementById("osp-parola-input").value = found.Parola;
   ospBlocat = !!found.Blocat;
-  document.getElementById("osp-edit-title").innerText = "EDITARE OSPATAR";
+  document.getElementById("osp-edit-title").innerText = tr("EDITARE OSPATAR");
   renderOspBlocatToggle();
   document.getElementById("modal-osp-edit").classList.add("active");
 }
@@ -6075,7 +6159,7 @@ function renderSectList() {
     row.className = `sect-row ${r.Sectie === sectSelected ? "selected" : ""}`;
     row.innerHTML = `
       <span class="sect-cell"><b>${r.Sectie}</b></span>
-      <span class="sect-cell">${escapeHtml(r.Denumire)}${protected ? ' <span class="sect-prot">(protejata)</span>' : ""}</span>
+      <span class="sect-cell">${escapeHtml(r.Denumire)}${protected ? ' <span class="sect-prot">' + tr("(protejata)") + '</span>' : ""}</span>
     `;
     row.onclick = () => {
       sectSelected = r.Sectie;
@@ -6104,7 +6188,7 @@ function openSectInsert() {
   document.getElementById("sect-key-input").readOnly = false;
   document.getElementById("sect-key-input").value = "";
   document.getElementById("sect-den-input").value = "";
-  document.getElementById("sect-edit-title").innerText = "SECTIE NOUA";
+  document.getElementById("sect-edit-title").innerText = tr("SECTIE NOUA");
   document.getElementById("modal-sect-edit").classList.add("active");
 }
 
@@ -6120,7 +6204,7 @@ function openSectEdit() {
   document.getElementById("sect-key-input").readOnly = true;
   document.getElementById("sect-key-input").value = found.Sectie;
   document.getElementById("sect-den-input").value = found.Denumire;
-  document.getElementById("sect-edit-title").innerText = "EDITARE SECTIE";
+  document.getElementById("sect-edit-title").innerText = tr("EDITARE SECTIE");
   document.getElementById("modal-sect-edit").classList.add("active");
 }
 
@@ -6286,7 +6370,7 @@ function imprSel() {
 function renderImprimante() {
   const badge = document.getElementById("impr-service-badge");
   if (badge) {
-    badge.textContent = imprServiceUp ? "Serviciu: ONLINE" : "Serviciu: OFFLINE";
+    badge.textContent = tr("Serviciu: ") + (imprServiceUp ? "ONLINE" : "OFFLINE");
     badge.className = "impr-badge " + (imprServiceUp ? "on" : "off");
   }
   renderImprList();
@@ -6300,23 +6384,23 @@ function imprIsUsb(name) {
 
 function imprTargetLabel(t) {
   if (!t) return "-";
-  if (t.type === "network") return "Retea " + (t.host || "?") + ":" + (t.port || "9100");
-  if (t.type === "windows") return "Windows / USB " + (t.name || "?") + (imprIsUsb(t.name) ? " (USB)" : "");
-  if (t.type === "file") return "Fisier";
-  return "Preview";
+  if (t.type === "network") return tr("Retea ") + (t.host || "?") + ":" + (t.port || "9100");
+  if (t.type === "windows") return tr("Windows / USB ") + (t.name || "?") + (imprIsUsb(t.name) ? " (USB)" : "");
+  if (t.type === "file") return tr("Fisier");
+  return tr("Preview");
 }
 
 function renderImprList() {
   const list = document.getElementById("impr-list");
   if (!list) return;
   if (!imprSections.length) {
-    list.innerHTML = '<div class="impr-empty">Nu exista sectii. Apasa Adauga.</div>';
+    list.innerHTML = '<div class="impr-empty">' + tr("Nu exista sectii. Apasa Adauga.") + '</div>';
   } else {
     list.innerHTML = imprSections.map(s => {
       const sel = (s.NrLogic === imprSelected) ? " selected" : "";
       const off = s.Stare ? "" : " inactive";
       return `<div class="impr-list-item${sel}${off}" onclick="imprSelect(${s.NrLogic})">
-        <div><span class="impr-li-nr">${s.NrLogic}</span> ${escapeHtml(s.Nume || "(fara nume)")}${s.isNew ? ' <span class="impr-dirty">*</span>' : ''}</div>
+        <div><span class="impr-li-nr">${s.NrLogic}</span> ${escapeHtml(s.Nume || tr("(fara nume)"))}${s.isNew ? ' <span class="impr-dirty">*</span>' : ''}</div>
         <div class="impr-li-sub">${escapeHtml(imprTargetLabel(s.target))}</div>
       </div>`;
     }).join("");
@@ -6354,7 +6438,7 @@ function imprTargetTypeChanged(prefix, type) {
 
 function imprTypeOptions(selected) {
   return IMPR_TARGET_TYPES.map(([v, l]) =>
-    `<option value="${v}"${v === selected ? " selected" : ""}>${l}</option>`).join("");
+    `<option value="${v}"${v === selected ? " selected" : ""}>${tr(l)}</option>`).join("");
 }
 
 function imprWinPrinterField(prefix, current) {
@@ -6362,37 +6446,37 @@ function imprWinPrinterField(prefix, current) {
     const has = imprWindowsPrinters.indexOf(current) !== -1;
     let opts = "";
     if (current && !has) {
-      opts += `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} (actual)</option>`;
+      opts += `<option value="${escapeHtml(current)}" selected>${escapeHtml(current)} ${tr("(actual)")}</option>`;
     }
     opts += imprWindowsPrinters.map(n => {
       const label = escapeHtml(n) + (imprIsUsb(n) ? " (USB)" : "");
       return `<option value="${escapeHtml(n)}"${n === current ? " selected" : ""}>${label}</option>`;
     }).join("");
-    return `<div class="tva-field"><label>Imprimanta Windows / USB</label>
+    return `<div class="tva-field"><label>${tr("Imprimanta Windows / USB")}</label>
       <select class="prod-combo" onchange="imprTargetFieldChanged('${prefix}','name',this.value)">${opts}</select>
-      <div class="impr-hint">Imprimantele USB locale sunt marcate cu (USB).</div></div>`;
+      <div class="impr-hint">${tr("Imprimantele USB locale sunt marcate cu (USB).")}</div></div>`;
   }
-  return `<div class="tva-field"><label>Imprimanta Windows / USB</label>
+  return `<div class="tva-field"><label>${tr("Imprimanta Windows / USB")}</label>
     <div class="tva-field-row">
       <input type="text" class="tva-input" value="${escapeHtml(current || "")}" oninput="imprTargetFieldChanged('${prefix}','name',this.value)">
     </div>
-    <div class="impr-hint">Lista imprimantelor Windows nu este disponibila (pywin32 lipseste). Scrie numele exact (inclusiv pentru o imprimanta USB locala).</div></div>`;
+    <div class="impr-hint">${tr("Lista imprimantelor Windows nu este disponibila (pywin32 lipseste). Scrie numele exact (inclusiv pentru o imprimanta USB locala).")}</div></div>`;
 }
 
 function imprTargetFieldsHtml(prefix, t) {
-  let html = `<div class="tva-field"><label>Tip destinatie</label>
+  let html = `<div class="tva-field"><label>${tr("Tip destinatie")}</label>
     <select class="prod-combo" onchange="imprTargetTypeChanged('${prefix}', this.value)">${imprTypeOptions(t.type)}</select></div>`;
   if (t.type === "network") {
-    html += `<div class="tva-field"><label>Host / IP</label>
+    html += `<div class="tva-field"><label>${tr("Host / IP")}</label>
       <div class="tva-field-row"><input type="text" class="tva-input" value="${escapeHtml(t.host || "")}" oninput="imprTargetFieldChanged('${prefix}','host',this.value)"></div></div>
-      <div class="tva-field"><label>Port</label>
+      <div class="tva-field"><label>${tr("Port")}</label>
       <div class="tva-field-row"><input type="text" class="tva-input" value="${escapeHtml(t.port || "9100")}" oninput="imprTargetFieldChanged('${prefix}','port',this.value)"></div></div>`;
   } else if (t.type === "windows") {
     html += imprWinPrinterField(prefix, t.name);
   } else if (t.type === "file") {
-    html += `<div class="impr-hint">Bonurile se scriu in spool-ul serviciului de tiparire (fara imprimanta).</div>`;
+    html += `<div class="impr-hint">${tr("Bonurile se scriu in spool-ul serviciului de tiparire (fara imprimanta).")}</div>`;
   } else {
-    html += `<div class="impr-hint">Bonul merge in emulatorul de previzualizare.</div>`;
+    html += `<div class="impr-hint">${tr("Bonul merge in emulatorul de previzualizare.")}</div>`;
   }
   return html;
 }
@@ -6402,25 +6486,25 @@ function renderImprInspector() {
   if (!wrap) return;
   const s = imprSel();
   if (!s) {
-    wrap.innerHTML = '<div class="impr-empty">Selecteaza o sectie sau adauga una noua.</div>';
+    wrap.innerHTML = '<div class="impr-empty">' + tr("Selecteaza o sectie sau adauga una noua.") + '</div>';
     return;
   }
-  const title = s.isNew ? "SECTIE NOUA" : ("SECTIE " + s.NrLogic);
+  const title = s.isNew ? tr("SECTIE NOUA") : (tr("SECTIE ") + s.NrLogic);
   wrap.innerHTML = `
-    <div class="impr-insp-head"><span>${title}</span>${s.isNew ? '<span class="impr-dirty">* nesalvata</span>' : ''}</div>
+    <div class="impr-insp-head"><span>${title}</span>${s.isNew ? '<span class="impr-dirty">' + tr("* nesalvata") + '</span>' : ''}</div>
     <div class="tva-field"><label>NrLogic</label>
       <div class="tva-field-row"><input type="text" class="tva-input" value="${s.NrLogic}" readonly></div></div>
-    <div class="tva-field"><label>Nume sectie</label>
+    <div class="tva-field"><label>${tr("Nume sectie")}</label>
       <div class="tva-field-row">
         <input type="text" id="impr-nume-input" class="tva-input" maxlength="255" value="${escapeHtml(s.Nume || "")}" oninput="imprSetNume(this.value)">
         <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('impr-nume-input')">&#9000;</button>
       </div></div>
-    <div class="tva-field"><label>Stare (activa)</label>
-      <button class="act-btn" onclick="imprToggleStare()" style="width:100%;${s.Stare ? "background:#008000;color:#fff;" : "background:#ffff00;"}">${s.Stare ? "Da" : "Nu"}</button></div>
+    <div class="tva-field"><label>${tr("Stare (activa)")}</label>
+      <button class="act-btn" onclick="imprToggleStare()" style="width:100%;${s.Stare ? "background:#008000;color:#fff;" : "background:#ffff00;"}">${s.Stare ? tr("Da") : tr("Nu")}</button></div>
     <div class="impr-sep"></div>
-    <div class="impr-panel-title">Destinatie fizica</div>
+    <div class="impr-panel-title">${tr("Destinatie fizica")}</div>
     ${imprTargetFieldsHtml("sect", s.target)}
-    <div class="tva-actions"><button class="act-btn" onclick="imprTestSection()">Test tiparire</button></div>
+    <div class="tva-actions"><button class="act-btn" onclick="imprTestSection()">${tr("Test tiparire")}</button></div>
   `;
 }
 
@@ -6428,20 +6512,20 @@ function renderImprGlobal() {
   const wrap = document.getElementById("impr-global-body");
   if (!wrap) return;
   let html = "";
-  html += `<div class="impr-global-block"><div class="impr-panel-title">Nota de plata</div>${imprTargetFieldsHtml("nota", imprGlobal.nota)}
+  html += `<div class="impr-global-block"><div class="impr-panel-title">${tr("Nota de plata")}</div>${imprTargetFieldsHtml("nota", imprGlobal.nota)}
     <div class="tva-actions"><button class="act-btn" onclick="imprTestGlobal('nota')">Test</button></div></div>`;
-  html += `<div class="impr-global-block"><div class="impr-panel-title">Rapoarte</div>${imprTargetFieldsHtml("raport", imprGlobal.raport)}
+  html += `<div class="impr-global-block"><div class="impr-panel-title">${tr("Rapoarte")}</div>${imprTargetFieldsHtml("raport", imprGlobal.raport)}
     <div class="tva-actions"><button class="act-btn" onclick="imprTestGlobal('raport')">Test</button></div></div>`;
-  html += `<div class="impr-global-block"><div class="impr-panel-title">Fiscal</div>${imprTargetFieldsHtml("fiscal", imprGlobal.fiscal)}</div>`;
+  html += `<div class="impr-global-block"><div class="impr-panel-title">${tr("Fiscal")}</div>${imprTargetFieldsHtml("fiscal", imprGlobal.fiscal)}</div>`;
 
   const defOpts = imprSections.map(s =>
-    `<option value="${s.NrLogic}"${String(s.NrLogic) === imprGlobal.defaultPrinter ? " selected" : ""}>${escapeHtml(s.Nume || ("Sectia " + s.NrLogic))}</option>`).join("");
-  html += `<div class="impr-global-block"><div class="impr-panel-title">Imprimanta implicita</div>
+    `<option value="${s.NrLogic}"${String(s.NrLogic) === imprGlobal.defaultPrinter ? " selected" : ""}>${escapeHtml(s.Nume || (tr("Sectia ") + s.NrLogic))}</option>`).join("");
+  html += `<div class="impr-global-block"><div class="impr-panel-title">${tr("Imprimanta implicita")}</div>
     <div class="tva-field"><select class="prod-combo" onchange="imprSetDefault(this.value)">
-      <option value=""${imprGlobal.defaultPrinter === "" ? " selected" : ""}>(implicit / preview)</option>
+      <option value=""${imprGlobal.defaultPrinter === "" ? " selected" : ""}>${tr("(implicit / preview)")}</option>
       ${defOpts}
     </select></div>
-    <div class="impr-hint">Folosita pentru bonurile de sectie fara destinatie proprie.</div></div>`;
+    <div class="impr-hint">${tr("Folosita pentru bonurile de sectie fara destinatie proprie.")}</div></div>`;
   wrap.innerHTML = html;
 }
 
@@ -6464,10 +6548,10 @@ function imprDeleteSection() {
   const s = imprSel();
   if (!s) return;
   if (!s.isNew && s.usedCount > 0) {
-    appAlert("Sectia are " + s.usedCount + " produse atasate. Mutati-le pe alta sectie inainte de stergere.");
+    appAlert(tr("Sectia are {n} produse atasate. Mutati-le pe alta sectie inainte de stergere.", { n: s.usedCount }));
     return;
   }
-  appConfirm("Stergeti sectia " + s.NrLogic + " (" + (s.Nume || "fara nume") + ")?", () => {
+  appConfirm(tr("Stergeti sectia ") + s.NrLogic + " (" + (s.Nume || tr("fara nume")) + ")?", () => {
     if (!s.isNew) imprDeleted.push(s.NrLogic);
     imprSections = imprSections.filter(x => x.NrLogic !== s.NrLogic);
     imprSelected = imprSections.length ? imprSections[0].NrLogic : null;
@@ -6477,12 +6561,12 @@ function imprDeleteSection() {
 
 function imprValidateTarget(t) {
   if (t.type === "network") {
-    if (!String(t.host || "").trim()) return "lipseste host/IP";
+    if (!String(t.host || "").trim()) return tr("lipseste host/IP");
     const p = parseInt(t.port, 10);
-    if (isNaN(p) || p < 1 || p > 65535) return "port invalid (1-65535)";
+    if (isNaN(p) || p < 1 || p > 65535) return tr("port invalid (1-65535)");
   }
   if (t.type === "windows") {
-    if (!String(t.name || "").trim()) return "lipseste numele imprimantei Windows";
+    if (!String(t.name || "").trim()) return tr("lipseste numele imprimantei Windows");
   }
   return null;
 }
@@ -6506,15 +6590,15 @@ async function imprPost(url, payload) {
 async function saveImprimante() {
   for (const s of imprSections) {
     if (!String(s.Nume || "").trim()) {
-      appAlert("Sectia " + s.NrLogic + " nu are nume.");
+      appAlert(tr("Sectia {n} nu are nume.", { n: s.NrLogic }));
       imprSelected = s.NrLogic; renderImprimante(); return;
     }
     const e = imprValidateTarget(s.target);
-    if (e) { appAlert("Sectia " + (s.Nume || s.NrLogic) + ": " + e); imprSelected = s.NrLogic; renderImprimante(); return; }
+    if (e) { appAlert(tr("Sectia ") + (s.Nume || s.NrLogic) + ": " + e); imprSelected = s.NrLogic; renderImprimante(); return; }
   }
   for (const key of ["nota", "raport", "fiscal"]) {
     const e = imprValidateTarget(imprGlobal[key]);
-    if (e) { appAlert("Tinta " + key + ": " + e); return; }
+    if (e) { appAlert(tr("Tinta ") + key + ": " + e); return; }
   }
   if (!imprServiceUp) { appAlert("Serviciul de tiparire este oprit; configuratia nu poate fi salvata."); return; }
 
@@ -6649,7 +6733,7 @@ function updateFpBtns() {
 function renderFpStatusToggle() {
   const btn = document.getElementById("fp-status-toggle");
   if (!btn) return;
-  btn.innerText = fpStatus ? "Da" : "Nu";
+  btn.innerText = fpStatus ? tr("Da") : tr("Nu");
   btn.style.background = fpStatus ? "#008000" : "#ffff00";
   btn.style.color = fpStatus ? "#ffffff" : "#000000";
 }
@@ -6666,7 +6750,7 @@ function openFpInsert() {
   document.getElementById("fp-key-input").value = "";
   document.getElementById("fp-den-input").value = "";
   document.getElementById("fp-poz-input").value = "";
-  document.getElementById("fp-edit-title").innerText = "FORMA DE PLATA NOUA";
+  document.getElementById("fp-edit-title").innerText = tr("FORMA DE PLATA NOUA");
   renderFpStatusToggle();
   document.getElementById("modal-fp-edit").classList.add("active");
 }
@@ -6685,7 +6769,7 @@ function openFpEdit() {
   document.getElementById("fp-den-input").value = found.Denumire;
   document.getElementById("fp-poz-input").value = (found.Poz !== null && found.Poz !== undefined) ? found.Poz : "";
   fpStatus = !!found.Status;
-  document.getElementById("fp-edit-title").innerText = "EDITARE FORMA DE PLATA";
+  document.getElementById("fp-edit-title").innerText = tr("EDITARE FORMA DE PLATA");
   renderFpStatusToggle();
   document.getElementById("modal-fp-edit").classList.add("active");
 }
@@ -7023,7 +7107,7 @@ function openNumericKeyboardFor(inputId, title) {
   const dot = document.getElementById("num-dot-key");
   if (dot) { dot.style.visibility = "visible"; dot.disabled = false; }
   const t = document.getElementById("num-title");
-  if (t) t.innerText = title || "TASTATURA NUMERICA";
+  if (t) t.innerText = tr(title || "TASTATURA NUMERICA");
   document.getElementById("modal-num").classList.add("active");
 }
 
@@ -7037,7 +7121,7 @@ function openNumericPrompt(title, onSubmit) {
   const dot = document.getElementById("num-dot-key");
   if (dot) { dot.style.visibility = "hidden"; dot.disabled = true; }
   const t = document.getElementById("num-title");
-  if (t) t.innerText = title || "INTRODUCETI";
+  if (t) t.innerText = tr(title || "INTRODUCETI");
   const modal = document.getElementById("modal-num");
   if (modal) {
     // Asigura afisarea peste orice alt modal (ex. rollback), chiar daca CSS-ul
@@ -7683,10 +7767,16 @@ async function refreshPrintStatus() {
     const data = await resp.json();
     if (data.status !== "success") return;
     const inLucru = (data.pending || 0) + (data.printing || 0);
+    const tt = (typeof window.t === "function") ? window.t : null;
+    const base = tt ? tt("mese.coada_printare_html") : "Coada<br>printare";
     if (inLucru > 0 || (data.failed || 0) > 0) {
-      btn.innerHTML = `Coada<br>printare` + `<div style="font-size:11px; font-weight:bold; color:#000000;">${inLucru} in asteptare${(data.failed||0)>0 ? ', ' + data.failed + ' esuate' : ''}</div>`;
+      const pendingTxt = tt ? tt("printq.pending", { n: inLucru }) : (inLucru + " in asteptare");
+      const failedTxt = (data.failed || 0) > 0
+        ? (tt ? tt("printq.failed", { n: data.failed }) : (", " + data.failed + " esuate"))
+        : "";
+      btn.innerHTML = base + `<div style="font-size:11px; font-weight:bold; color:#000000;">${pendingTxt}${failedTxt}</div>`;
     } else {
-      btn.innerHTML = "Coada<br>printare";
+      btn.innerHTML = base;
     }
   } catch (err) {
     /* serviciul/API indisponibil: nu deranjam ecranul */
@@ -7696,16 +7786,18 @@ async function refreshPrintStatus() {
 function printJobLabel(r) {
   const tip = (r.Tip || "").toLowerCase();
   if (tip !== "raport") return r.Tip || "";
-  const t = (r.Title || "").trim();
-  if (!t) return "Raport";
-  if (/^raport\s+z/i.test(t)) return "Raport Z";
-  const m = t.match(/^raport\s+x\s*-\s*(.+)$/i);
+  const tr = (typeof window.t === "function") ? window.t : (k) => k;
+  const title = (r.Title || "").trim();
+  if (!title) return tr("report.label");
+  if (/^raport\s+z/i.test(title)) return tr("report.z");
+  const m = title.match(/^raport\s+x\s*-\s*(.+)$/i);
   if (m) {
     const key = m[1].trim().toUpperCase();
-    const nice = { PLU: "PLU", GRUPE: "Grupe", SECTII: "Sectii", CASIERI: "Casieri", GENERAL: "General" };
-    return "Raport X - " + (nice[key] || m[1].trim());
+    const nice = { PLU: "PLU", GRUPE: "report.tip.grupe", SECTII: "report.tip.sectii", CASIERI: "report.tip.casieri", GENERAL: "report.tip.general" };
+    const tipLabel = nice[key] ? tr(nice[key]) : m[1].trim();
+    return tr("report.x", { tip: tipLabel });
   }
-  return "Raport" + t.replace(/^raport/i, "");
+  return tr("report.label") + title.replace(/^raport/i, "");
 }
 
 function renderPrintQueue() {
@@ -7715,7 +7807,8 @@ function renderPrintQueue() {
 
   if (printQueueRows.length === 0) {
     const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="7" style="color:#888; font-weight:normal;">Coada este goala</td>';
+    const emptyTxt = (typeof window.t === "function") ? window.t("printq.gol") : "Coada este goala";
+    tr.innerHTML = '<td colspan="7" style="color:#888; font-weight:normal;">' + emptyTxt + '</td>';
     tbody.appendChild(tr);
     updatePrintQueueBtns();
     return;
@@ -7727,7 +7820,9 @@ function renderPrintQueue() {
     if (r.JobID === printQueueSelected) tr.classList.add("selected");
     if (isFailed) tr.classList.add("inactive");
     const stareCls = isFailed ? "kp-off" : (r.Stare === "done" ? "kp-on" : "");
-    const stareTitle = (r.Stare === "pending" && r.NextAttempt) ? ("urmatoarea incercare: " + r.NextAttempt) : "";
+    const stareTitle = (r.Stare === "pending" && r.NextAttempt)
+      ? ((typeof window.t === "function") ? window.t("printq.next_attempt", { t: r.NextAttempt }) : ("urmatoarea incercare: " + r.NextAttempt))
+      : "";
     const errTitle = r.LastError || stareTitle;
     tr.innerHTML = `
       <td class="printq-num"><b>${r.JobID}</b></td>
@@ -7773,7 +7868,7 @@ function previewPrintJob() {
   const job = selectedPrintJob();
   if (!job) return;
   if (job.Tip === "fiscal") {
-    appAlert("Jobul fiscal scrie un fisier text in folderul spool (nu are preview).");
+    appAlert((typeof window.t === "function") ? window.t("printq.fiscal_no_preview") : "Jobul fiscal scrie un fisier text in folderul spool (nu are preview).");
     return;
   }
   const base = "api/print_preview.php?jobId=" + job.JobID;
@@ -7900,7 +7995,7 @@ function renderSendQueue() {
     tr.innerHTML = `
       <td class="printq-num"><b>${r.Id}</b></td>
       <td>${r.DocID != null ? "doc " + r.DocID : "-"}</td>
-      <td class="${stareCls}" title="${escapeHtml(isDone ? ("trimis: " + (r.SentAt || '')) : stareTitle)}">${escapeHtml(r.Stare)}</td>
+      <td class="${stareCls}" title="${escapeHtml(isDone ? (tr("trimis: ") + (r.SentAt || '')) : stareTitle)}">${escapeHtml(r.Stare)}</td>
       <td class="printq-num" title="${escapeHtml(stareTitle)}">${r.Attempts}</td>
       <td title="${escapeHtml(r.CreatedAt || '')}">${escapeHtml(r.CreatedAt || "-")}</td>
       <td title="${escapeHtml(r.LastError || '')}">${escapeHtml(r.LastError || "-")}</td>
@@ -7944,7 +8039,7 @@ async function viewSendJob() {
     const data = await resp.json();
     if (data.status !== "success") throw new Error(data.message || "Eroare");
     const docTxt = data.row.DocID != null ? " (doc " + data.row.DocID + ")" : "";
-    document.getElementById("send-det-title").innerText = "COMANDA EXPORT #" + job.Id + docTxt;
+    document.getElementById("send-det-title").innerText = tr("COMANDA EXPORT #") + job.Id + docTxt;
     let content = data.row.str_sql || "(comanda goala)";
     const raspuns = (data.row.RaspunsCasa || "").trim();
     if (raspuns) {
@@ -8039,7 +8134,7 @@ function actionTransfer() {
 function openTransferModal() {
   transferSelected = new Set();
   document.getElementById("transfer-source-table").innerText = POS_STATE.masaCurenta;
-  document.getElementById("transfer-dialog-title").innerText = "TRANSFER PRODUSE";
+  document.getElementById("transfer-dialog-title").innerText = tr("TRANSFER PRODUSE");
   document.getElementById("transfer-step-products").style.display = "block";
   document.getElementById("transfer-step-masa").style.display = "none";
   renderTransferList();
@@ -8103,7 +8198,7 @@ function goTransferToMasa() {
     showToast("Selecteaza macar un produs");
     return;
   }
-  document.getElementById("transfer-dialog-title").innerText = "MASA DESTINATIE";
+  document.getElementById("transfer-dialog-title").innerText = tr("MASA DESTINATIE");
   document.getElementById("transfer-step-products").style.display = "none";
   document.getElementById("transfer-step-masa").style.display = "block";
   document.getElementById("transfer-masa-input").value = "";
@@ -8185,9 +8280,9 @@ function openModsPanel() {
   const backBtn = document.getElementById("btn-group-back");
   if (header && title) {
     header.style.display = "flex";
-    title.innerText = "MOD PREPARARE: " + produs.denumire;
+    title.innerText = tr("MOD PREPARARE: ") + produs.denumire;
     if (backBtn) {
-      backBtn.innerText = "⬅ INAPOI LA PRODUSE";
+      backBtn.innerText = tr("⬅ INAPOI LA PRODUSE");
       backBtn.onclick = () => backFromMods();
     }
   }
@@ -8368,7 +8463,7 @@ function openQtyModal(index, ev, prefill, cantarError) {
   const badge = document.getElementById("qty-cantar-badge");
   if (badge) {
     if (cantarError) {
-      badge.textContent = "Cantarul electronic nu raspunde";
+      badge.textContent = tr("Cantarul electronic nu raspunde");
       badge.style.display = "";
     } else {
       badge.style.display = "none";
@@ -8386,8 +8481,8 @@ function openQtyModal(index, ev, prefill, cantarError) {
   const hint = document.getElementById("qty-dec-hint");
   if (hint) {
     hint.textContent = (zec === 0)
-      ? "doar numere intregi"
-      : "maxim " + zec + (zec === 1 ? " zecimala" : " zecimale");
+      ? tr("doar numere intregi")
+      : tr(zec === 1 ? "maxim 1 zecimala" : "maxim 2 zecimale");
   }
 
   document.getElementById("modal-qty").classList.add("active");
@@ -8558,7 +8653,7 @@ function openDiscountModal() {
   discBuffer = "";
   discMotiv = "";
   const titleFull = document.getElementById("disc-modal-title");
-  if (titleFull) titleFull.textContent = "APLICARE DISCOUNT";
+  if (titleFull) titleFull.textContent = tr("disc.titlu");
   refreshMotiveSelects();
   discApplySimpleVisibility(false);
   discRender();
@@ -8581,7 +8676,7 @@ function openDiscountSubtotalModal() {
   if (motivSel) motivSel.value = "";
   discApplySimpleVisibility(true);
   const title = document.getElementById("disc-modal-title");
-  if (title) title.textContent = "DISCOUNT PROCENT SUBTOTAL";
+  if (title) title.textContent = tr("DISCOUNT PROCENT SUBTOTAL");
   discRender();
   document.getElementById("modal-discount").classList.add("active");
   discRefreshScopeButtons();
@@ -8641,7 +8736,7 @@ function discRender() {
   const lblBill = document.getElementById("disc-bill-label");
   if (lblLine) lblLine.innerText = sel
     ? `${capitalizeName(sel.denumire)} — ${lineValNet(sel).toFixed(2)} Lei`
-    : "Niciun produs selectat";
+    : tr("Niciun produs selectat");
   if (lblBill) lblBill.innerText = `Subtotal: ${sub.toFixed(2)} Lei`;
 
   // Dezactivam butonul de produs daca nu e selectat nimic
@@ -8965,7 +9060,7 @@ function actionVoid() {
   refreshMotiveSelects();
   document.getElementById("void-motiv-select").value = "";
   document.getElementById("void-parola").value = "";
-  document.getElementById("btn-void-apply").innerText = "CONFIRMA STORNO";
+  document.getElementById("btn-void-apply").innerText = tr("CONFIRMA STORNO");
 
   // Daca ParolaStornare nu este setata, nu cerem nici parola, nici motiv:
   // ascundem complet cele doua campuri din popup.
@@ -9124,7 +9219,7 @@ async function actionProforma() {
 function showToast(text) {
   const toast = document.getElementById("pos-toast");
   if (!toast) return;
-  toast.innerText = text;
+  toast.innerText = tr(text);
   toast.style.display = "block";
   setTimeout(() => {
     toast.style.display = "none";

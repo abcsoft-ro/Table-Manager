@@ -8,6 +8,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/print_common.php';
 require_once __DIR__ . '/api_common.php';
+require_once __DIR__ . '/i18n.php';
 
 /**
  * Tipul de vanzare din tblSet.TipVanz: "fastfood" cand Value = 1, altfel "restaurant".
@@ -73,6 +74,11 @@ function ensureSetariValue($conn, $setting, $default, $desc, $grup) {
 function ensureSetariMeta($conn) {
     static $done = false;
     if ($done) { return; }
+
+    // Limba interfetei (ro/en). Setarea noua a versiunii bilingve.
+    ensureSetariValue($conn, 'Limba', 'ro',
+        "Limba interfetei: romana sau engleza.", 'General');
+
     $desc = "Tipul de vanzare: 0 = Restaurant (ecran de mese, comanda la sectie, nota de plata); 1 = FastFood (fara ecran de mese, comanda nu pleaca la sectie, doar bon fiscal).";
     @sqlsrv_query(
         $conn,
@@ -320,10 +326,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $setting = trim($r['Setting'] ?? '');
             // Hash-ul cheii API nu se trimite niciodata catre client.
             if ($setting === 'ApiKeyHash') { continue; }
+            // Descrierea localizata: o luam din catalog (setari.desc.<Setting>)
+            // cand exista; altfel folosim textul din baza de date (romana).
+            $descKey = 'setari.desc.' . $setting;
+            $cat = i18nCatalog();
+            $descriere = array_key_exists($descKey, $cat) ? $cat[$descKey] : $r['Descriere'];
             $rows[] = [
                 "Setting" => $setting,
                 "Value" => $r['Value'],
-                "Descriere" => $r['Descriere'],
+                "Descriere" => $descriere,
                 "Grup" => trim($r['Grup'] ?? '')
             ];
         }

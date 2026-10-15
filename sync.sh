@@ -16,6 +16,17 @@ set -euo pipefail
 cd "$(dirname "$0")"
 ROOT="$(pwd)"
 
+# Garda de branch: sync.sh publica pe canalul de productie (branch-ul main si
+# snapshot-ul de instalare). Rulat de pe alt branch ar publica cod nedorit.
+# Pentru branch-uri foloseste 'git push origin <branch>'. Forteaza cu SYNC_ALLOW_BRANCH=1.
+CURRENT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$CURRENT_BRANCH" != "main" ] && [ "${SYNC_ALLOW_BRANCH:-0}" != "1" ]; then
+  echo "EROARE: sync.sh ruleaza doar pe branch-ul 'main' (acum: '$CURRENT_BRANCH')." >&2
+  echo "Pentru branch-uri foloseste 'git commit'/'git push origin $CURRENT_BRANCH'." >&2
+  echo "Forteaza cu SYNC_ALLOW_BRANCH=1 daca stii ce faci." >&2
+  exit 1
+fi
+
 SETUP_DIR="${SETUP_DIR:-/mnt/c/Users/Florian/source/repos/TableManager-Setup}"
 
 if [ ! -f github_api.txt ]; then
@@ -34,11 +45,15 @@ if [ -f VERSION ]; then
   HUMAN="$(tr -d ' \t\r\n' < VERSION)"
 fi
 
-# Titlul tabului din index.html reflecta intotdeauna versiunea (fallback static;
-# la runtime JS il seteaza oricum din api/version.php).
-if [ -n "$HUMAN" ] && [ -f index.html ]; then
-  sed -i -E "s#(<title>TableManager )[^<]*( - Modern Web POS</title>)#\1${HUMAN}\2#" index.html
-fi
+# Titlul tabului din pagina principala reflecta intotdeauna versiunea (fallback
+# static; la runtime JS il seteaza oricum din api/version.php). Pagina a fost
+# convertita in index.php (randare server-side pentru i18n); pastram si
+# fallback-ul pe index.html pentru instalatiile vechi.
+for PAGE in index.php index.html; do
+  if [ -n "$HUMAN" ] && [ -f "$PAGE" ]; then
+    sed -i -E "s#(<title>TableManager )[^<]*( - Modern Web POS</title>)#\1${HUMAN}\2#" "$PAGE"
+  fi
+done
 
 git add -A
 

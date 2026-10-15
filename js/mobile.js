@@ -151,11 +151,18 @@ function isFastFood() {
   return MOBILE_STATE.tipVanz === "fastfood";
 }
 
+// Traducere gettext-style (vezi js/i18n.js / pos.js): text-sursa -> traducere.
+function tr(s, params) {
+  if (typeof window.trText === "function") return window.trText(s, params);
+  if (typeof window.t === "function") return window.t(s, params);
+  return s;
+}
+
 let mvToastTimer = null;
 function showToast(text) {
   const el = document.getElementById("mv-toast");
   if (!el) return;
-  el.textContent = text || "";
+  el.textContent = tr(text) || "";
   el.classList.add("show");
   clearTimeout(mvToastTimer);
   mvToastTimer = setTimeout(() => el.classList.remove("show"), 2600);
@@ -194,6 +201,10 @@ async function loadMenu() {
   MOBILE_STATE.procentDiscountFix = (pf >= 0 && pf <= 100) ? pf : 10;
   MOBILE_STATE.parolaDiscount = (data.parolaDiscount == 1) ? 1 : 0;
   MOBILE_STATE.parolaStornare = (data.parolaStornare == 1) ? 1 : 0;
+  MOBILE_STATE.lang = (data.lang === "en") ? "en" : "ro";
+
+  // Traducem elementele statice marcate cu data-i18n*.
+  if (typeof applyI18n === "function") applyI18n();
 
   // Index plat pentru cautare / scanare
   const all = [];
@@ -257,7 +268,7 @@ function updateWaiterChip() {
     chip.textContent = MOBILE_STATE.waiter.nume;
     chip.classList.add("on");
   } else {
-    chip.textContent = "Autentificare";
+    chip.textContent = tr("Autentificare");
     chip.classList.remove("on");
   }
 }
@@ -323,7 +334,7 @@ function openNumpad(opts) {
   numpadState.max = (opts.max != null && Number(opts.max) > 0) ? Number(opts.max) : null;
   numpadState.onSubmit = opts.onSubmit || null;
   const title = document.getElementById("numpad-title");
-  if (title) title.textContent = opts.title || "Introduceti";
+  if (title) title.textContent = tr(opts.title || "Introduceti");
   renderNumpad();
   openModal("modal-numpad");
 }
@@ -440,12 +451,12 @@ function openTableByNumber() {
       }
       const t = MOBILE_STATE.tables.find(x => x.nrMasa === n);
       if (!t) {
-        showToast("Masa " + n + " nu exista.");
+        showToast(tr("Masa {n} nu exista.", { n: n }));
         return;
       }
       const visible = t.isOccupied || (t.present && t.afisez !== false);
       if (!visible) {
-        showToast("Masa " + n + " nu este disponibila.");
+        showToast(tr("Masa {n} nu este disponibila.", { n: n }));
         return;
       }
       closeModal("modal-numpad");
@@ -489,7 +500,7 @@ function renderTables() {
       cls += mine ? " occupied mine" : " occupied other";
       sub = `<span class="mv-table-sub">${escapeHtml(t.casier || "")} \u00B7 ${formatMoney(t.total).replace(/\.00$/, "")}</span>`;
     } else {
-      sub = `<span class="mv-table-sub mv-table-sub-free">liber</span>`;
+      sub = `<span class="mv-table-sub mv-table-sub-free">${tr("liber")}</span>`;
     }
 
     html += `<button class="${cls}" style="${style}" onclick="selectTable(${t.nrMasa})">
@@ -505,14 +516,14 @@ function renderFooter() {
   const el = document.getElementById("mv-tables-footer");
   if (!el) return;
   const total = MOBILE_STATE.tables.filter(t => t.isOccupied).length;
-  el.textContent = total + " mese ocupate \u00B7 " + MOBILE_STATE.tables.filter(t => t.present).length + " mese configurate";
+  el.textContent = tr("{n} mese ocupate \u00B7 {m} mese configurate", { n: total, m: MOBILE_STATE.tables.filter(t => t.present).length });
 }
 
 async function selectTable(nr) {
   requireLogin(async () => {
     const t = MOBILE_STATE.tables.find(x => x.nrMasa === nr);
     if (t && t.isOccupied && t.nrOp != null && Number(t.nrOp) !== Number(MOBILE_STATE.waiter.nrOsp)) {
-      appAlert("Masa " + nr + " este deschisa de alt ospatar (" + (t.casier || "?") + ").");
+      appAlert(tr("msg.masa_alt_ospatar", { masa: nr, casier: t.casier || "?" }));
       return;
     }
 
@@ -567,7 +578,7 @@ function renderMarkMeta() {
   const redEl = document.getElementById("mv-mark-reducere");
   if (redEl) {
     if (MOBILE_STATE.reducere > 0.005) {
-      redEl.textContent = "Reducere: " + formatMoney(MOBILE_STATE.reducere);
+      redEl.textContent = tr("Reducere: ") + formatMoney(MOBILE_STATE.reducere);
       redEl.style.display = "";
     } else {
       redEl.style.display = "none";
@@ -593,10 +604,10 @@ function renderGroupsBar() {
   const bar = document.getElementById("mv-groups-bar");
   if (!bar) return;
 
-  let html = `<button class="mv-group-chip ${MOBILE_STATE.activeGroup == null ? "active" : ""}" onclick="openGroup(null)">Grupe</button>`;
+  let html = `<button class="mv-group-chip ${MOBILE_STATE.activeGroup == null ? "active" : ""}" onclick="openGroup(null)">${tr("Grupe")}</button>`;
 
   if (MOBILE_STATE.meniulZilei === 1 && getMZProducts().length > 0) {
-    html += `<button class="mv-group-chip ${MOBILE_STATE.activeGroup === "MZ" ? "active" : ""}" onclick="openGroup('MZ')">Meniul Zilei</button>`;
+    html += `<button class="mv-group-chip ${MOBILE_STATE.activeGroup === "MZ" ? "active" : ""}" onclick="openGroup('MZ')">${tr("Meniul Zilei")}</button>`;
   }
 
   // Numele grupelor in ordine alfabetica (dupa Denumire), in bara orizontala.
@@ -680,7 +691,7 @@ function renderNota() {
   let qtyTotal = 0;
 
   if (!arts.length) {
-    html = `<div class="mv-nota-empty">Nota este goala.</div>`;
+    html = `<div class="mv-nota-empty">${tr("Nota este goala.")}</div>`;
   } else {
     arts.forEach(a => {
       const isStorno = !!a.storno;
@@ -688,7 +699,7 @@ function renderNota() {
 
       const sel = MOBILE_STATE.selectedEcrId === a.ecrId ? " selected" : "";
       const stC = isStorno ? " storno" : "";
-      const tag = (!isStorno && a.preluat) ? `<span class="mv-line-tag">trimis</span>` : "";
+      const tag = (!isStorno && a.preluat) ? `<span class="mv-line-tag">${tr("trimis")}</span>` : "";
 
       let modsHtml = "";
       if (a.mods && a.mods.length) {
@@ -738,7 +749,7 @@ function renderNota() {
   const barCount = document.getElementById("mv-cartbar-count");
   const barTotal = document.getElementById("mv-cartbar-total");
   if (count) count.textContent = String(MOBILE_STATE.articole.filter(a => !a.storno).length);
-  if (barCount) barCount.textContent = formatQty(qtyTotal) + " produse";
+  if (barCount) barCount.textContent = tr("{n} produse", { n: formatQty(qtyTotal) });
   if (barTotal) barTotal.textContent = formatMoney(MOBILE_STATE.total) + " L";
 }
 
@@ -781,7 +792,7 @@ async function addProduct(prodId) {
       });
       if (res.status !== "success") throw new Error(res.message || "Eroare");
       vibrate(12);
-      showToast(res.denumire ? ("Adaugat: " + res.denumire) : "Produs adaugat");
+      showToast(res.denumire ? (tr("Adaugat: ") + res.denumire) : tr("Produs adaugat"));
       await loadOrder(MOBILE_STATE.masaCurenta);
     } catch (err) {
       appAlert("Eroare: " + err.message);
@@ -849,7 +860,7 @@ function onSearchInput() {
   }).slice(0, 80);
 
   if (!matches.length) {
-    res.innerHTML = `<div class="mv-empty">Niciun rezultat.</div>`;
+    res.innerHTML = `<div class="mv-empty">${tr("Niciun rezultat.")}</div>`;
     return;
   }
   res.innerHTML = matches.map(p =>
@@ -879,16 +890,16 @@ function openLineActions(a) {
   let html = "";
   if (!a.storno) {
     if (!a.preluat) {
-      html += `<button class="mv-action-btn" onclick="openQtyModal()">Cantitate (QTY)</button>`;
+      html += `<button class="mv-action-btn" onclick="openQtyModal()">${tr("Cantitate (QTY)")}</button>`;
     }
     if (!isFastFood()) {
-      html += `<button class="mv-action-btn" onclick="openModsModal()">Mod preparare</button>`;
+      html += `<button class="mv-action-btn" onclick="openModsModal()">${tr("Mod preparare")}</button>`;
     }
     if (MOBILE_STATE.red !== 0 && MOBILE_STATE.tipDiscount === 0) {
-      html += `<button class="mv-action-btn" onclick="openDiscountModal('line')">Discount pe linie</button>`;
+      html += `<button class="mv-action-btn" onclick="openDiscountModal('line')">${tr("Discount pe linie")}</button>`;
     }
   }
-  html += `<button class="mv-action-btn mv-action-danger" onclick="openVoidModal()">${a.storno ? "Revoca anularea" : "VD / Anulare"}</button>`;
+  html += `<button class="mv-action-btn mv-action-danger" onclick="openVoidModal()">${a.storno ? tr("Revoca anularea") : tr("VD / Anulare")}</button>`;
 
   body.innerHTML = html;
   openModal("modal-line");
@@ -898,27 +909,27 @@ function openLineActions(a) {
 function openMarkMenu() {
   const body = document.getElementById("line-actions-body");
   const title = document.getElementById("line-actions-title");
-  if (title) title.textContent = "Actiuni nota";
+  if (title) title.textContent = tr("Actiuni nota");
   if (!body) return;
 
   let html = "";
   if (MOBILE_STATE.red !== 0) {
     const tip = MOBILE_STATE.tipDiscount;
     if (tip === 0) {
-      html += `<button class="mv-action-btn" onclick="openDiscountModal('bill')">Discount pe nota</button>`;
+      html += `<button class="mv-action-btn" onclick="openDiscountModal('bill')">${tr("Discount pe nota")}</button>`;
     } else if (tip === 1) {
-      html += `<button class="mv-action-btn" onclick="openDiscountModal('bill')">Discount % (nota)</button>`;
+      html += `<button class="mv-action-btn" onclick="openDiscountModal('bill')">${tr("Discount % (nota)")}</button>`;
     } else if (tip === 2) {
       const pct = discountPctLabel(MOBILE_STATE.procentDiscountFix);
-      html += `<button class="mv-action-btn" onclick="actionDiscountFixMobile()">Discount ${pct}% (nota)</button>`;
+      html += `<button class="mv-action-btn" onclick="actionDiscountFixMobile()">${tr("Discount {pct}% (nota)", {pct: pct})}</button>`;
     }
   }
   if (!isFastFood()) {
-    html += `<button class="mv-action-btn" onclick="menuMods()">Mod preparare</button>`;
+    html += `<button class="mv-action-btn" onclick="menuMods()">${tr("Mod preparare")}</button>`;
   }
-  html += `<button class="mv-action-btn" onclick="openTransferModal()">Transfer produse</button>`;
+  html += `<button class="mv-action-btn" onclick="openTransferModal()">${tr("Transfer produse")}</button>`;
   if (MOBILE_STATE.meniulZilei === 1 && getMZProducts().length > 0) {
-    html += `<button class="mv-action-btn" onclick="menuMeniulZilei()">Meniul Zilei</button>`;
+    html += `<button class="mv-action-btn" onclick="menuMeniulZilei()">${tr("Meniul Zilei")}</button>`;
   }
   body.innerHTML = html;
   openModal("modal-line");
@@ -987,20 +998,20 @@ function renderModsModal(a) {
 
   const lastEcr = lastProductEcrId();
   if (a.ecrId !== lastEcr) {
-    html += `<div class="mv-info-note">Modurile se ataseaza ultimului produs de pe nota. Adaugati produsul dorit la finalul notei pentru a-i asocia un mod.</div>`;
+    html += `<div class="mv-info-note">${tr("Modurile se ataseaza ultimului produs de pe nota. Adaugati produsul dorit la finalul notei pentru a-i asocia un mod.")}</div>`;
   }
 
   if (a.mods && a.mods.length) {
-    html += `<div class="mv-field-label">Moduri pe linie</div><div class="mv-mod-list">`;
+    html += `<div class="mv-field-label">${tr("Moduri pe linie")}</div><div class="mv-mod-list">`;
     a.mods.forEach(m => {
       html += `<span class="mv-mod-chip">${escapeHtml(m.text)}<button onclick="deleteMod(${m.ecrId})">&times;</button></span>`;
     });
     html += `</div>`;
   }
 
-  html += `<div class="mv-field-label">Adauga mod</div><div class="mv-mod-options">`;
+  html += `<div class="mv-field-label">${tr("Adauga mod")}</div><div class="mv-mod-options">`;
   if (!MOBILE_STATE.messages.length) {
-    html += `<div class="mv-empty">Nu exista moduri de preparare configurate.</div>`;
+    html += `<div class="mv-empty">${tr("Nu exista moduri de preparare configurate.")}</div>`;
   } else {
     MOBILE_STATE.messages.forEach(msg => {
       html += `<button class="mv-mod-option" onclick="addMod(${msg.NrMesaj})">${escapeHtml(msg.Mesaj)}</button>`;
@@ -1231,30 +1242,30 @@ function renderVoid() {
 
   if (a.storno) {
     if (a.preluat) {
-      html += `<div class="mv-info-note">Aceasta linie de anulare a fost deja trimisa la sectie si nu mai poate fi revocata.</div>`;
+      html += `<div class="mv-info-note">${tr("Aceasta linie de anulare a fost deja trimisa la sectie si nu mai poate fi revocata.")}</div>`;
     } else {
-      html += `<div class="mv-info-note">Aceasta este o linie de anulare netrimisa. Revocarea o sterge si restabileste discountul liniei originale.</div>`;
-      html += `<button class="mv-primary-btn danger" onclick="voidApply()">Revoca anularea</button>`;
+      html += `<div class="mv-info-note">${tr("Aceasta este o linie de anulare netrimisa. Revocarea o sterge si restabileste discountul liniei originale.")}</div>`;
+      html += `<button class="mv-primary-btn danger" onclick="voidApply()">${tr("Revoca anularea")}</button>`;
     }
     body.innerHTML = html;
     return;
   }
 
   if (!a.preluat) {
-    html += `<div class="mv-info-note">Linia nu a fost trimisa la sectie. Anularea reduce sau sterge linia direct.</div>`;
+    html += `<div class="mv-info-note">${tr("Linia nu a fost trimisa la sectie. Anularea reduce sau sterge linia direct.")}</div>`;
   } else if (MOBILE_STATE.parolaStornare === 1) {
-    html += `<div class="mv-info-note">Linia a fost trimisa la sectie. Se va scrie o nota de anulare, cu parola de manager.</div>`;
+    html += `<div class="mv-info-note">${tr("Linia a fost trimisa la sectie. Se va scrie o nota de anulare, cu parola de manager.")}</div>`;
   } else {
-    html += `<div class="mv-info-note">Linia a fost trimisa la sectie. Se va scrie o nota de anulare.</div>`;
+    html += `<div class="mv-info-note">${tr("Linia a fost trimisa la sectie. Se va scrie o nota de anulare.")}</div>`;
   }
 
-  html += `<div class="mv-field-label">Cantitate de anulat (max ${formatQtyDec(a.ramas != null ? a.ramas : a.cantitate)})</div>`;
+  html += `<div class="mv-field-label">${tr("Cantitate de anulat (max {q})", {q: formatQtyDec(a.ramas != null ? a.ramas : a.cantitate)})}</div>`;
   html += `<button class="mv-value-btn" onclick="voidEditQty()">${formatQtyDec(voidState.cantitate)}</button>`;
 
   if (a.preluat && MOBILE_STATE.parolaStornare === 1) {
-    html += `<div class="mv-field-label">Motiv anulare</div>`;
+    html += `<div class="mv-field-label">${tr("Motiv anulare")}</div>`;
     html += `<input type="text" class="mv-text-input" id="void-motiv" placeholder="Motiv" autocomplete="off">`;
-    html += `<div class="mv-field-label">Parola manager</div>`;
+    html += `<div class="mv-field-label">${tr("Parola manager")}</div>`;
     html += `<input type="password" class="mv-text-input" id="void-parola" placeholder="Parola stornare" autocomplete="off" inputmode="numeric">`;
   }
 
@@ -1324,7 +1335,7 @@ function renderTransfer() {
   if (!body) return;
 
   const arts = MOBILE_STATE.articole.filter(a => !a.storno);
-  let html = `<div class="mv-field-label">Produse de transferat</div>`;
+  let html = `<div class="mv-field-label">${tr("Produse de transferat")}</div>`;
 
   arts.forEach(a => {
     const checked = transferState.selected[a.ecrId] ? " checked" : "";
@@ -1336,11 +1347,11 @@ function renderTransfer() {
   });
 
   html += `<div class="mv-transfer-dest">
-    <span>Masa destinatie</span>
+    <span>${tr("Masa destinatie")}</span>
     <button onclick="transferEditDest()">${transferState.destMasa != null ? transferState.destMasa : "?"}</button>
   </div>`;
 
-  html += `<button class="mv-primary-btn" onclick="execTransfer()">Transfera</button>`;
+  html += `<button class="mv-primary-btn" onclick="execTransfer()">${tr("Transfera")}</button>`;
   body.innerHTML = html;
 }
 
@@ -1461,7 +1472,7 @@ function showView(id) {
 
   // Numarul mesei apare deja in bara de deasupra notei; in header lasam loc liber
   // pentru numele ospatarului.
-  if (title) title.textContent = (id === "view-tables") ? "Mese" : "";
+  if (title) title.textContent = (id === "view-tables") ? tr("Mese") : "";
   if (back) back.style.visibility = (id === "view-tables") ? "hidden" : "visible";
   if (search) search.style.display = (id === "view-mark") ? "" : "none";
 
@@ -1475,13 +1486,14 @@ function appConfirm(message, onYes, yesLabel, noLabel) {
   const msg = document.getElementById("confirm-message");
   const yes = document.getElementById("confirm-yes");
   const no = document.getElementById("confirm-no");
+  message = tr(message);
   if (!msg || !yes || !no) {
     if (window.confirm(message) && onYes) onYes();
     return;
   }
   msg.textContent = message || "";
-  yes.textContent = yesLabel || "Da";
-  no.textContent = noLabel || "Nu";
+  yes.textContent = tr(yesLabel || "Da");
+  no.textContent = tr(noLabel || "Nu");
   yes.onclick = () => {
     closeAppConfirm();
     if (onYes) onYes();
@@ -1494,6 +1506,7 @@ function closeAppConfirm() {
 }
 
 function appAlert(message, onOk) {
+  message = tr(message);
   const msg = document.getElementById("alert-message");
   if (!msg) {
     window.alert(message);
