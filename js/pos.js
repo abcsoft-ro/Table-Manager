@@ -2244,6 +2244,9 @@ function applyRollback() {
   appConfirm(
     "Reveniti la versiunea: " + rollbackSelected.label + "? Configurarile locale nu sunt afectate.",
     () => {
+      // Inchidem modalul de rollback inainte de a cere parola, ca numpad-ul de
+      // parola (ca la Update) sa fie sigur vizibil, nu in spatele modalului.
+      closeRollback();
       openNumericPrompt("PAROLA UPDATE", async (parola) => {
         try {
           showToast("Se aplica rollback...");
