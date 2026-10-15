@@ -38,12 +38,7 @@ else
   echo "Sincronizat: $(git rev-parse --short HEAD) ($(date '+%Y-%m-%d %H:%M:%S'))"
 fi
 
-# ------------------------------------------------------- snapshot de instalare
-if [ ! -d "$SETUP_DIR/.git" ]; then
-  echo "Setup: '$SETUP_DIR' nu este un repo git (sar peste). Setati SETUP_DIR pentru a sincroniza installerul." >&2
-  exit 0
-fi
-
+# ------------------------------------------------------- variabile versiune
 SHA="$(git rev-parse HEAD)"
 SHORT="$(git rev-parse --short HEAD)"
 BUILD="$(git rev-list --count HEAD)"
@@ -53,6 +48,40 @@ if [ -f VERSION ]; then
   HUMAN="$(tr -d ' \t\r\n' < VERSION)"
 else
   HUMAN=""
+fi
+
+# ------------------------------------------------- metadate repo (About + topics)
+# Descrierea GitHub ("About") se construieste din VERSION + subtitlul din README,
+# ca sa rămână consistenta cu README-ul la fiecare release. Best-effort: daca
+# API-ul GitHub nu raspunde, sincronizarea continua.
+REPO_SLUG="abcsoft-ro/Table-Manager"
+SUBTITLE="$(grep -m1 '^### ' README.md 2>/dev/null | sed 's/^### //' || true)"
+DESC="TableManager ${HUMAN} — ${SUBTITLE}"
+DESC_JSON="$(printf '%s' "$DESC" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+if curl -s -X PATCH \
+     -H "Authorization: token ${TOKEN}" \
+     -H "Accept: application/vnd.github+json" \
+     -d "{\"description\":\"${DESC_JSON}\"}" \
+     "https://api.github.com/repos/${REPO_SLUG}" >/dev/null; then
+  echo "GitHub: descriere actualizata (v${HUMAN})."
+else
+  echo "GitHub: nu am putut actualiza descrierea (best-effort)." >&2
+fi
+
+if curl -s -X PUT \
+     -H "Authorization: token ${TOKEN}" \
+     -H "Accept: application/vnd.github+json" \
+     -d '{"names":["pos","point-of-sale","restaurant","fast-food","php","mssql","tablemanager"]}' \
+     "https://api.github.com/repos/${REPO_SLUG}/topics" >/dev/null; then
+  echo "GitHub: topics actualizate."
+else
+  echo "GitHub: nu am putut actualiza topics (best-effort)." >&2
+fi
+
+# ------------------------------------------------------- snapshot de instalare
+if [ ! -d "$SETUP_DIR/.git" ]; then
+  echo "Setup: '$SETUP_DIR' nu este un repo git (sar peste). Setati SETUP_DIR pentru a sincroniza installerul." >&2
+  exit 0
 fi
 
 # Scriere atomica (tmp + mv) ca cititorii (VS Code, API) sa nu prinda niciodata
