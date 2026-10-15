@@ -547,6 +547,40 @@ const HELP_CONTENT = {
           de plata), 0 = ascunsa.</li>
       </ul>
     `
+  },
+
+  rollback: {
+    title: "AJUTOR - ROLLBACK",
+    html: `
+      <p class="help-intro">
+        <strong>Rollback</strong> revine la o versiune anterioara a aplicatiei,
+        daca versiunea curenta are probleme. Sunt afectate doar fisierele de cod;
+        configurarile locale (conectare, imprimante, casa de marcat, POS bancar)
+        <strong>nu</strong> sunt atinse. Baza de date nu este modificata.
+      </p>
+      <h4 class="help-section">Puncte de restaurare (acest calculator)</h4>
+      <p>
+        Inainte de fiecare update se salveaza automat un snapshot complet al
+        versiunii curente. Se pastreaza ultimele 5. Alegeti unul pentru a reveni
+        exact la versiunea care rula atunci.
+      </p>
+      <h4 class="help-section">Versiuni din istoric (GitHub)</h4>
+      <p>
+        Daca exista internet, sunt listate si ultimele versiuni din istoricul
+        GitHub; puteti reveni la oricare dintre ele.
+      </p>
+      <h4 class="help-section">Cum se foloseste</h4>
+      <ul class="help-list">
+        <li>Atingeti un punct de restaurare sau o versiune din lista.</li>
+        <li>Apasati <strong>Aplica rollback</strong> (galben) si confirmati.</li>
+        <li>Dupa rollback, <strong>reporniti serviciile</strong> (Setari ->
+          Servicii) si reincarcati pagina.</li>
+      </ul>
+      <p class="help-tip">
+        Versiunea curenta este marcata „(curenta)". Dupa un rollback, butonul
+        <strong>Update</strong> va oferi din nou trecerea la ultima versiune.
+      </p>
+    `
   }
 
 };

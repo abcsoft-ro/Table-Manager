@@ -18,323 +18,11 @@ require_once __DIR__ . '/version_common.php';
 // Raspunsurile nu se memoreaza in cache (check/apply trebuie sa fie mereu proaspete).
 header('Cache-Control: no-store, no-cache, must-revalidate');
 
-define('UPDATE_REPO', 'abcsoft-ro/Table-Manager');
-define('UPDATE_BRANCH', 'main');
+require_once __DIR__ . '/update_common.php';
 
 $UPDATE_ROOT = dirname(__DIR__);
 $UPDATE_BACKUP_DIR = $UPDATE_ROOT . '/logs/backups';
 
-/**
- * Fisiere (relative la radacina) care nu se suprascriu niciodata.
- */
-function updateIgnoreExact() {
-    return [
-        'print-service/config.json',
-        'sync-service/config.json',
-        'api/db.local.php',
-        '.gitignore',
-        'github_api.txt',
-        'AGENTS.md',
-    ];
-}
-
-/**
- * Prefixe de cale protejate (runtime / unelte locale).
- */
-function updateIgnorePrefixes() {
-    return [
-        '.git/', '.venv/', 'logs/', '__pycache__/',
-        'print-service/logs/', 'print-service/spool/', 'print-service/preview/',
-        'sync-service/logs/',
-    ];
-}
-
-/**
- * Token GitHub optional (fisierul local github_api.txt), folosit doar ca sa
- * marim limita de apeluri API. Repo-ul este public, deci nu este obligatoriu.
- *
- * @param string $root
- */
-function updateGithubToken($root) {
-    $file = $root . '/github_api.txt';
-    if (!is_file($file)) {
-        return '';
-    }
-    $content = @file_get_contents($file);
-    if ($content === false) {
-        return '';
-    }
-    if (preg_match('/token:\s*([A-Za-z0-9_\-]+)/', $content, $m)) {
-        return $m[1];
-    }
-    $line = trim($content);
-    return preg_match('/^[A-Za-z0-9_\-]{20,}$/', $line) ? $line : '';
-}
-
-/**
- * GET HTTP. Foloseste cURL daca extensia e disponibila, altfel stream-urile
- * PHP (allow_url_fopen). Intoarce [body, cod_http, eroare].
- *
- * @param string $url
- */
-function updateHttpGet($url, $headers = [], $timeout = 20) {
-    if (function_exists('curl_init')) {
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => $headers,
-            CURLOPT_TIMEOUT        => $timeout,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_SSL_VERIFYPEER => true,
-        ]);
-        $body = curl_exec($ch);
-        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $err  = curl_error($ch);
-        curl_close($ch);
-        if ($body === false) {
-            return [null, 0, "Nu pot contacta GitHub: " . $err];
-        }
-        return [$body, $code, null];
-    }
-
-    if (!ini_get('allow_url_fopen')) {
-        return [null, 0, "Extensia PHP curl nu este disponibila si allow_url_fopen este oprit."];
-    }
-    $ctx = stream_context_create([
-        'http' => [
-            'method'          => 'GET',
-            'header'          => implode("\r\n", $headers),
-            'timeout'         => $timeout,
-            'follow_location' => 1,
-            'max_redirects'   => 5,
-            'ignore_errors'   => true,
-        ],
-        'ssl' => [
-            'verify_peer'      => true,
-            'verify_peer_name' => true,
-        ],
-    ]);
-    $body = @file_get_contents($url, false, $ctx);
-    $code = 0;
-    if (!empty($http_response_header)) {
-        foreach ($http_response_header as $line) {
-            if (preg_match('#^HTTP/\S+\s+(\d{3})#', $line, $m)) {
-                $code = (int)$m[1];
-            }
-        }
-    }
-    if ($body === false) {
-        $e = error_get_last();
-        return [null, $code, "Nu pot contacta GitHub" . ($e ? ": " . $e['message'] : "")];
-    }
-    return [$body, $code, null];
-}
-
-/**
- * Ultimul SHA de pe branch. Intoarce [sha_complet, null] sau [null, eroare].
- * Repo-ul este public, deci daca tokenul optional (github_api.txt) este
- * invalid/expirat reincercam fara el.
- *
- * @param string $root
- */
-function updateGithubLatestSha($root) {
-    $url = 'https://api.github.com/repos/' . UPDATE_REPO . '/commits/' . UPDATE_BRANCH;
-    $token = updateGithubToken($root);
-
-    $attempts = $token !== '' ? [$token, ''] : [''];
-    $lastError = "Raspuns GitHub neasteptat";
-    foreach ($attempts as $authToken) {
-        $headers = ['Accept: application/vnd.github+json', 'User-Agent: TableManager-Updater'];
-        if ($authToken !== '') {
-            $headers[] = 'Authorization: Bearer ' . $authToken;
-        }
-
-        list($body, $code, $err) = updateHttpGet($url, $headers, 20);
-        if ($body === null) {
-            $lastError = $err;
-            continue;
-        }
-        if ($code === 401 || $code === 403) {
-            $lastError = "GitHub a raspuns cu HTTP " . $code;
-            continue; // token invalid/limitat: reincercam fara el
-        }
-        if ($code < 200 || $code >= 300) {
-            return [null, "GitHub a raspuns cu HTTP " . $code];
-        }
-        $json = json_decode($body, true);
-        if (is_array($json) && !empty($json['sha'])) {
-            return [$json['sha'], null];
-        }
-        $lastError = "Raspuns GitHub neasteptat";
-    }
-    return [null, $lastError];
-}
-
-/**
- * Descarca un URL binar in $dest. Foloseste cURL daca e disponibil, altfel
- * stream-urile PHP. Intoarce null la succes sau mesaj de eroare.
- *
- * @param string $url
- * @param string $dest
- */
-function updateDownload($url, $dest) {
-    if (function_exists('curl_init')) {
-        $fp = @fopen($dest, 'wb');
-        if (!$fp) {
-            return "Nu pot scrie fisierul temporar.";
-        }
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_FILE           => $fp,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_TIMEOUT        => 180,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_USERAGENT      => 'TableManager-Updater',
-        ]);
-        $ok   = curl_exec($ch);
-        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $err  = curl_error($ch);
-        curl_close($ch);
-        fclose($fp);
-
-        if (!$ok || $code < 200 || $code >= 300) {
-            @unlink($dest);
-            return "Descarcare esuata" . ($err !== '' ? ": " . $err : " (HTTP " . $code . ")");
-        }
-        return null;
-    }
-
-    if (!ini_get('allow_url_fopen')) {
-        return "Extensia PHP curl nu este disponibila si allow_url_fopen este oprit.";
-    }
-    $ctx = stream_context_create([
-        'http' => [
-            'method'          => 'GET',
-            'header'          => "User-Agent: TableManager-Updater\r\n",
-            'timeout'         => 180,
-            'follow_location' => 1,
-            'max_redirects'   => 5,
-            'ignore_errors'   => true,
-        ],
-        'ssl' => [
-            'verify_peer'      => true,
-            'verify_peer_name' => true,
-        ],
-    ]);
-    $in = @fopen($url, 'rb', false, $ctx);
-    if (!$in) {
-        $e = error_get_last();
-        return "Descarcare esuata" . ($e ? ": " . $e['message'] : "");
-    }
-    $out = @fopen($dest, 'wb');
-    if (!$out) {
-        fclose($in);
-        return "Nu pot scrie fisierul temporar.";
-    }
-    stream_copy_to_stream($in, $out);
-    fclose($in);
-    fclose($out);
-
-    $code = 0;
-    if (!empty($http_response_header)) {
-        foreach ($http_response_header as $line) {
-            if (preg_match('#^HTTP/\S+\s+(\d{3})#', $line, $m)) {
-                $code = (int)$m[1];
-            }
-        }
-    }
-    if ($code >= 400) {
-        @unlink($dest);
-        return "Descarcare esuata (HTTP " . $code . ")";
-    }
-    if (!is_file($dest) || filesize($dest) === 0) {
-        @unlink($dest);
-        return "Descarcare esuata (fisier gol).";
-    }
-    return null;
-}
-
-/**
- * Verifica daca o cale relativa (cu /) este protejata.
- *
- * @param string $rel
- */
-function updateIsIgnored($rel) {
-    if (in_array($rel, updateIgnoreExact(), true)) {
-        return true;
-    }
-    foreach (updateIgnorePrefixes() as $prefix) {
-        if (strpos($rel, $prefix) === 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * Fisiere protejate suplimentar: `api/db.php` este tratat ca fisier de
- * configurare local (poate contine credențialele) cat timp nu exista
- * `api/db.local.php`. Daca `db.local.php` exista, `db.php` este cod obisnuit
- * si se actualizeaza normal.
- *
- * @param string $rel
- * @param string $root
- */
-function updatePreserveExtra($rel, $root) {
-    return ($rel === 'api/db.php' && !is_file($root . '/api/db.local.php'));
-}
-
-/**
- * Copiaza un fisier sursa in $target, atomic (tmp + rename).
- *
- * @param string $source
- * @param string $target
- */
-function updateWriteFile($source, $target) {
-    $dir = dirname($target);
-    if (!is_dir($dir) && !@mkdir($dir, 0777, true) && !is_dir($dir)) {
-        return false;
-    }
-    $data = @file_get_contents($source);
-    if ($data === false) {
-        return false;
-    }
-    $tmp = $target . '.upd-tmp';
-    if (@file_put_contents($tmp, $data) === false) {
-        return false;
-    }
-    if (!@rename($tmp, $target)) {
-        @unlink($target);
-        if (!@rename($tmp, $target)) {
-            @unlink($tmp);
-            return false;
-        }
-    }
-    return true;
-}
-
-/**
- * Sterge recursiv un director temporar.
- *
- * @param string $dir
- */
-function updateRemoveDir($dir) {
-    if (!is_dir($dir)) {
-        return;
-    }
-    $items = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::CHILD_FIRST
-    );
-    foreach ($items as $item) {
-        if ($item->isDir()) {
-            @rmdir($item->getPathname());
-        } else {
-            @unlink($item->getPathname());
-        }
-    }
-    @rmdir($dir);
-}
 
 /**
  * Verifica parola de update. Intoarce true sau trimite raspunsul de eroare.
@@ -360,8 +48,44 @@ function updateCheckParola($conn, $parola) {
     return true;
 }
 
-// ------------------------------------------------------------------ GET check
+// ------------------------------------------------- GET check / list (rollback)
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    // Lista de puncte de restaurare locale + versiuni GitHub (pt. rollback).
+    if (isset($_GET['list'])) {
+        $state = appVersionReadState();
+        $idx = updateReadBackupIndex();
+        usort($idx, function ($a, $b) {
+            return strcmp((string)($b['createdAt'] ?? ''), (string)($a['createdAt'] ?? ''));
+        });
+        $local = [];
+        foreach ($idx as $e) {
+            $local[] = [
+                'id'        => (string)($e['file'] ?? ''),
+                'sha'       => (string)($e['sha'] ?? ''),
+                'short'     => (string)($e['short'] ?? ''),
+                'build'     => $e['build'] ?? null,
+                'builtAt'   => (string)($e['builtAt'] ?? ''),
+                'version'   => (string)($e['version'] ?? ''),
+                'source'    => (string)($e['source'] ?? ''),
+                'createdAt' => (string)($e['createdAt'] ?? ''),
+            ];
+        }
+        $github = [];
+        try {
+            $github = updateGithubCommits($UPDATE_ROOT, 15);
+        } catch (Throwable $ex) {
+            $github = [];
+        }
+        sendJsonResponse([
+            "status"  => "success",
+            "version" => appVersionReadHuman(),
+            "label"   => appVersionLabel(),
+            "current" => appVersionShort((string)($state['sha'] ?? '')),
+            "local"   => $local,
+            "github"  => $github,
+        ]);
+    }
+
     if (!isset($_GET['check'])) {
         sendJsonResponse(["status" => "error", "message" => "Ruta necunoscuta"], 404);
     }
@@ -399,6 +123,121 @@ $action = $input['action'] ?? 'apply';
 $parola = trim((string)($input['parola'] ?? ''));
 $force  = !empty($input['force']);
 
+// -------------------------------------------------------- POST rollback
+if ($action === 'rollback') {
+    $hasZip  = class_exists('ZipArchive');
+    $hasPhar = class_exists('PharData');
+    if (!$hasZip && !$hasPhar) {
+        sendJsonResponse(["status" => "error", "message" => "Nu exista extensia PHP zip sau phar pentru dezarhivare."], 500);
+    }
+    $ext = $hasZip ? 'zip' : 'tar.gz';
+
+    $state  = appVersionReadState();
+    $oldSha = (string)($state['sha'] ?? '');
+
+    $id  = trim((string)($input['id'] ?? ''));
+    $sha = trim((string)($input['sha'] ?? ''));
+    $newMeta = ['sha' => '', 'short' => '', 'build' => null, 'builtAt' => '', 'version' => ''];
+
+    $archivePath = null;
+    $archiveExt  = 'zip';
+    $tmpArchive  = null;
+
+    if ($id !== '') {
+        // Punct de restaurare local.
+        $idx = updateReadBackupIndex();
+        $entry = null;
+        foreach ($idx as $e) {
+            if ((string)($e['file'] ?? '') === $id) {
+                $entry = $e;
+                break;
+            }
+        }
+        if (!$entry) {
+            sendJsonResponse(["status" => "error", "message" => "Punctul de restaurare nu exista."], 404);
+        }
+        $file = basename((string)$entry['file']);
+        $path = $UPDATE_BACKUP_DIR . '/' . $file;
+        if (!is_file($path)) {
+            sendJsonResponse(["status" => "error", "message" => "Fisierul punctului de restaurare lipseste."], 404);
+        }
+        $archivePath = $path;
+        $archiveExt  = (strtolower((string)pathinfo($file, PATHINFO_EXTENSION)) === 'zip') ? 'zip' : 'tar.gz';
+        $newMeta = [
+            'sha'     => (string)($entry['sha'] ?? ''),
+            'short'   => (string)($entry['short'] ?? ''),
+            'build'   => $entry['build'] ?? null,
+            'builtAt' => (string)($entry['builtAt'] ?? ''),
+            'version' => (string)($entry['version'] ?? ''),
+        ];
+    } elseif ($sha !== '') {
+        // Versiune din istoricul GitHub, dupa SHA.
+        if (!preg_match('/^[0-9a-fA-F]{7,40}$/', $sha)) {
+            sendJsonResponse(["status" => "error", "message" => "SHA invalid."], 400);
+        }
+        $url = updateArchiveUrl($ext, $sha);
+        $tmpArchive = rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'tmr_' . uniqid('', true) . '.' . $ext;
+        $err = updateDownload($url, $tmpArchive);
+        if ($err !== null) {
+            @unlink($tmpArchive);
+            sendJsonResponse(["status" => "error", "message" => $err], 502);
+        }
+        $archivePath = $tmpArchive;
+        $archiveExt  = $ext;
+        $newMeta = ['sha' => $sha, 'short' => appVersionShort($sha), 'build' => null, 'builtAt' => '', 'version' => ''];
+    } else {
+        sendJsonResponse(["status" => "error", "message" => "Selectati un punct de restaurare sau o versiune."], 400);
+    }
+
+    $exErr = '';
+    $extractDir = updateExtractTo($archivePath, $archiveExt, $exErr);
+    if ($tmpArchive !== null) {
+        @unlink($tmpArchive);
+    }
+    if ($extractDir === null) {
+        sendJsonResponse(["status" => "error", "message" => $exErr], 500);
+    }
+
+    $sourceRoot = updateSourceRoot($extractDir);
+    list($toWrite, $preserved) = updateCollectWritableFiles($sourceRoot, $UPDATE_ROOT);
+    if (empty($toWrite)) {
+        updateRemoveDir($extractDir);
+        sendJsonResponse(["status" => "error", "message" => "Arhiva nu contine fisiere de instalat."], 500);
+    }
+    list($written, $failed) = updateApplyFiles($UPDATE_ROOT, $toWrite);
+    updateRemoveDir($extractDir);
+
+    if ($written === 0) {
+        sendJsonResponse(["status" => "error", "message" => "Nu am putut scrie niciun fisier."], 500);
+    }
+
+    appVersionWriteState([
+        'sha'       => $newMeta['sha'],
+        'short'     => $newMeta['short'],
+        'build'     => $newMeta['build'],
+        'branch'    => UPDATE_BRANCH,
+        'builtAt'   => $newMeta['builtAt'],
+        'updatedAt' => date('Y-m-d H:i:s'),
+        'source'    => 'rollback',
+    ]);
+    $newLabel = appVersionLabel();
+    appVersionLog('ROLLBACK: ' . $newLabel . ' source=rollback');
+
+    sendJsonResponse([
+        "status"       => "success",
+        "rolledback"   => true,
+        "from"         => appVersionShort($oldSha),
+        "to"           => $newMeta['short'],
+        "sha"          => $newMeta['short'],
+        "version"      => appVersionReadHuman(),
+        "label"        => $newLabel,
+        "filesWritten" => $written,
+        "filesFailed"  => $failed,
+        "preserved"    => array_keys($preserved),
+        "message"      => "Rollback aplicat (" . $newLabel . "). Reporniti serviciile de tiparire si export, apoi reincarcati pagina.",
+    ]);
+}
+
 if ($action !== 'apply') {
     sendJsonResponse(["status" => "error", "message" => "Actiune necunoscuta"], 400);
 }
@@ -434,7 +273,7 @@ if (!$force && $oldSha !== '' && $oldSha === $latest) {
 // Alege formatul arhivei in functie de extractorul disponibil (zip sau tar.gz).
 $useZip = $hasZip;
 $ext = $useZip ? 'zip' : 'tar.gz';
-$url = 'https://codeload.github.com/' . UPDATE_REPO . '/' . $ext . '/refs/heads/' . UPDATE_BRANCH;
+$url = updateArchiveUrl($ext, 'refs/heads/' . UPDATE_BRANCH);
 
 $tmpArchive = rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'tmu_' . uniqid('', true) . '.' . $ext;
 $err = updateDownload($url, $tmpArchive);
@@ -444,111 +283,40 @@ if ($err !== null) {
 }
 
 // Dezarhiveaza intr-un director temporar, apoi copiem din el.
-$extractDir = rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'tmu_x_' . uniqid('', true);
-if (!@mkdir($extractDir, 0777, true)) {
-    @unlink($tmpArchive);
-    sendJsonResponse(["status" => "error", "message" => "Nu pot crea directorul temporar."], 500);
-}
-
-$okExtract = false;
-$extractError = '';
-try {
-    if ($useZip) {
-        $zip = new ZipArchive();
-        if ($zip->open($tmpArchive) !== true) {
-            $extractError = "arhiva zip nu poate fi deschisa";
-        } else {
-            $okExtract = $zip->extractTo($extractDir);
-            $zip->close();
-        }
-    } else {
-        $phar = new PharData($tmpArchive);
-        $phar->extractTo($extractDir);
-        unset($phar);
-        $okExtract = true;
-    }
-} catch (Exception $ex) {
-    $extractError = $ex->getMessage();
-} catch (Throwable $ex) {
-    $extractError = $ex->getMessage();
-}
+$exErr = '';
+$extractDir = updateExtractTo($tmpArchive, $ext, $exErr);
 @unlink($tmpArchive);
-
-if (!$okExtract) {
-    updateRemoveDir($extractDir);
-    sendJsonResponse(["status" => "error", "message" => "Arhiva nu poate fi dezarhivata: " . ($extractError ?: 'necunoscut')], 500);
+if ($extractDir === null) {
+    sendJsonResponse(["status" => "error", "message" => $exErr], 500);
 }
 
-// Radacina sursei: scoatem folderul de top (ex. "Table-Manager-main").
-$sourceRoot = $extractDir;
-$entries = array_values(array_diff(scandir($extractDir), ['.', '..']));
-if (count($entries) === 1 && is_dir($extractDir . DIRECTORY_SEPARATOR . $entries[0])) {
-    $sourceRoot = $extractDir . DIRECTORY_SEPARATOR . $entries[0];
-}
-$sourceRootNorm = rtrim(str_replace('\\', '/', $sourceRoot), '/');
+$sourceRoot = updateSourceRoot($extractDir);
 
 // Colecteaza fisierele de scris si cele protejate.
-$toWrite = [];   // rel => cale absoluta sursa
-$preserved = [];
-$it = new RecursiveIteratorIterator(
-    new RecursiveDirectoryIterator($sourceRoot, FilesystemIterator::SKIP_DOTS)
-);
-foreach ($it as $file) {
-    if (!$file->isFile()) {
-        continue;
-    }
-    $abs = str_replace('\\', '/', $file->getPathname());
-    $rel = ltrim(substr($abs, strlen($sourceRootNorm)), '/');
-    if ($rel === '' || strpos($rel, '..') !== false) {
-        continue;
-    }
-    if (updateIsIgnored($rel) || updatePreserveExtra($rel, $UPDATE_ROOT)) {
-        $preserved[$rel] = true;
-        continue;
-    }
-    $toWrite[$rel] = $file->getPathname();
-}
+list($toWrite, $preserved) = updateCollectWritableFiles($sourceRoot, $UPDATE_ROOT);
 
 if (empty($toWrite)) {
     updateRemoveDir($extractDir);
     sendJsonResponse(["status" => "error", "message" => "Arhiva nu contine fisiere de instalat."], 500);
 }
 
-// Backup cu fisierele locale care vor fi inlocuite (doar daca zip e disponibil).
+// Snapshot COMPLET al versiunii curente (punct de restaurare pt. rollback),
+// inainte de a scrie noua versiune.
 $backupRel = null;
-$existing = [];
-foreach (array_keys($toWrite) as $rel) {
-    if (is_file($UPDATE_ROOT . '/' . $rel)) {
-        $existing[] = $rel;
-    }
-}
-if (!empty($existing) && $hasZip) {
-    if (!is_dir($UPDATE_BACKUP_DIR)) {
-        @mkdir($UPDATE_BACKUP_DIR, 0777, true);
-    }
-    $stamp = date('Ymd-His');
-    $backupName = 'pre-update_' . (appVersionShort($oldSha) ?: 'unknown') . '_' . $stamp . '.zip';
-    $backupPath = $UPDATE_BACKUP_DIR . '/' . $backupName;
-    $bz = new ZipArchive();
-    if ($bz->open($backupPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) === true) {
-        foreach ($existing as $rel) {
-            $bz->addFile($UPDATE_ROOT . '/' . $rel, $rel);
-        }
-        $bz->close();
-        $backupRel = 'logs/backups/' . $backupName;
-    }
+$snapFile = updateCreateSnapshot($UPDATE_ROOT, [
+    'sha'     => $oldSha,
+    'short'   => appVersionShort($oldSha),
+    'build'   => $state['build'] ?? null,
+    'builtAt' => $state['builtAt'] ?? '',
+    'version' => appVersionReadHuman(),
+    'source'  => (string)($state['source'] ?? ''),
+], 5);
+if ($snapFile !== null) {
+    $backupRel = 'logs/backups/' . $snapFile;
 }
 
 // Copiaza atomic, fisier cu fisier.
-$written = 0;
-$failed = [];
-foreach ($toWrite as $rel => $src) {
-    if (updateWriteFile($src, $UPDATE_ROOT . '/' . $rel)) {
-        $written++;
-    } else {
-        $failed[] = $rel;
-    }
-}
+list($written, $failed) = updateApplyFiles($UPDATE_ROOT, $toWrite);
 updateRemoveDir($extractDir);
 
 if ($written === 0) {

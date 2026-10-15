@@ -1212,6 +1212,56 @@ body {
   color: #555;
 }
 
+/* ==========================================================================
+   ROLLBACK: lista de puncte de restaurare / versiuni
+   ========================================================================== */
+.rollback-list {
+  max-height: 46vh;
+  overflow-y: auto;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  background: #fafafa;
+  padding: 6px;
+}
+
+.rollback-section-title {
+  font-size: 13px;
+  font-weight: 900;
+  color: #004080;
+  margin: 8px 4px 4px 4px;
+}
+
+.rollback-item {
+  padding: 8px 10px;
+  margin: 3px 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.rollback-item:hover {
+  background: #eef3ff;
+}
+
+.rollback-item.selected {
+  border-color: #1105aa;
+  background: #dce8ff;
+  box-shadow: 0 0 0 1px #1105aa inset;
+}
+
+.rollback-item.current {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.rollback-current-tag {
+  color: #0a7a0a;
+  font-weight: bold;
+  font-size: 12px;
+}
+
 /* Servicii (print-service / sync-service) */
 .serviciu-card {
   border: 1px solid #bbb;
@@ -1287,6 +1337,11 @@ body {
 /* Modalul de ajutor se deschide si peste editorele (modal-tva/mesaje/...) */
 #modal-help {
   z-index: 2500;
+}
+
+/* Numpad-ul (parola) se deschide peste orice modal, inclusiv rollback/help. */
+#modal-num {
+  z-index: 2600;
 }
 
 .keyboard-dialog {

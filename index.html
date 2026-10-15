@@ -310,6 +310,7 @@
         <button class="prog-btn" id="prog-btn-conectare" onclick="progAction('Conectare server')">Conectare server</button>
         <button class="prog-btn" id="prog-btn-sync" onclick="progAction('Sincronizare produse')">Sincronizare produse</button>
         <button class="prog-btn" id="prog-btn-update" onclick="progAction('Update')">Update</button>
+        <button class="prog-btn" id="prog-btn-rollback" onclick="openRollback()">Rollback</button>
         <button class="prog-btn" onclick="openPrintQueue()">Coada printare</button>
         <button class="prog-btn" id="prog-btn-send-queue" onclick="openSendQueue()">Coada export</button>
       </div>
@@ -2087,6 +2088,28 @@
         <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeHelp()">Inchide</button>
       </div>
       <div class="help-body" id="modal-help-body"></div>
+    </div>
+  </div>
+
+  <!-- Modal ROLLBACK (revenire la o versiune anterioara) -->
+  <div class="modal-keyboard-overlay" id="modal-rollback" onclick="if(event.target===this) closeRollback()">
+    <div class="transfer-dialog" style="width: 780px;">
+      <div class="keyboard-dialog-header">
+        <span>ROLLBACK</span>
+        <div class="help-header-actions">
+          <button class="help-btn" title="Ajutor" aria-label="Ajutor" onclick="openHelp('rollback')">?</button>
+          <button class="act-btn" style="height: 28px; min-width: 60px; padding: 0 8px;" onclick="closeRollback()">Inchide</button>
+        </div>
+      </div>
+      <div class="transfer-body" style="align-items: stretch;">
+        <div class="transfer-subtitle">Alegeti un punct de restaurare sau o versiune din istoric, apoi apasati Aplica rollback. Configurarile locale nu sunt afectate.</div>
+        <div id="rollback-list" class="rollback-list"></div>
+        <div class="tva-actions" style="margin-top:12px;">
+          <button class="act-btn" style="background:#ffff00;" id="rollback-apply-btn" onclick="applyRollback()">Aplica rollback</button>
+          <button class="act-btn" onclick="reloadRollback()">Reincarca lista</button>
+          <button class="act-btn" onclick="closeRollback()">Anuleaza</button>
+        </div>
+      </div>
     </div>
   </div>
 

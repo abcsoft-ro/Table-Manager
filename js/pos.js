@@ -2142,6 +2142,132 @@ function promptUpdateParola() {
 }
 
 // --------------------------------------------------------------------------
+// ROLLBACK: revenire la o versiune anterioara (punct local sau SHA GitHub)
+// --------------------------------------------------------------------------
+let rollbackSelected = null;
+
+function openRollback() {
+  rollbackSelected = null;
+  const modal = document.getElementById("modal-rollback");
+  if (modal) modal.classList.add("active");
+  reloadRollback();
+}
+
+function closeRollback() {
+  const modal = document.getElementById("modal-rollback");
+  if (modal) modal.classList.remove("active");
+}
+
+function rollbackLocalLabel(e) {
+  const parts = [];
+  if (e.version) parts.push("v" + e.version);
+  if (e.short) parts.push(e.short);
+  if (e.build) parts.push("build " + e.build);
+  if (e.createdAt) parts.push(e.createdAt);
+  return parts.join(" · ") || (e.id || "punct de restaurare");
+}
+
+async function reloadRollback() {
+  const list = document.getElementById("rollback-list");
+  if (!list) return;
+  rollbackSelected = null;
+  list.innerHTML = '<div class="setari-empty">Se incarca...</div>';
+  try {
+    const data = await fetchJsonNoStore("api/update.php?list=1");
+    renderRollbackList(data);
+  } catch (err) {
+    list.innerHTML = '<div class="setari-empty">Eroare: ' + escapeHtml(err.message) + "</div>";
+  }
+}
+
+function renderRollbackList(data) {
+  const list = document.getElementById("rollback-list");
+  if (!list) return;
+  list.innerHTML = "";
+  rollbackSelected = null;
+
+  const cur = data.current || "";
+
+  const mkSection = (title) => {
+    const h = document.createElement("div");
+    h.className = "rollback-section-title";
+    h.textContent = title;
+    list.appendChild(h);
+  };
+
+  const mkItem = (isCurrent, label, onClick) => {
+    const it = document.createElement("div");
+    it.className = "rollback-item" + (isCurrent ? " current" : "");
+    it.innerHTML = escapeHtml(label) + (isCurrent ? ' <span class="rollback-current-tag">(curenta)</span>' : "");
+    if (!isCurrent) {
+      it.onclick = () => {
+        rollbackSelected = null;
+        onClick();
+        list.querySelectorAll(".rollback-item").forEach(x => x.classList.remove("selected"));
+        it.classList.add("selected");
+      };
+    }
+    list.appendChild(it);
+  };
+
+  if ((data.local || []).length) {
+    mkSection("Puncte de restaurare (acest calculator)");
+    data.local.forEach(e => {
+      const isCur = !!e.short && e.short === cur;
+      mkItem(isCur, rollbackLocalLabel(e), () => {
+        rollbackSelected = { type: "local", id: e.id, label: rollbackLocalLabel(e) };
+      });
+    });
+  }
+
+  if ((data.github || []).length) {
+    mkSection("Versiuni din istoric (GitHub)");
+    data.github.forEach(c => {
+      const label = [c.short, c.date, c.message].filter(Boolean).join(" · ");
+      const isCur = !!c.short && c.short === cur;
+      mkItem(isCur, label, () => {
+        rollbackSelected = { type: "github", sha: c.sha, label: "v " + (c.short || "") };
+      });
+    });
+  }
+
+  if (!list.children.length) {
+    list.innerHTML = '<div class="setari-empty">Nu exista puncte de restaurare (si istoricul GitHub nu este disponibil).</div>';
+  }
+}
+
+function applyRollback() {
+  if (!rollbackSelected) {
+    appAlert("Selectati un punct de restaurare sau o versiune.");
+    return;
+  }
+  appConfirm(
+    "Reveniti la versiunea: " + rollbackSelected.label + "? Configurarile locale nu sunt afectate.",
+    async () => {
+      try {
+        showToast("Se aplica rollback...");
+        const body = { action: "rollback" };
+        if (rollbackSelected.type === "local") {
+          body.id = rollbackSelected.id;
+        } else {
+          body.sha = rollbackSelected.sha;
+        }
+        const res = await fetchJsonNoStore("api/update.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        appAlert(res.message, () => location.reload());
+      } catch (err) {
+        appAlert("Eroare rollback: " + err.message);
+      }
+    },
+    "Da",
+    "Nu"
+  );
+}
+
+// --------------------------------------------------------------------------
 // SETARI (tblSet): taburi General / Device-uri / Imprimante / Altele
 // Doar coloana Value este editabila; Setting si Descriere sunt doar afisate.
 // --------------------------------------------------------------------------
