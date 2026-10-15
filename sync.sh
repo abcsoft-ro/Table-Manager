@@ -28,6 +28,18 @@ if [ -z "$TOKEN" ]; then
   exit 1
 fi
 
+# Versiunea human (din VERSION): folosita la titlul din index.html si la metadate.
+HUMAN=""
+if [ -f VERSION ]; then
+  HUMAN="$(tr -d ' \t\r\n' < VERSION)"
+fi
+
+# Titlul tabului din index.html reflecta intotdeauna versiunea (fallback static;
+# la runtime JS il seteaza oricum din api/version.php).
+if [ -n "$HUMAN" ] && [ -f index.html ]; then
+  sed -i -E "s#(<title>TableManager )[^<]*( - Modern Web POS</title>)#\1${HUMAN}\2#" index.html
+fi
+
 git add -A
 
 if git diff --cached --quiet; then
@@ -133,19 +145,7 @@ tar -czf "$SETUP_DIR/payload/app.tgz" -C "$ROOT/.." \
 
 (
   cd "$SETUP_DIR"
-# Versiunea human (din VERSION): folosita la titlul din index.html si la metadate.
-HUMAN=""
-if [ -f VERSION ]; then
-  HUMAN="$(tr -d ' \t\r\n' < VERSION)"
-fi
-
-# Titlul tabului din index.html reflecta intotdeauna versiunea (fallback static;
-# la runtime JS il seteaza oricum din api/version.php).
-if [ -n "$HUMAN" ] && [ -f index.html ]; then
-  sed -i -E "s#(<title>TableManager )[^<]*( - Modern Web POS</title>)#\1${HUMAN}\2#" index.html
-fi
-
-git add -A
+  git add -A
   if git diff --cached --quiet; then
     echo "Setup: nicio modificare de sincronizat."
   else
