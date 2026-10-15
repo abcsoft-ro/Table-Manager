@@ -2145,12 +2145,22 @@ function promptUpdateParola() {
 // ROLLBACK: revenire la o versiune anterioara (punct local sau SHA GitHub)
 // --------------------------------------------------------------------------
 let rollbackSelected = null;
+let rollbackParola = "";
 
 function openRollback() {
   rollbackSelected = null;
-  const modal = document.getElementById("modal-rollback");
-  if (modal) modal.classList.add("active");
-  reloadRollback();
+  rollbackParola = "";
+  // Parola se cere PRIMA, imediat ce se apasa butonul Rollback.
+  openNumericPrompt("PAROLA UPDATE", (parola) => {
+    if (!parola) {
+      appAlert("Introduceti parola de update.");
+      return;
+    }
+    rollbackParola = parola;
+    const modal = document.getElementById("modal-rollback");
+    if (modal) modal.classList.add("active");
+    reloadRollback();
+  });
 }
 
 function closeRollback() {
@@ -2243,29 +2253,24 @@ function applyRollback() {
   }
   appConfirm(
     "Reveniti la versiunea: " + rollbackSelected.label + "? Configurarile locale nu sunt afectate.",
-    () => {
-      // Inchidem modalul de rollback inainte de a cere parola, ca numpad-ul de
-      // parola (ca la Update) sa fie sigur vizibil, nu in spatele modalului.
-      closeRollback();
-      openNumericPrompt("PAROLA UPDATE", async (parola) => {
-        try {
-          showToast("Se aplica rollback...");
-          const body = { action: "rollback", parola: parola };
-          if (rollbackSelected.type === "local") {
-            body.id = rollbackSelected.id;
-          } else {
-            body.sha = rollbackSelected.sha;
-          }
-          const res = await fetchJsonNoStore("api/update.php", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body)
-          });
-          appAlert(res.message, () => location.reload());
-        } catch (err) {
-          appAlert("Eroare rollback: " + err.message);
+    async () => {
+      try {
+        showToast("Se aplica rollback...");
+        const body = { action: "rollback", parola: rollbackParola };
+        if (rollbackSelected.type === "local") {
+          body.id = rollbackSelected.id;
+        } else {
+          body.sha = rollbackSelected.sha;
         }
-      });
+        const res = await fetchJsonNoStore("api/update.php", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        appAlert(res.message, () => location.reload());
+      } catch (err) {
+        appAlert("Eroare rollback: " + err.message);
+      }
     },
     "Da",
     "Nu"
