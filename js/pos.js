@@ -6852,7 +6852,13 @@ function openNumericPrompt(title, onSubmit) {
   if (dot) { dot.style.visibility = "hidden"; dot.disabled = true; }
   const t = document.getElementById("num-title");
   if (t) t.innerText = title || "INTRODUCETI";
-  document.getElementById("modal-num").classList.add("active");
+  const modal = document.getElementById("modal-num");
+  if (modal) {
+    // Asigura afisarea peste orice alt modal (ex. rollback), chiar daca CSS-ul
+    // este inca in cache.
+    modal.style.zIndex = "2600";
+    modal.classList.add("active");
+  }
 }
 
 function closeNumericKeyboard() {
