@@ -1,5 +1,5 @@
 /**
- * TableManager 1.5.0 - Client Logic conectat direct la MSSQL
+ * TableManager 2.0.0 - Client Logic conectat direct la MSSQL
  * Afisare produse direct pe panoul albastru (Poz, BackColor, FontColor, Bold)
  * Suport pentru BackColor = 0 (fond negru) cu FontColor alb
  */
@@ -104,6 +104,8 @@ document.addEventListener("DOMContentLoaded", () => {
 async function initApp() {
   try {
     showToast("Conectare la baza de date a aplicației...");
+    // Titlul tabului reflecta versiunea reala a aplicatiei (api/version.php).
+    loadAppVersion();
     // 1. Incarcam meniul si produsele din MSSQL
     await loadMenu();
     // 1b. Restauram sesiunea de ospatar (doar daca Mod_logare = 1)
@@ -1962,6 +1964,10 @@ async function loadAppVersion() {
     const data = await fetchJsonNoStore("api/version.php");
     APP_VERSION_INFO = data;
     if (label) { label.textContent = data.label || ""; }
+    // Titlul tabului reflecta intotdeauna versiunea reala a aplicatiei.
+    if (data && data.version) {
+      document.title = "TableManager " + data.version + " - Modern Web POS";
+    }
   } catch (err) {
     if (label) { label.textContent = "versiune indisponibila"; }
   }

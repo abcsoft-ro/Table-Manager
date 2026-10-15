@@ -44,11 +44,6 @@ SHORT="$(git rev-parse --short HEAD)"
 BUILD="$(git rev-list --count HEAD)"
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 BUILT_AT="$(date '+%Y-%m-%d %H:%M:%S')"
-if [ -f VERSION ]; then
-  HUMAN="$(tr -d ' \t\r\n' < VERSION)"
-else
-  HUMAN=""
-fi
 
 # ------------------------------------------------- metadate repo (About + topics)
 # Descrierea GitHub ("About") se construieste din VERSION + subtitlul din README,
@@ -138,7 +133,19 @@ tar -czf "$SETUP_DIR/payload/app.tgz" -C "$ROOT/.." \
 
 (
   cd "$SETUP_DIR"
-  git add -A
+# Versiunea human (din VERSION): folosita la titlul din index.html si la metadate.
+HUMAN=""
+if [ -f VERSION ]; then
+  HUMAN="$(tr -d ' \t\r\n' < VERSION)"
+fi
+
+# Titlul tabului din index.html reflecta intotdeauna versiunea (fallback static;
+# la runtime JS il seteaza oricum din api/version.php).
+if [ -n "$HUMAN" ] && [ -f index.html ]; then
+  sed -i -E "s#(<title>TableManager )[^<]*( - Modern Web POS</title>)#\1${HUMAN}\2#" index.html
+fi
+
+git add -A
   if git diff --cached --quiet; then
     echo "Setup: nicio modificare de sincronizat."
   else
