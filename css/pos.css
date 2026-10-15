@@ -1475,6 +1475,19 @@ body {
   width: 360px;
 }
 
+/* Badge afisat in popup-ul de cantitate cand cantarul electronic nu raspunde. */
+.qty-cantar-badge {
+  align-self: center;
+  background: #b00020;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 4px 12px;
+  border-radius: 999px;
+  margin: 2px 0 4px;
+  text-align: center;
+}
+
 .qty-numpad {
   display: grid;
   grid-template-columns: repeat(3, 1fr) 60px;

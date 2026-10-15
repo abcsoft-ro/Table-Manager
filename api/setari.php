@@ -238,20 +238,28 @@ function ensureSetariMeta($conn) {
         "Afiseaza discountul si stornarea pe bonul fiscal: 1 = DA, 0 = NU (implicit). La 0 bonul contine doar cantitatile si preturile nete, fara comenzi de discount si fara linii de storno.", 'Casa');
 
     // Afisaj client: activare + driver + folder comenzi.
+    // (functia este inca in curs de implementare)
     ensureSetariValue($conn, 'AfiseajClient', '1',
-        "Afisaj client activ: 1 = DA, 0 = NU.", 'Afiseaj');
+        "Afisaj client activ: 1 = DA, 0 = NU. In curs de implementare.", 'Afiseaj');
     ensureSetariValue($conn, 'CaleDriverAfiseajClient', '',
-        "Calea catre driverul/executabilul afisajului client.", 'Afiseaj');
+        "Calea catre driverul/executabilul afisajului client. In curs de implementare.", 'Afiseaj');
     ensureSetariValue($conn, 'CaleFisierComenziAfiseajClient', '',
-        "Folderul in care se scriu fisierele de comenzi catre afisajul client.", 'Afiseaj');
+        "Folderul in care se scriu fisierele de comenzi catre afisajul client. In curs de implementare.", 'Afiseaj');
 
-    // Cantar electronic: activare + driver + folder raspuns.
+    // Cantar electronic: activare + driver + fisier raspuns + delay.
     ensureSetariValue($conn, 'Cantar', '0',
-        "Cantar electronic activ: 1 = DA, 0 = NU.", 'Cantar');
+        "Cantar electronic activ: 1 = DA, 0 = NU. Cand e DA, butonul QTY lanseaza driverul si preia cantitatea citita.", 'Cantar');
     ensureSetariValue($conn, 'CaleDriverCantar', '',
-        "Calea catre driverul/executabilul cantarului electronic.", 'Cantar');
+        "Calea catre driverul/executabilul cantarului electronic (ex. un .bat care scrie fisierul de raspuns).", 'Cantar');
     ensureSetariValue($conn, 'CaleFisierRaspunsCantar', '',
-        "Calea catre fisierul de raspuns al cantarului.", 'Cantar');
+        "Fisierul in care cantarul scrie greutatea citita (un numar). Se sterge inainte de fiecare cantarire.", 'Cantar');
+    ensureSetariValue($conn, 'Delay_cantar', '650',
+        "Timp de asteptare (ms) dupa lansarea driverului, inainte de citirea raspunsului cantarului. Implicit 650.", 'Cantar');
+    // Setari avansate ale afisajului client (in curs de implementare).
+    ensureSetariValue($conn, 'PortComAfiseaj', '5',
+        "Numarul portului serial al afisajului client. In curs de implementare.", 'Afiseaj');
+    ensureSetariValue($conn, 'BaudRateAfisaj', '9600',
+        "Viteza portului serial al afisajului client. In curs de implementare.", 'Afiseaj');
 
     // POS bancar: activare + driver + folder raspuns.
     ensureSetariValue($conn, 'PoSbanca', '0',

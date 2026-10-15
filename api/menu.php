@@ -297,6 +297,15 @@ if ($stmtPb) {
     if ($pb && trim((string)$pb['Value']) === '1') { $posBanca = 1; }
 }
 
+// 4f4b. Cantar electronic (tblSet.Cantar): 1 = DA. Cand e DA, butonul QTY
+//       lanseaza driverul si preia cantitatea citita in campul Cant.
+$cantar = 0;
+$stmtCantar = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'Cantar'");
+if ($stmtCantar) {
+    $ct = sqlsrv_fetch_array($stmtCantar, SQLSRV_FETCH_ASSOC);
+    if ($ct && trim((string)$ct['Value']) === '1') { $cantar = 1; }
+}
+
 // 4f5. Asteapta raspunsul casei de marcat (tblSet.AsteaptaRaspunsCasa): 1 = DA
 //      (la inchiderea notei POS-ul asteapta confirmarea bonului fiscal, FiscalWire
 //      sau FiscalNet), 0 = NU (implicit, tiparire asincrona ca pana acum).
@@ -381,6 +390,7 @@ sendJsonResponse([
     "procentDiscountFix" => $procentDiscountFix,
     "server" => $server,
     "posBanca" => $posBanca,
+    "cantar" => $cantar,
     "asteaptaRaspunsCasa" => $asteaptaRaspunsCasa,
     "plataCombinata" => $plataCombinata,
     "parolaDiscount" => $parolaDiscount,

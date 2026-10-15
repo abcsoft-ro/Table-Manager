@@ -45,6 +45,7 @@ const POS_STATE = {
   // POS bancar activ (tblSet.PoSbanca): cand e 1, la inchiderea unei note cu
   // plata pe card se apeleaza terminalul bancar prin api/pos_banca.php.
   posBanca: 0,
+  cantar: 0,
   // Asteapta raspunsul casei de marcat la inchiderea notei
   // (tblSet.AsteaptaRaspunsCasa, doar FiscalWire): cand e 1, dupa plata se
   // asteapta confirmarea bonului fiscal inainte de a inchide nota.
@@ -185,6 +186,7 @@ async function loadMenu() {
   POS_STATE.procentDiscountFix = (pf >= 0 && pf <= 100) ? pf : 10;
   POS_STATE.server = (data.server == 1) ? 1 : 0;
   POS_STATE.posBanca = (data.posBanca == 1) ? 1 : 0;
+  POS_STATE.cantar = (data.cantar == 1) ? 1 : 0;
   POS_STATE.asteaptaRaspunsCasa = (data.asteaptaRaspunsCasa == 1) ? 1 : 0;
   POS_STATE.plataCombinata = (data.plataCombinata == 0) ? 0 : 1;
   POS_STATE.parolaDiscount = (data.parolaDiscount == 1) ? 1 : 0;
@@ -8293,11 +8295,52 @@ function actionQty() {
     showToast("Produsul a fost trimis la sectie; cantitatea nu mai poate fi modificata");
     return;
   }
+  if (POS_STATE.cantar) {
+    qtyFromCantar(POS_STATE.selectedItemIndex);
+    return;
+  }
   openQtyModal(POS_STATE.selectedItemIndex);
 }
 
-// Deschide popup-ul cu tastatura numerica pentru modificarea cantitatii
-function openQtyModal(index, ev) {
+// Butonul QTY cu cantar electronic activ: lanseaza driverul (prin api/cantar.php),
+// asteapta Delay_cantar si preia cantitatea citita. Daca nu raspunde, deschide
+// tastatura numerica pentru introducere manuala, cu un badge de atentionare.
+async function qtyFromCantar(index) {
+  showToast("Se citeste cantarul electronic...");
+  let value = null;
+  let noResponse = false;
+  try {
+    const resp = await fetch("api/cantar.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ action: "read" })
+    });
+    const res = await resp.json();
+    if (res.status === "success" && res.enabled && res.value != null && Number(res.value) > 0) {
+      value = Number(res.value);
+    } else {
+      noResponse = true;
+    }
+  } catch (err) {
+    noResponse = true;
+  }
+  if (value !== null) {
+    // Cantitatea de la cantar merge direct in nota, fara popup de introducere.
+    // O rotunjim la numarul de zecimale configurat (ca update_qty pe server).
+    const rounded = Number(Number(value).toFixed(POS_STATE.nrZecCant));
+    showToast("Cantar: " + rounded + " kg");
+    await applyQuantityToLine(index, rounded);
+  } else {
+    // Fara raspuns: tastatura numerica (goala) + badge de atentionare.
+    openQtyModal(index, null, null, noResponse);
+  }
+}
+
+// Deschide popup-ul cu tastatura numerica pentru modificarea cantitatii.
+// prefill = valoare preluata (ex. de la cantarul electronic) care e pusa in camp;
+// cantarError = true afiseaza badge-ul "cantarul electronic nu raspunde".
+function openQtyModal(index, ev, prefill, cantarError) {
   if (ev) ev.stopPropagation();
   const item = POS_STATE.articole[index];
   if (!item) return;
@@ -8313,9 +8356,24 @@ function openQtyModal(index, ev) {
   }
 
   document.getElementById("qty-product-name").innerText = item.denumire;
-  // Campul porneste gol: utilizatorul tasteaza direct cantitatea noua (ex: 5)
   const input = document.getElementById("qty-input-display");
-  input.value = "";
+  // Cand avem o valoare preluata (cantar), o punem in camp; altfel pornim gol.
+  if (prefill !== undefined && prefill !== null && !isNaN(Number(prefill))) {
+    input.value = Number(prefill).toFixed(POS_STATE.nrZecCant);
+  } else {
+    input.value = "";
+  }
+
+  // Badge pentru cantarul electronic care nu a raspuns.
+  const badge = document.getElementById("qty-cantar-badge");
+  if (badge) {
+    if (cantarError) {
+      badge.textContent = "Cantarul electronic nu raspunde";
+      badge.style.display = "";
+    } else {
+      badge.style.display = "none";
+    }
+  }
 
   // Adaptam tastatura la numarul de zecimale configurat (tblSet.NrZecCant).
   const zec = POS_STATE.nrZecCant;
@@ -8377,20 +8435,18 @@ function qtyClear() {
   document.getElementById("qty-input-display").value = "";
 }
 
-// Confirma noua cantitate si salveaza in baza de date
-async function confirmQty() {
-  const input = document.getElementById("qty-input-display");
-  const cantitate = parseFloat(input.value);
-  const idx = qtyEditingIndex;
-  const item = POS_STATE.articole[idx];
-
-  if (isNaN(cantitate) || cantitate <= 0 || !item) {
+// Aplica o cantitate unei linii de nota (update_qty + reincarcare). Reutilizata
+// atat de tastatura numerica (confirmQty), cat si de cantarul electronic (care
+// scrie direct in nota, fara popup). Intoarce true la succes.
+async function applyQuantityToLine(index, cantitate) {
+  const item = POS_STATE.articole[index];
+  if (!item || isNaN(cantitate) || cantitate <= 0) {
     showToast("Cantitatea trebuie sa fie mai mare decat 0");
-    return;
+    return false;
   }
   if (cantitate > POS_STATE.cantMax) {
     showToast("Cantitatea maxima admisa este " + POS_STATE.cantMax);
-    return;
+    return false;
   }
 
   try {
@@ -8407,19 +8463,29 @@ async function confirmQty() {
     const res = await resp.json();
     if (res.status !== "success") throw new Error(res.message);
 
-    closeQtyModal();
     showToast(`Cantitate setata: ${cantitate}`);
     await loadOrder(POS_STATE.masaCurenta);
     await loadTables();
 
     // Pastram selectat produsul editat (numarul de produse nu s-a schimbat)
-    if (idx >= 0 && idx < POS_STATE.articole.length) {
-      POS_STATE.selectedItemIndex = idx;
+    if (index >= 0 && index < POS_STATE.articole.length) {
+      POS_STATE.selectedItemIndex = index;
       renderOrderItems();
     }
+    return true;
   } catch (err) {
     appAlert("Eroare la actualizarea cantitatii: " + err.message);
+    return false;
   }
+}
+
+// Confirma noua cantitate (din tastatura numerica) si salveaza in baza de date
+async function confirmQty() {
+  const input = document.getElementById("qty-input-display");
+  const cantitate = parseFloat(input.value);
+  const idx = qtyEditingIndex;
+  const ok = await applyQuantityToLine(idx, cantitate);
+  if (ok) { closeQtyModal(); }
 }
 
 function actionCUI() {

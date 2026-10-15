@@ -104,9 +104,13 @@ const HELP_CONTENT = {
       <h4 class="help-section">Tab Device-uri - Afiseaj / Cantar / POS Banca</h4>
       <ul class="help-list">
         <li><span class="help-field">AfiseajClient</span> - activeaza afisajul
-          client (1 = DA, 0 = NU), cu driverul si folderul de comenzi aferente.</li>
+          client (1 = DA, 0 = NU), cu driverul si folderul de comenzi aferente.
+          <strong>In curs de implementare.</strong></li>
         <li><span class="help-field">Cantar</span> - activeaza cantarul electronic
-          (1 = DA, 0 = NU), cu driverul si fisierul de raspuns.</li>
+          (1 = DA, 0 = NU), cu driverul si fisierul de raspuns. Cand e DA, butonul
+          <strong>QTY</strong> lanseaza driverul, asteapta <em>Delay_cantar</em> si
+          scrie cantitatea citita <strong>direct in nota</strong>; daca nu raspunde,
+          se afiseaza tastatura numerica pentru introducerea manuala.</li>
         <li><span class="help-field">PoSbanca</span> - activeaza terminalul bancar
           de card (1 = DA, 0 = NU), cu driverul si fisierul de raspuns.</li>
       </ul>
