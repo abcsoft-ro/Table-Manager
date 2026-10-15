@@ -260,7 +260,7 @@
       "Unauthorized": { "description": "Cheie API lipsa/invalida.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
       "Forbidden": { "description": "IP nepermis.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
       "NotFound": { "description": "Resursa inexistenta.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-      "Conflict": { "description": "Conflict (ex. import interzis cand tblSet.Server = 1).", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Conflict": { "description": "Conflict: importul de produse/grupe este refuzat (409) cand setarea Server este activa (tblSet.Server = 1), fiindca meniul este administrat de serverul extern prin dbo.ImportProd. Raspunsul are code = server_managed, setting = Server, value = 1 si resource = produse|grupe.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
       "Disabled": { "description": "API dezactivat sau neconfigurat.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
     },
     "schemas": {
@@ -276,7 +276,11 @@
         "type": "object",
         "properties": {
           "status": { "type": "string", "enum": ["error"] },
-          "message": { "type": "string" }
+          "message": { "type": "string" },
+          "code": { "type": "string", "description": "Cod al cauzei (ex. server_managed cand importul de produse/grupe este refuzat)." },
+          "setting": { "type": "string" },
+          "value": {},
+          "resource": { "type": "string" }
         }
       },
       "PageMeta": {

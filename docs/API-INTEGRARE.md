@@ -102,8 +102,28 @@ Se scrie în tranzacție. Pentru reîncercări sigure, trimiteți headerul
 `Idempotency-Key`; un POST cu aceeași cheie returnează răspunsul original.
 Răspuns de succes: `{ "status":"success", "data": { "saved": N } }`.
 
-Importul de **produse/grupe** este refuzat (409) când `tblSet.Server = 1`
-(meniul este administrat de serverul extern prin `ImportProd`).
+Importul de **produse/grupe** este refuzat (409) când setarea **`Server`** este
+activă (`tblSet.Server = 1`, „import/sincronizare cu serverul extern" din
+Setări → General): în acest mod meniul este administrat de serverul extern prin
+procedura `dbo.ImportProd` (butonul „Sincronizare produse"), iar importul local
+(inclusiv prin API) este blocat. Celelalte importuri (`tables`, `waiters`,
+`payment-forms`, `vat`) nu sunt afectate.
+
+Răspunsul documentează clar cauza (mesaj + câmpuri structurate):
+
+```json
+{
+  "status": "error",
+  "message": "Importul de produse prin API nu este permis: setarea \"Server\" (import/sincronizare cu serverul extern) este activa (tblSet.Server = 1). ... Pentru a permite importul prin API, setati \"Server\" = NU in Setari -> General (tblSet.Server = 0).",
+  "code": "server_managed",
+  "setting": "Server",
+  "value": 1,
+  "resource": "produse"
+}
+```
+
+Pentru a permite importul prin API: setați **`Server` = NU** (Setări → General),
+sau rulați **Sincronizare produse**.
 
 ### `POST /api/v1/products` (upsert după `prodId`)
 

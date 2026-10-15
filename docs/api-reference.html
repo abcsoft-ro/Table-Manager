@@ -113,7 +113,7 @@
     <tr><td>403</td><td>Adresa IP nu este permisa (<code>ApiAllowedIps</code>)</td></tr>
     <tr><td>404</td><td>Resursa / bon inexistent</td></tr>
     <tr><td>405</td><td>Metoda nepermisa</td></tr>
-    <tr><td>409</td><td>Conflict (ex. import produse/grupe cand <code>tblSet.Server = 1</code>)</td></tr>
+    <tr><td>409</td><td>Conflict: import produse/grupe refuzat cand setarea <code>Server</code> este activa (<code>tblSet.Server = 1</code>). Raspuns cu <code>code: "server_managed"</code></td></tr>
     <tr><td>429</td><td>Prea multe cereri (rate limit)</td></tr>
     <tr><td>500</td><td>Eroare server</td></tr>
     <tr><td>503</td><td>API dezactivat / cheie neconfigurata</td></tr>
@@ -230,7 +230,13 @@
   Scrierea se face in tranzactie. Pentru reincercari sigure trimiteti headerul <code>Idempotency-Key</code>:
   acelasi POST cu aceeasi cheie intoarce raspunsul original fara a re-executa scrierea.
   Raspuns de succes: <code>{ "status":"success", "data":{ "saved": N } }</code>.</p>
-  <p>Importul de <strong>produse/grupe</strong> este refuzat cu <code>409</code> cand <code>tblSet.Server = 1</code>.</p>
+  <p>Importul de <strong>produse/grupe</strong> este refuzat cu <code>409</code> cand setarea
+  <code>Server</code> este activa (<code>tblSet.Server = 1</code>): meniul este administrat de
+  serverul extern prin <code>dbo.ImportProd</code>, iar importul local este blocat. Raspunsul
+  documenteaza cauza (<code>code: "server_managed"</code>, <code>setting: "Server"</code>,
+  <code>value: 1</code>, <code>resource</code>). Pentru a permite importul prin API, setati
+  <code>Server = NU</code> in Setari &rarr; General. Celelalte importuri
+  (<code>tables</code>, <code>waiters</code>, <code>payment-forms</code>, <code>vat</code>) nu sunt afectate.</p>
 </section>
 
 <section id="products-post">

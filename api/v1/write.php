@@ -51,16 +51,32 @@ function apiV1NullInt($v) {
 }
 
 /**
- * Import se refuza cand meniul este administrat de server (tblSet.Server = 1).
+ * Importul de produse/grupe prin API este refuzat cand setarea `Server` este
+ * activa (tblSet.Server = 1): in acest mod meniul (grupe + produse) este
+ * administrat de serverul extern prin procedura `dbo.ImportProd`, iar orice
+ * import/editare locala este blocat. Raspunsul este 409 si documenteaza clar
+ * cauza (mesaj + campuri structurate `code`/`setting`/`value`).
  *
  * @param resource $conn
- * @param string $resursa
+ * @param string $resursa Eticheta resursei in romana (ex. "produse").
  * @return void
  */
 function apiV1RefuseWhenServer($conn, $resursa) {
-    if (apiSetting($conn, 'Server', '0') === '1') {
-        apiError("Importul de $resursa nu este permis: meniul este administrat de server (tblSet.Server = 1).", 409);
+    if (apiSetting($conn, 'Server', '0') !== '1') {
+        return;
     }
+    $message = "Importul de $resursa prin API nu este permis: setarea \"Server\" "
+        . "(import/sincronizare cu serverul extern) este activa (tblSet.Server = 1). "
+        . "In acest mod, grupele si produsele sunt administrate de serverul extern prin "
+        . "procedura dbo.ImportProd (butonul \"Sincronizare produse\"), iar importul local "
+        . "(inclusiv prin API) este blocat. Pentru a permite importul prin API, setati "
+        . "\"Server\" = NU in Setari -> General (tblSet.Server = 0).";
+    apiError($message, 409, [
+        'code' => 'server_managed',
+        'setting' => 'Server',
+        'value' => 1,
+        'resource' => $resursa,
+    ]);
 }
 
 /**
