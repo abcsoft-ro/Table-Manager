@@ -125,6 +125,10 @@ $force  = !empty($input['force']);
 
 // -------------------------------------------------------- POST rollback
 if ($action === 'rollback') {
+    $conn = getDBConnection();
+    // Aceeasi parola ca la update (tblParola.ParolaUpdate).
+    updateCheckParola($conn, $parola);
+
     $hasZip  = class_exists('ZipArchive');
     $hasPhar = class_exists('PharData');
     if (!$hasZip && !$hasPhar) {

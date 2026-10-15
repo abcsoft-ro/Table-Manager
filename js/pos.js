@@ -2243,24 +2243,26 @@ function applyRollback() {
   }
   appConfirm(
     "Reveniti la versiunea: " + rollbackSelected.label + "? Configurarile locale nu sunt afectate.",
-    async () => {
-      try {
-        showToast("Se aplica rollback...");
-        const body = { action: "rollback" };
-        if (rollbackSelected.type === "local") {
-          body.id = rollbackSelected.id;
-        } else {
-          body.sha = rollbackSelected.sha;
+    () => {
+      openNumericPrompt("PAROLA UPDATE", async (parola) => {
+        try {
+          showToast("Se aplica rollback...");
+          const body = { action: "rollback", parola: parola };
+          if (rollbackSelected.type === "local") {
+            body.id = rollbackSelected.id;
+          } else {
+            body.sha = rollbackSelected.sha;
+          }
+          const res = await fetchJsonNoStore("api/update.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+          });
+          appAlert(res.message, () => location.reload());
+        } catch (err) {
+          appAlert("Eroare rollback: " + err.message);
         }
-        const res = await fetchJsonNoStore("api/update.php", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body)
-        });
-        appAlert(res.message, () => location.reload());
-      } catch (err) {
-        appAlert("Eroare rollback: " + err.message);
-      }
+      });
     },
     "Da",
     "Nu"

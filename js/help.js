@@ -572,7 +572,9 @@ const HELP_CONTENT = {
       <h4 class="help-section">Cum se foloseste</h4>
       <ul class="help-list">
         <li>Atingeti un punct de restaurare sau o versiune din lista.</li>
-        <li>Apasati <strong>Aplica rollback</strong> (galben) si confirmati.</li>
+        <li>Apasati <strong>Aplica rollback</strong> (galben).</li>
+        <li>Introduceti <strong>parola de update</strong> (aceeasi ca la Update)
+          si confirmati.</li>
         <li>Dupa rollback, <strong>reporniti serviciile</strong> (Setari ->
           Servicii) si reincarcati pagina.</li>
       </ul>
