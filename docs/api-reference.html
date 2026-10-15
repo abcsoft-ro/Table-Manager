@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TableManager - Referinta API /api/v1/</title>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --fg:#e2e8f0; --muted:#94a3b8;
+    --line:#334155; --accent:#38bdf8; --get:#22c55e; --post:#f59e0b; --code:#0b1220;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--fg);line-height:1.55}
+  header{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#0b1220,#0f172a);border-bottom:1px solid var(--line);padding:18px 24px}
+  header h1{margin:0;font-size:22px}
+  header .sub{color:var(--muted);font-size:13px;margin-top:4px}
+  .wrap{display:flex;max-width:1280px;margin:0 auto;gap:24px;padding:24px}
+  nav{position:sticky;top:78px;align-self:flex-start;width:240px;flex:0 0 240px;font-size:13.5px}
+  nav a{display:block;color:var(--muted);text-decoration:none;padding:4px 8px;border-radius:6px}
+  nav a:hover{background:var(--panel);color:var(--fg)}
+  nav .grp{color:var(--accent);font-weight:600;margin:12px 8px 4px}
+  main{flex:1;min-width:0}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:18px}
+  h2{font-size:19px;margin:0 0 10px;border-bottom:1px solid var(--line);padding-bottom:8px}
+  h3{font-size:15px;margin:18px 0 8px;color:var(--accent)}
+  p{margin:8px 0}
+  code{background:var(--code);padding:2px 6px;border-radius:5px;font-family:Consolas,Menlo,monospace;font-size:13px}
+  .ep{display:flex;align-items:center;gap:10px;margin:6px 0 10px;flex-wrap:wrap}
+  .method{font-weight:700;font-size:12px;padding:3px 8px;border-radius:6px;color:#04121f}
+  .method.get{background:var(--get)}
+  .method.post{background:var(--post)}
+  .path{font-family:Consolas,Menlo,monospace;font-size:14px}
+  table{border-collapse:collapse;width:100%;margin:8px 0;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:6px 9px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--accent);font-weight:600}
+  td code{white-space:nowrap}
+  .req{color:#fca5a5;font-weight:600}
+  .opt{color:var(--muted)}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;font-size:12.5px}
+  .muted{color:var(--muted)}
+  .pill{display:inline-block;font-size:11.5px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);margin-right:6px}
+  .note{border-left:3px solid var(--accent);background:var(--panel2);padding:8px 12px;border-radius:0 8px 8px 0;margin:10px 0}
+  @media(max-width:900px){.wrap{flex-direction:column}nav{position:static;width:auto;flex:auto}}
+</style>
+</head>
+<body>
+<header>
+  <h1>TableManager &mdash; API de integrare <span class="muted">/api/v1/</span></h1>
+  <div class="sub">Referinta pentru aplicatii terte (servere/backend-uri) &middot; export (citire) si import (scriere) &middot; versiune 1.6.0</div>
+</header>
+
+<div class="wrap">
+<nav>
+  <div class="grp">General</div>
+  <a href="#auth">Autentificare</a>
+  <a href="#raspuns">Format raspuns</a>
+  <a href="#paginare">Paginare</a>
+  <a href="#erori">Coduri de eroare</a>
+  <a href="#vpn">Acces extern (VPN)</a>
+  <div class="grp">Export (GET)</div>
+  <a href="#version">GET /version</a>
+  <a href="#products-get">GET /products</a>
+  <a href="#groups-get">GET /groups</a>
+  <a href="#tables-get">GET /tables</a>
+  <a href="#orders">GET /orders</a>
+  <a href="#order">GET /orders/{docId}</a>
+  <a href="#reports">GET /reports/{tip}</a>
+  <a href="#events">GET /events</a>
+  <div class="grp">Import (POST)</div>
+  <a href="#products-post">POST /products</a>
+  <a href="#groups-post">POST /groups</a>
+  <a href="#tables-post">POST /tables</a>
+  <a href="#waiters-post">POST /waiters</a>
+  <a href="#payment-forms-post">POST /payment-forms</a>
+  <a href="#vat-post">POST /vat</a>
+  <div class="grp">Anexe</div>
+  <a href="#schema">Schema completa (OpenAPI)</a>
+</nav>
+
+<main>
+
+<section id="auth">
+  <h2>Autentificare</h2>
+  <p>Se foloseste o <strong>singura cheie globala</strong>, trimisa in headerul <code>X-Api-Key</code>
+  (se accepta si <code>Authorization: Bearer &lt;cheie&gt;</code>).</p>
+  <p>Cheia se genereaza din <strong>Setari &rarr; Integrare</strong> (cu <code>ApiEnabled = DA</code>). Se afiseaza
+  o singura data; in baza de date se pastreaza doar SHA-256.</p>
+<pre>curl -s -H "X-Api-Key: tm_..." http://&lt;statie&gt;/rual/api/v1/version</pre>
+  <div class="note">Eroare <code>401</code> fara cheie/gresita, <code>403</code> IP nepermis, <code>429</code> peste limita, <code>503</code> API dezactivat.</div>
+</section>
+
+<section id="raspuns">
+  <h2>Format raspuns</h2>
+  <p>Succes:</p>
+<pre>{ "status": "success", "data": { ... }, "meta": { ... } }</pre>
+  <p>Eroare:</p>
+<pre>{ "status": "error", "message": "..." }</pre>
+</section>
+
+<section id="paginare">
+  <h2>Paginare</h2>
+  <p>Parametri: <code>?limit=</code> (implicit 100, maxim 500) si <code>?offset=</code> (implicit 0).
+  <code>meta</code> contine <code>limit</code>, <code>offset</code>, <code>count</code>, <code>hasMore</code>
+  (si <code>total</code> unde exista).</p>
+</section>
+
+<section id="erori">
+  <h2>Coduri de eroare</h2>
+  <table>
+    <tr><th>Cod</th><th>Inteles</th></tr>
+    <tr><td>400</td><td>Cerere invalida (camp obligatoriu lipsa etc.)</td></tr>
+    <tr><td>401</td><td>Cheie API lipsa sau invalida</td></tr>
+    <tr><td>403</td><td>Adresa IP nu este permisa (<code>ApiAllowedIps</code>)</td></tr>
+    <tr><td>404</td><td>Resursa / bon inexistent</td></tr>
+    <tr><td>405</td><td>Metoda nepermisa</td></tr>
+    <tr><td>409</td><td>Conflict (ex. import produse/grupe cand <code>tblSet.Server = 1</code>)</td></tr>
+    <tr><td>429</td><td>Prea multe cereri (rate limit)</td></tr>
+    <tr><td>500</td><td>Eroare server</td></tr>
+    <tr><td>503</td><td>API dezactivat / cheie neconfigurata</td></tr>
+  </table>
+</section>
+
+<section id="vpn">
+  <h2>Acces extern (VPN)</h2>
+  <p>Aplicatia ruleaza pe HTTP si nu se expune pe internet. Accesul din exterior se face exclusiv
+  prin VPN. Recomandat <strong>SoftEther VPN Azure + SecureNAT</strong> (hostname <code>vpn&hellip;vpnazure.net</code>,
+  API accesat la IP-ul virtual, ex. <code>http://192.168.30.1/rual/api/v1/</code>); alternativ
+  <strong>Tailscale / ZeroTier</strong>. Setati <code>ApiAllowedIps</code> pe subreteaua virtuala a VPN-ului.
+  SoftEther se descarca de la <a href="https://www.softether.org/5-download" target="_blank" rel="noopener">softether.org/5-download</a>.</p>
+</section>
+
+<section id="version">
+  <h2>Export</h2>
+  <div class="ep"><span class="method get">GET</span><span class="path">/version</span></div>
+  <p>Versiunea aplicatiei.</p>
+<pre>{ "status":"success", "data":{ "version":"1.6.0", "commit":"...", "short":"...",
+  "build":56, "branch":"main", "builtAt":"...", "updatedAt":"...",
+  "source":"dev", "label":"v1.6.0 · ... · build 56", "php":"8.3.7" } }</pre>
+</section>
+
+<section id="products-get">
+  <div class="ep"><span class="method get">GET</span><span class="path">/products</span>
+    <span class="pill">?nrgrp=</span><span class="pill">?mz=</span><span class="pill">?kp=</span>
+    <span class="pill">?limit=</span><span class="pill">?offset=</span></div>
+  <p>Lista produse. Obiect produs:</p>
+  <table>
+    <tr><th>Camp</th><th>Tip</th><th>Descriere</th></tr>
+    <tr><td>prodId</td><td>int</td><td>Cod produs (PK)</td></tr>
+    <tr><td>barCod</td><td>string</td><td>Cod de bare</td></tr>
+    <tr><td>denumire</td><td>string</td><td>Nume</td></tr>
+    <tr><td>um</td><td>string</td><td>Unitate de masura</td></tr>
+    <tr><td>nrGrp</td><td>int</td><td>Grupa</td></tr>
+    <tr><td>kp</td><td>int|null</td><td>Sectie de tiparire</td></tr>
+    <tr><td>sectie</td><td>int|null</td><td>Sectie de raportare</td></tr>
+    <tr><td>pv</td><td>number</td><td>Pret vanzare</td></tr>
+    <tr><td>nrTva</td><td>int|null</td><td>Cota TVA</td></tr>
+    <tr><td>mz</td><td>0/1</td><td>Meniu Zilei</td></tr>
+    <tr><td>magId</td><td>int|null</td><td>Gestiune</td></tr>
+    <tr><td>poz</td><td>int</td><td>Pozitie in meniu</td></tr>
+    <tr><td>backColor / fontColor / fontSize</td><td>int|null</td><td>Aspect (COLORREF)</td></tr>
+    <tr><td>fontType</td><td>string</td><td>Font</td></tr>
+    <tr><td>bold</td><td>bool</td><td>Ingrosat</td></tr>
+    <tr><td>imagine</td><td>string</td><td>Cale imagine</td></tr>
+    <tr><td>dataUM</td><td>string|null</td><td>Data ultimei modificari</td></tr>
+  </table>
+</section>
+
+<section id="groups-get">
+  <div class="ep"><span class="method get">GET</span><span class="path">/groups</span></div>
+  <p>Lista grupe. Obiect grupa: <code>nrGrp</code>, <code>denumire</code>, <code>poz</code>,
+  <code>backColor</code>, <code>fontColor</code>, <code>fontSize</code>, <code>fontType</code>, <code>bold</code>.</p>
+</section>
+
+<section id="tables-get">
+  <div class="ep"><span class="method get">GET</span><span class="path">/tables</span></div>
+  <p>Cele 80 de mese. Obiect masa: <code>nrMasa</code>, <code>isOccupied</code>, <code>present</code>,
+  <code>casier</code>, <code>nrOp</code>, <code>total</code>, <code>docId</code>, <code>backColor</code>,
+  <code>foreColor</code>, <code>bold</code>, <code>afisez</code>.</p>
+</section>
+
+<section id="orders">
+  <div class="ep"><span class="method get">GET</span><span class="path">/orders</span>
+    <span class="pill">?stare=D|I</span><span class="pill">?from=</span><span class="pill">?to=</span>
+    <span class="pill">?source=current|archive</span><span class="pill">?limit=</span><span class="pill">?offset=</span></div>
+  <p>Lista bonurilor. <code>source=current</code> (implicit) = sesiunea curenta; <code>archive</code> = dupa raportul Z.
+  <code>from</code>/<code>to</code> sunt date (<code>YYYY-MM-DD</code>), <code>to</code> exclusiv pana la finele zilei.</p>
+  <p>Obiect antet bon (<code>BillHeader</code>): <code>docId</code>, <code>nrDoc</code>, <code>nrZ</code>,
+  <code>data</code>, <code>ora</code>, <code>nrMasa</code>, <code>nrOp</code>, <code>casier</code>,
+  <code>stare</code>, <code>total</code>, <code>magId</code>, <code>clientId</code>, <code>codFiscBon</code>, <code>source</code>.</p>
+</section>
+
+<section id="order">
+  <div class="ep"><span class="method get">GET</span><span class="path">/orders/{docId}</span>
+    <span class="pill">?source=current|archive</span></div>
+  <p>Un bon: antet + <code>lines[]</code> + <code>payments[]</code>.</p>
+  <p>Linie (<code>OrderLine</code>): <code>ecrId</code>, <code>prodId</code>, <code>denumire</code>,
+  <code>cantitate</code>, <code>pretUnitar</code>, <code>pvc</code>, <code>valoare</code>,
+  <code>valoareOriginala</code>, <code>tva</code>, <code>comment</code>, <code>stornoRef</code>,
+  <code>isModifier</code> (mod preparare), <code>isStorno</code> (anulare).</p>
+  <p>Plata (<code>Payment</code>): <code>fpid</code>, <code>denumire</code>, <code>suma</code>.</p>
+</section>
+
+<section id="reports">
+  <div class="ep"><span class="method get">GET</span><span class="path">/reports/{tip}</span>
+    <span class="pill">plu</span><span class="pill">grupe</span><span class="pill">sectii</span>
+    <span class="pill">casieri</span><span class="pill">general</span></div>
+  <p>Rapoarte X (doar bonuri inchise din sesiunea curenta). Structura difera in functie de <code>tip</code>:</p>
+  <table>
+    <tr><th>tip</th><th>Campuri principale</th></tr>
+    <tr><td>plu</td><td><code>sectii[]{sectie, rows[]{prodId,produs,cant,valoare}, subtotalCant, subtotalValoare}</code>, <code>totalCant</code>, <code>totalValoare</code></td></tr>
+    <tr><td>grupe</td><td><code>grupe[]{nrGrp,denumire,valoare}</code>, <code>totalValoare</code></td></tr>
+    <tr><td>sectii</td><td><code>sectii[]{sectie,denumire,valoare}</code>, <code>totalValoare</code></td></tr>
+    <tr><td>casieri</td><td><code>casieri[]{nrOp,nume,nrBonuri,reducere,stornari,total}</code> + totaluri</td></tr>
+    <tr><td>general</td><td><code>totalBonuri</code>, <code>totalDiscount</code>, <code>totalStornari</code>, <code>totalValoare</code>, <code>plati[]</code>, <code>tva[]{cota,total,baza,suma}</code>, <code>note[]{nrNota,nrMasa,ospatar,total}</code></td></tr>
+  </table>
+</section>
+
+<section id="events">
+  <div class="ep"><span class="method get">GET</span><span class="path">/events</span>
+    <span class="pill">?since=</span><span class="pill">?limit=</span></div>
+  <p>Flux incremental de bonuri inchise (pentru polling). Returneaza bonurile cu <code>DocID &gt; since</code>
+  (sesiunea curenta + arhiva). Retineti <code>meta.nextSince</code> si trimiteti-l la urmatoarea cerere.</p>
+<pre>{ "status":"success", "data":[ { "docId":1043, ... } ],
+  "meta": { "since":1042, "nextSince":1043, "count":1, "hasMore":false } }</pre>
+</section>
+
+<section id="import">
+  <h2>Import (POST)</h2>
+  <p>Corpul accepta un singur obiect, un <code>{ "items": [ ... ] }</code> sau un array de obiecte.
+  Scrierea se face in tranzactie. Pentru reincercari sigure trimiteti headerul <code>Idempotency-Key</code>:
+  acelasi POST cu aceeasi cheie intoarce raspunsul original fara a re-executa scrierea.
+  Raspuns de succes: <code>{ "status":"success", "data":{ "saved": N } }</code>.</p>
+  <p>Importul de <strong>produse/grupe</strong> este refuzat cu <code>409</code> cand <code>tblSet.Server = 1</code>.</p>
+</section>
+
+<section id="products-post">
+  <div class="ep"><span class="method post">POST</span><span class="path">/products</span></div>
+  <p>Upsert dupa <code>prodId</code>. Campurile <span class="req">cu rosu sunt obligatorii</span>.</p>
+  <table>
+    <tr><th>Camp</th><th>Tip</th><th>Implicit</th><th>Descriere</th></tr>
+    <tr><td class="req">prodId</td><td>int</td><td>-</td><td>PK</td></tr>
+    <tr><td class="req">nrGrp</td><td>int</td><td>-</td><td>Grupa</td></tr>
+    <tr><td class="req">denumire</td><td>string</td><td>-</td><td>Nume</td></tr>
+    <tr><td>barCod</td><td>string(15)</td><td>""</td><td>Cod de bare</td></tr>
+    <tr><td>um</td><td>string(3)</td><td>"buc"</td><td>Unitate de masura</td></tr>
+    <tr><td class="opt">kp</td><td>int|null</td><td>null</td><td>Sectie de tiparire</td></tr>
+    <tr><td class="opt">sectie</td><td>int|null</td><td>null</td><td>Sectie de raportare</td></tr>
+    <tr><td>pv</td><td>number</td><td>0</td><td>Pret vanzare</td></tr>
+    <tr><td class="opt">nrTva</td><td>int|null</td><td>null</td><td>Cota TVA</td></tr>
+    <tr><td>mz</td><td>0/1</td><td>0</td><td>Meniu Zilei</td></tr>
+    <tr><td class="opt">magId</td><td>int|null</td><td>null</td><td>Gestiune</td></tr>
+    <tr><td class="opt">poz</td><td>int|null</td><td>null</td><td>Pozitie</td></tr>
+    <tr><td>backColor/fontColor/fontSize</td><td>int|null</td><td>null</td><td>Aspect</td></tr>
+    <tr><td>fontType</td><td>string</td><td>""</td><td>Font</td></tr>
+    <tr><td>bold</td><td>bool</td><td>false</td><td>Ingrosat</td></tr>
+  </table>
+<pre>curl -s -X POST -H "X-Api-Key: tm_..." -H "Content-Type: application/json" \
+  -H "Idempotency-Key: prod-2026-10-15" \
+  -d '{"items":[{"prodId":101,"nrGrp":3,"denumire":"Cafea","pv":9.5,"nrTva":2}]}' \
+  http://&lt;statie&gt;/rual/api/v1/products</pre>
+</section>
+
+<section id="groups-post">
+  <div class="ep"><span class="method post">POST</span><span class="path">/groups</span></div>
+  <p>Upsert dupa <code>nrGrp</code>.</p>
+  <table>
+    <tr><th>Camp</th><th>Tip</th><th>Implicit</th><th>Descriere</th></tr>
+    <tr><td class="req">nrGrp</td><td>int</td><td>-</td><td>PK</td></tr>
+    <tr><td class="req">denumire</td><td>string</td><td>-</td><td>Nume grupa</td></tr>
+    <tr><td class="opt">poz</td><td>int|null</td><td>null</td><td>Pozitie (1-50)</td></tr>
+    <tr><td>backColor/fontColor/fontSize</td><td>int|null</td><td>null</td><td>Aspect</td></tr>
+    <tr><td>fontType</td><td>string</td><td>""</td><td>Font</td></tr>
+    <tr><td>bold</td><td>bool</td><td>false</td><td>Ingrosat</td></tr>
+  </table>
+</section>
+
+<section id="tables-post">
+  <div class="ep"><span class="method post">POST</span><span class="path">/tables</span></div>
+  <p>Upsert configuratie masa dupa <code>nrMasa</code>.</p>
+  <table>
+    <tr><th>Camp</th><th>Tip</th><th>Implicit</th><th>Descriere</th></tr>
+    <tr><td class="req">nrMasa</td><td>int (1-80)</td><td>-</td><td>Pozitia mesei</td></tr>
+    <tr><td>backColor/foreColor</td><td>int|null</td><td>null</td><td>Culori (COLORREF)</td></tr>
+    <tr><td>bold</td><td>bool</td><td>true</td><td>Ingrosat</td></tr>
+    <tr><td>afisez</td><td>bool</td><td>true</td><td>Afisata cand e libera</td></tr>
+    <tr><td>obs</td><td>string(10)</td><td>""</td><td>Observatii</td></tr>
+  </table>
+</section>
+
+<section id="waiters-post">
+  <div class="ep"><span class="method post">POST</span><span class="path">/waiters</span></div>
+  <p>Upsert ospatar dupa <code>nrOsp</code>.</p>
+  <table>
+    <tr><th>Camp</th><th>Tip</th><th>Implicit</th><th>Descriere</th></tr>
+    <tr><td class="req">nrOsp</td><td>string(2)</td><td>-</td><td>PK</td></tr>
+    <tr><td>nume</td><td>string</td><td>""</td><td>Nume afisat</td></tr>
+    <tr><td>expl</td><td>string</td><td>""</td><td>Explicatie/functie</td></tr>
+    <tr><td>parola</td><td>string</td><td>""</td><td>Parola de autentificare POS</td></tr>
+    <tr><td>blocat</td><td>bool</td><td>false</td><td>Blocat</td></tr>
+  </table>
+</section>
+
+<section id="payment-forms-post">
+  <div class="ep"><span class="method post">POST</span><span class="path">/payment-forms</span></div>
+  <p>Upsert forma de plata dupa <code>fpid</code>.</p>
+  <table>
+    <tr><th>Camp</th><th>Tip</th><th>Implicit</th><th>Descriere</th></tr>
+    <tr><td class="req">fpid</td><td>int</td><td>-</td><td>PK; FPID=1 = card</td></tr>
+    <tr><td>denumire</td><td>string</td><td>""</td><td>Text buton</td></tr>
+    <tr><td>status</td><td>int</td><td>1</td><td>1 = activa, 0 = ascunsa</td></tr>
+    <tr><td class="opt">poz</td><td>int|null</td><td>null</td><td>Ordine afisare</td></tr>
+  </table>
+</section>
+
+<section id="vat-post">
+  <div class="ep"><span class="method post">POST</span><span class="path">/vat</span></div>
+  <p>Upsert cota TVA dupa <code>nrTva</code>.</p>
+  <table>
+    <tr><th>Camp</th><th>Tip</th><th>Descriere</th></tr>
+    <tr><td class="req">nrTva</td><td>int</td><td>PK</td></tr>
+    <tr><td class="req">cota</td><td>int</td><td>Procentul de TVA</td></tr>
+  </table>
+</section>
+
+<section id="schema">
+  <h2>Schema completa (OpenAPI)</h2>
+  <p>Descrierea completa, machine-readable, este in <code>docs/openapi.json</code> (OpenAPI 3.0).
+  Poate fi importata in Postman / Insomnia / Swagger Editor pentru explorare si generare de clienti.</p>
+</section>
+
+</main>
+</div>
+</body>
+</html>

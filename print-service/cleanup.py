@@ -1,7 +1,10 @@
 """Curatare periodica a folderelor spool si a fisierului de log.
 
 - folderele (spool/fiscal, preview) pastreaza doar fisierele mai noi de N zile;
-- fisierul de log este scurtat la ultimele K MB cand depaseste M MB.
+- fisierul de log este scurtat la ultimele K MB cand depaseste M MB;
+- coada de tiparire (tblPrintQueue) este curatata de joburile vechi: cele
+  finalizate (done) mai vechi de N zile si cele esuate (failed) mai vechi de M
+  zile sunt sterse, prin api/print_queue.php (serviciul nu are driver de baza).
 """
 
 import os
@@ -86,8 +89,40 @@ def clean_log(path, max_bytes, keep_bytes, log_fn=None):
     return len(tail)
 
 
-def run_cleanup(cfg, log_fn=None):
-    """Curata folderele spool si logul, dupa setarile din config."""
+def clean_queue(cfg, api_fn, log_fn=None):
+    """Sterge joburile vechi din coada de tiparire (tblPrintQueue).
+
+    `done` mai vechi de queue_cleanup_done_days zile (implicit 10) si `failed`
+    mai vechi de queue_cleanup_failed_days zile (implicit 1). 0 dezactiveaza
+    partea respectiva. Apelul se face prin api/print_queue.php (api_fn), fiindca
+    serviciul de tiparire nu are driver de baza de date.
+    """
+    if api_fn is None:
+        return
+    done_days = max(0, _as_int(cfg.get("queue_cleanup_done_days"), 10))
+    failed_days = max(0, _as_int(cfg.get("queue_cleanup_failed_days"), 1))
+    if done_days <= 0 and failed_days <= 0:
+        return
+    try:
+        res = api_fn(cfg, "print_queue.php", {
+            "action": "cleanup",
+            "doneDays": done_days,
+            "failedDays": failed_days,
+        })
+    except Exception as exc:  # retea / HTTP / JSON
+        if log_fn:
+            log_fn("Curatire coada tiparire: eroare %s" % exc)
+        return
+    if isinstance(res, dict) and res.get("status") == "success":
+        removed_done = _as_int(res.get("removedDone"), 0)
+        removed_failed = _as_int(res.get("removedFailed"), 0)
+        if (removed_done or removed_failed) and log_fn:
+            log_fn("Curatire coada tiparire: %d joburi done si %d failed sterse."
+                   % (removed_done, removed_failed))
+
+
+def run_cleanup(cfg, log_fn=None, api_fn=None):
+    """Curata folderele spool, logul si coada de tiparire, dupa setarile din config."""
     days = _as_int(cfg.get("cleanup_days"), 30)
     preview_days = _as_int(cfg.get("preview_cleanup_days"), days)
 
@@ -101,3 +136,5 @@ def run_cleanup(cfg, log_fn=None):
                   int(max_mb * 1024 * 1024),
                   int(max(keep_mb, 0) * 1024 * 1024),
                   log_fn)
+
+    clean_queue(cfg, api_fn, log_fn)

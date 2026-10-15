@@ -204,6 +204,43 @@ switch ($action) {
         sendJsonResponse(["status" => "success", "message" => "Joburile finalizate au fost sterse"]);
         break;
 
+    case 'cleanup':
+        // Curatare automata apelata de print-service/cleanup.py: sterge joburile
+        // finalizate mai vechi de `doneDays` zile si cele esuate (failed) mai
+        // vechi de `failedDays` zile. 0 = dezactiveaza partea respectiva.
+        $doneDays = max(0, (int)($input['doneDays'] ?? 10));
+        $failedDays = max(0, (int)($input['failedDays'] ?? 1));
+        $removedDone = 0;
+        $removedFailed = 0;
+        if ($doneDays > 0) {
+            $stmt = sqlsrv_query(
+                $conn,
+                "DELETE FROM tblPrintQueue WHERE Stare = 'done' AND CreatedAt < DATEADD(day, ?, GETDATE())",
+                [-$doneDays]
+            );
+            if ($stmt === false) {
+                sendJsonResponse(["status" => "error", "message" => "Eroare cleanup done: " . sqlsrv_errors()[0]['message']], 500);
+            }
+            $removedDone = sqlsrv_rows_affected($stmt);
+        }
+        if ($failedDays > 0) {
+            $stmt = sqlsrv_query(
+                $conn,
+                "DELETE FROM tblPrintQueue WHERE Stare = 'failed' AND CreatedAt < DATEADD(day, ?, GETDATE())",
+                [-$failedDays]
+            );
+            if ($stmt === false) {
+                sendJsonResponse(["status" => "error", "message" => "Eroare cleanup failed: " . sqlsrv_errors()[0]['message']], 500);
+            }
+            $removedFailed = sqlsrv_rows_affected($stmt);
+        }
+        sendJsonResponse([
+            "status" => "success",
+            "removedDone" => $removedDone,
+            "removedFailed" => $removedFailed
+        ]);
+        break;
+
     default:
         sendJsonResponse(["status" => "error", "message" => "Actiune necunoscuta"], 400);
 }

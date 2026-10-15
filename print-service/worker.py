@@ -451,7 +451,7 @@ def run_loop(cfg_provider, stop_event, wake_event):
 
         if time.time() >= next_cleanup:
             try:
-                run_cleanup(cfg, lambda msg, c=cfg: log(msg, c))
+                run_cleanup(cfg, lambda msg, c=cfg: log(msg, c), api_fn=_api)
             except Exception as exc:  # noqa: BLE001 - curatarea nu opreste tiparirea
                 log("Eroare la curatare: %s" % exc, cfg)
             hours = float(cfg.get("cleanup_interval_hours", 24) or 24)

@@ -42,6 +42,8 @@
   "log_file": "logs/print-service.log",
   "kitchen_title": "BON COMANDA",
   "nota_title": "NOTA DE PLATA",
+  "queue_cleanup_done_days": 10,
+  "queue_cleanup_failed_days": 1,
   "raport_target": {
     "target": "network",
     "host": "192.168.1.121",

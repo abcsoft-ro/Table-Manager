@@ -1,0 +1,507 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "TableManager - API de integrare",
+    "version": "1.6.0",
+    "description": "API public pentru aplicatii terte (servere/backend-uri): export (citire) si import (scriere) de date. Autentificare cu o singura cheie globala in headerul X-Api-Key (sau Authorization: Bearer). Accesul din exterior se face exclusiv prin VPN; aplicatia ruleaza pe HTTP."
+  },
+  "servers": [
+    {
+      "url": "http://<statie>/rual/api/v1",
+      "description": "Instanta TableManager (folderul proiectului poate diferi)."
+    }
+  ],
+  "security": [{ "ApiKey": [] }],
+  "tags": [
+    { "name": "general", "description": "Versiune si stare." },
+    { "name": "export", "description": "Citire date." },
+    { "name": "import", "description": "Scriere date (upsert)." }
+  ],
+  "paths": {
+    "/version": {
+      "get": {
+        "tags": ["general"],
+        "summary": "Versiunea aplicatiei",
+        "operationId": "getVersion",
+        "responses": {
+          "200": { "$ref": "#/components/responses/VersionOk" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "503": { "$ref": "#/components/responses/Disabled" }
+        }
+      }
+    },
+    "/products": {
+      "get": {
+        "tags": ["export"],
+        "summary": "Lista produse",
+        "operationId": "listProducts",
+        "parameters": [
+          { "name": "nrgrp", "in": "query", "schema": { "type": "integer" }, "description": "Filtreaza dupa grupa (tblProd.NrGrp)." },
+          { "name": "mz", "in": "query", "schema": { "type": "integer", "enum": [0, 1] }, "description": "Filtreaza produsele din Meniul Zilei." },
+          { "name": "kp", "in": "query", "schema": { "type": "integer" }, "description": "Filtreaza dupa sectia de tiparire (tblProd.KP)." },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Offset" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/ProductsOk" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["import"],
+        "summary": "Import (upsert) produse",
+        "operationId": "importProducts",
+        "description": "Upsert dupa ProdID. Refuzat cu 409 cand tblSet.Server = 1 (meniul este administrat de server).",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/ProductImport" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/SavedOk" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/groups": {
+      "get": {
+        "tags": ["export"],
+        "summary": "Lista grupe",
+        "operationId": "listGroups",
+        "responses": {
+          "200": { "$ref": "#/components/responses/GroupsOk" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["import"],
+        "summary": "Import (upsert) grupe",
+        "operationId": "importGroups",
+        "description": "Upsert dupa NrGrp. Refuzat cu 409 cand tblSet.Server = 1.",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/GroupImport" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/SavedOk" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/tables": {
+      "get": {
+        "tags": ["export"],
+        "summary": "Starea celor 80 de mese",
+        "operationId": "listTables",
+        "responses": {
+          "200": { "$ref": "#/components/responses/TablesOk" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      },
+      "post": {
+        "tags": ["import"],
+        "summary": "Import (upsert) configuratie mese",
+        "operationId": "importTables",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/TableImport" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/SavedOk" },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/waiters": {
+      "post": {
+        "tags": ["import"],
+        "summary": "Import (upsert) ospatari",
+        "operationId": "importWaiters",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/WaiterImport" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/SavedOk" },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/payment-forms": {
+      "post": {
+        "tags": ["import"],
+        "summary": "Import (upsert) forme de plata",
+        "operationId": "importPaymentForms",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/PaymentFormImport" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/SavedOk" },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/vat": {
+      "post": {
+        "tags": ["import"],
+        "summary": "Import (upsert) cote TVA",
+        "operationId": "importVat",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/VatImport" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/SavedOk" },
+          "400": { "$ref": "#/components/responses/BadRequest" }
+        }
+      }
+    },
+    "/orders": {
+      "get": {
+        "tags": ["export"],
+        "summary": "Lista bonurilor",
+        "operationId": "listOrders",
+        "parameters": [
+          { "name": "stare", "in": "query", "schema": { "type": "string", "enum": ["D", "I"] }, "description": "D = deschis, I = inchis (doar pentru source=current)." },
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "Exclusiv pana la sfarsitul zilei." },
+          { "name": "source", "in": "query", "schema": { "type": "string", "enum": ["current", "archive"], "default": "current" }, "description": "current = sesiunea curenta; archive = dupa raportul Z." },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Offset" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/OrdersOk" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/orders/{docId}": {
+      "get": {
+        "tags": ["export"],
+        "summary": "Un bon: antet + linii + plati",
+        "operationId": "getOrder",
+        "parameters": [
+          { "name": "docId", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "source", "in": "query", "schema": { "type": "string", "enum": ["current", "archive"], "default": "current" } }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/OrderOk" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/reports/{tip}": {
+      "get": {
+        "tags": ["export"],
+        "summary": "Raport X",
+        "operationId": "getReport",
+        "parameters": [
+          { "name": "tip", "in": "path", "required": true, "schema": { "type": "string", "enum": ["plu", "grupe", "sectii", "casieri", "general"] } }
+        ],
+        "responses": {
+          "200": { "description": "Datele raportului (structura difera in functie de tip)." },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "tags": ["export"],
+        "summary": "Flux incremental de bonuri inchise",
+        "operationId": "listEvents",
+        "description": "Returneaza bonurile inchise cu DocID > since (sesiunea curenta + arhiva). Retineti meta.nextSince si trimiteti-l la urmatoarea cerere.",
+        "parameters": [
+          { "name": "since", "in": "query", "schema": { "type": "integer", "default": 0 } },
+          { "$ref": "#/components/parameters/Limit" }
+        ],
+        "responses": {
+          "200": { "$ref": "#/components/responses/EventsOk" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKey": { "type": "apiKey", "in": "header", "name": "X-Api-Key", "description": "Cheia globala generata din Setari -> Integrare. Se accepta si headerul Authorization: Bearer <cheie>." }
+    },
+    "parameters": {
+      "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 100, "maximum": 500 }, "description": "Numarul maxim de randuri (implicit 100, maxim 500)." },
+      "Offset": { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } },
+      "IdempotencyKey": { "name": "Idempotency-Key", "in": "header", "schema": { "type": "string" }, "description": "Optional (POST). Acelasi POST cu aceeasi cheie returneaza raspunsul original, fara a re-executa scrierea." }
+    },
+    "requestBodies": {
+      "ProductImport": {
+        "required": true,
+        "content": { "application/json": { "schema": { "oneOf": [ { "$ref": "#/components/schemas/ProductInput" }, { "type": "array", "items": { "$ref": "#/components/schemas/ProductInput" } }, { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/ProductInput" } }, "required": ["items"] } } ] }, "examples": { "items": { "value": { "items": [ { "prodId": 101, "nrGrp": 3, "denumire": "Cafea", "barCod": "101", "um": "buc", "pv": 9.5, "nrTva": 2, "mz": 0, "magId": 11, "poz": 1 } ] } } } } }
+      },
+      "GroupImport": {
+        "required": true,
+        "content": { "application/json": { "schema": { "oneOf": [ { "$ref": "#/components/schemas/GroupInput" }, { "type": "array", "items": { "$ref": "#/components/schemas/GroupInput" } }, { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/GroupInput" } }, "required": ["items"] } } ] }, "examples": { "items": { "value": { "items": [ { "nrGrp": 3, "denumire": "BAUTURI", "poz": 5 } ] } } } } }
+      },
+      "TableImport": {
+        "required": true,
+        "content": { "application/json": { "schema": { "oneOf": [ { "$ref": "#/components/schemas/TableInput" }, { "type": "array", "items": { "$ref": "#/components/schemas/TableInput" } }, { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/TableInput" } }, "required": ["items"] } } ] }, "examples": { "items": { "value": { "items": [ { "nrMasa": 1, "backColor": 65535, "foreColor": 0, "bold": true, "afisez": true } ] } } } } }
+      },
+      "WaiterImport": {
+        "required": true,
+        "content": { "application/json": { "schema": { "oneOf": [ { "$ref": "#/components/schemas/WaiterInput" }, { "type": "array", "items": { "$ref": "#/components/schemas/WaiterInput" } }, { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/WaiterInput" } }, "required": ["items"] } } ] }, "examples": { "items": { "value": { "items": [ { "nrOsp": "1", "nume": "Ion Pop", "parola": "1234", "blocat": false } ] } } } } }
+      },
+      "PaymentFormImport": {
+        "required": true,
+        "content": { "application/json": { "schema": { "oneOf": [ { "$ref": "#/components/schemas/PaymentFormInput" }, { "type": "array", "items": { "$ref": "#/components/schemas/PaymentFormInput" } }, { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/PaymentFormInput" } }, "required": ["items"] } } ] }, "examples": { "items": { "value": { "items": [ { "fpid": 2, "denumire": "Tichet", "status": 1, "poz": 2 } ] } } } } }
+      },
+      "VatImport": {
+        "required": true,
+        "content": { "application/json": { "schema": { "oneOf": [ { "$ref": "#/components/schemas/VatInput" }, { "type": "array", "items": { "$ref": "#/components/schemas/VatInput" } }, { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/VatInput" } }, "required": ["items"] } } ] }, "examples": { "items": { "value": { "items": [ { "nrTva": 9, "cota": 9 } ] } } } } }
+      }
+    },
+    "responses": {
+      "VersionOk": { "description": "OK", "content": { "application/json": { "schema": { "allOf": [ { "$ref": "#/components/schemas/Envelope" }, { "type": "object", "properties": { "data": { "$ref": "#/components/schemas/Version" } } } ] } } } },
+      "ProductsOk": { "description": "OK", "content": { "application/json": { "schema": { "allOf": [ { "$ref": "#/components/schemas/Envelope" }, { "type": "object", "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Product" } } } } ] } } } },
+      "GroupsOk": { "description": "OK", "content": { "application/json": { "schema": { "allOf": [ { "$ref": "#/components/schemas/Envelope" }, { "type": "object", "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Group" } } } } ] } } } },
+      "TablesOk": { "description": "OK", "content": { "application/json": { "schema": { "allOf": [ { "$ref": "#/components/schemas/Envelope" }, { "type": "object", "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Table" } } } } ] } } } },
+      "OrdersOk": { "description": "OK", "content": { "application/json": { "schema": { "allOf": [ { "$ref": "#/components/schemas/Envelope" }, { "type": "object", "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/BillHeader" } } } } ] } } } },
+      "OrderOk": { "description": "OK", "content": { "application/json": { "schema": { "allOf": [ { "$ref": "#/components/schemas/Envelope" }, { "type": "object", "properties": { "data": { "$ref": "#/components/schemas/Order" } } } ] } } } },
+      "EventsOk": { "description": "OK", "content": { "application/json": { "schema": { "allOf": [ { "$ref": "#/components/schemas/Envelope" }, { "type": "object", "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/BillHeader" } }, "meta": { "$ref": "#/components/schemas/EventsMeta" } } } ] } } } },
+      "SavedOk": { "description": "OK", "content": { "application/json": { "schema": { "allOf": [ { "$ref": "#/components/schemas/Envelope" }, { "type": "object", "properties": { "data": { "type": "object", "properties": { "saved": { "type": "integer" } } } } } ] } } } },
+      "BadRequest": { "description": "Cerere invalida (validare).", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Unauthorized": { "description": "Cheie API lipsa/invalida.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Forbidden": { "description": "IP nepermis.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "NotFound": { "description": "Resursa inexistenta.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Conflict": { "description": "Conflict (ex. import interzis cand tblSet.Server = 1).", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Disabled": { "description": "API dezactivat sau neconfigurat.", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    },
+    "schemas": {
+      "Envelope": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["success"] },
+          "data": {},
+          "meta": { "type": "object" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["error"] },
+          "message": { "type": "string" }
+        }
+      },
+      "PageMeta": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer" },
+          "offset": { "type": "integer" },
+          "count": { "type": "integer" },
+          "hasMore": { "type": "boolean" },
+          "total": { "type": "integer" },
+          "source": { "type": "string", "enum": ["current", "archive"] }
+        }
+      },
+      "EventsMeta": {
+        "type": "object",
+        "properties": {
+          "since": { "type": "integer" },
+          "nextSince": { "type": "integer" },
+          "count": { "type": "integer" },
+          "hasMore": { "type": "boolean" }
+        }
+      },
+      "Version": {
+        "type": "object",
+        "properties": {
+          "version": { "type": "string" },
+          "commit": { "type": "string" },
+          "short": { "type": "string" },
+          "build": { "type": "integer", "nullable": true },
+          "branch": { "type": "string" },
+          "builtAt": { "type": "string" },
+          "updatedAt": { "type": "string" },
+          "source": { "type": "string" },
+          "label": { "type": "string" },
+          "php": { "type": "string" }
+        }
+      },
+      "Product": {
+        "type": "object",
+        "properties": {
+          "prodId": { "type": "integer" },
+          "barCod": { "type": "string" },
+          "denumire": { "type": "string" },
+          "um": { "type": "string" },
+          "nrGrp": { "type": "integer" },
+          "kp": { "type": "integer", "nullable": true },
+          "sectie": { "type": "integer", "nullable": true },
+          "pv": { "type": "number" },
+          "nrTva": { "type": "integer", "nullable": true },
+          "mz": { "type": "integer", "enum": [0, 1] },
+          "magId": { "type": "integer", "nullable": true },
+          "poz": { "type": "integer" },
+          "backColor": { "type": "integer", "nullable": true },
+          "fontColor": { "type": "integer", "nullable": true },
+          "fontSize": { "type": "integer", "nullable": true },
+          "fontType": { "type": "string" },
+          "bold": { "type": "boolean" },
+          "imagine": { "type": "string" },
+          "dataUM": { "type": "string", "nullable": true }
+        }
+      },
+      "Group": {
+        "type": "object",
+        "properties": {
+          "nrGrp": { "type": "integer" },
+          "denumire": { "type": "string" },
+          "poz": { "type": "integer" },
+          "backColor": { "type": "integer", "nullable": true },
+          "fontColor": { "type": "integer", "nullable": true },
+          "fontSize": { "type": "integer", "nullable": true },
+          "fontType": { "type": "string" },
+          "bold": { "type": "boolean" }
+        }
+      },
+      "Table": {
+        "type": "object",
+        "properties": {
+          "nrMasa": { "type": "integer" },
+          "isOccupied": { "type": "boolean" },
+          "present": { "type": "boolean" },
+          "casier": { "type": "string", "nullable": true },
+          "nrOp": { "type": "integer", "nullable": true },
+          "total": { "type": "number" },
+          "docId": { "type": "integer", "nullable": true },
+          "backColor": { "type": "integer", "nullable": true },
+          "foreColor": { "type": "integer", "nullable": true },
+          "bold": { "type": "boolean" },
+          "afisez": { "type": "boolean" }
+        }
+      },
+      "BillHeader": {
+        "type": "object",
+        "properties": {
+          "docId": { "type": "integer" },
+          "nrDoc": { "type": "integer" },
+          "nrZ": { "type": "integer", "nullable": true },
+          "data": { "type": "string", "nullable": true },
+          "ora": { "type": "string", "nullable": true },
+          "nrMasa": { "type": "integer", "nullable": true },
+          "nrOp": { "type": "integer", "nullable": true },
+          "casier": { "type": "string" },
+          "stare": { "type": "string" },
+          "total": { "type": "number" },
+          "magId": { "type": "integer", "nullable": true },
+          "clientId": { "type": "string", "nullable": true },
+          "codFiscBon": { "type": "string", "nullable": true },
+          "source": { "type": "string", "enum": ["current", "archive"] }
+        }
+      },
+      "OrderLine": {
+        "type": "object",
+        "properties": {
+          "ecrId": { "type": "integer" },
+          "prodId": { "type": "integer" },
+          "denumire": { "type": "string" },
+          "cantitate": { "type": "number" },
+          "pretUnitar": { "type": "number" },
+          "pvc": { "type": "number" },
+          "valoare": { "type": "number" },
+          "valoareOriginala": { "type": "number" },
+          "tva": { "type": "integer" },
+          "comment": { "type": "string" },
+          "stornoRef": { "type": "integer", "nullable": true },
+          "isModifier": { "type": "boolean" },
+          "isStorno": { "type": "boolean" }
+        }
+      },
+      "Payment": {
+        "type": "object",
+        "properties": {
+          "fpid": { "type": "integer" },
+          "denumire": { "type": "string" },
+          "suma": { "type": "number" }
+        }
+      },
+      "Order": {
+        "allOf": [
+          { "$ref": "#/components/schemas/BillHeader" },
+          { "type": "object", "properties": { "lines": { "type": "array", "items": { "$ref": "#/components/schemas/OrderLine" } }, "payments": { "type": "array", "items": { "$ref": "#/components/schemas/Payment" } } } }
+        ]
+      },
+      "ProductInput": {
+        "type": "object",
+        "required": ["prodId", "nrGrp", "denumire"],
+        "properties": {
+          "prodId": { "type": "integer", "description": "Obligatoriu. Cheia (PK)." },
+          "nrGrp": { "type": "integer", "description": "Obligatoriu. Grupa." },
+          "denumire": { "type": "string", "description": "Obligatoriu. Numele produsului." },
+          "barCod": { "type": "string", "maxLength": 15, "default": "" },
+          "um": { "type": "string", "maxLength": 3, "default": "buc" },
+          "kp": { "type": "integer", "nullable": true, "description": "Sectia de tiparire (tblProd.KP)." },
+          "sectie": { "type": "integer", "nullable": true },
+          "pv": { "type": "number", "default": 0, "description": "Pretul de vanzare." },
+          "nrTva": { "type": "integer", "nullable": true, "description": "Cota de TVA (tblTVA.Nr_TVA)." },
+          "mz": { "type": "integer", "enum": [0, 1], "default": 0 },
+          "magId": { "type": "integer", "nullable": true },
+          "poz": { "type": "integer", "nullable": true },
+          "backColor": { "type": "integer", "nullable": true, "description": "COLORREF (0x00BBGGRR)." },
+          "fontColor": { "type": "integer", "nullable": true },
+          "fontSize": { "type": "integer", "nullable": true },
+          "fontType": { "type": "string", "default": "" },
+          "bold": { "type": "boolean", "default": false }
+        },
+        "example": { "prodId": 101, "nrGrp": 3, "denumire": "Cafea", "barCod": "101", "um": "buc", "pv": 9.5, "nrTva": 2, "mz": 0, "magId": 11, "poz": 1 }
+      },
+      "GroupInput": {
+        "type": "object",
+        "required": ["nrGrp", "denumire"],
+        "properties": {
+          "nrGrp": { "type": "integer", "description": "Obligatoriu. Cheia (PK)." },
+          "denumire": { "type": "string", "description": "Obligatoriu." },
+          "poz": { "type": "integer", "nullable": true },
+          "backColor": { "type": "integer", "nullable": true },
+          "fontColor": { "type": "integer", "nullable": true },
+          "fontSize": { "type": "integer", "nullable": true },
+          "fontType": { "type": "string", "default": "" },
+          "bold": { "type": "boolean", "default": false }
+        },
+        "example": { "nrGrp": 3, "denumire": "BAUTURI", "poz": 5 }
+      },
+      "TableInput": {
+        "type": "object",
+        "required": ["nrMasa"],
+        "properties": {
+          "nrMasa": { "type": "integer", "minimum": 1, "maximum": 80, "description": "Obligatoriu." },
+          "backColor": { "type": "integer", "nullable": true },
+          "foreColor": { "type": "integer", "nullable": true },
+          "bold": { "type": "boolean", "default": true },
+          "afisez": { "type": "boolean", "default": true },
+          "obs": { "type": "string", "maxLength": 10, "default": "" }
+        },
+        "example": { "nrMasa": 1, "backColor": 65535, "foreColor": 0, "bold": true, "afisez": true }
+      },
+      "WaiterInput": {
+        "type": "object",
+        "required": ["nrOsp"],
+        "properties": {
+          "nrOsp": { "type": "string", "maxLength": 2, "description": "Obligatoriu. Cheia (PK)." },
+          "nume": { "type": "string", "default": "" },
+          "expl": { "type": "string", "default": "" },
+          "parola": { "type": "string", "default": "" },
+          "blocat": { "type": "boolean", "default": false }
+        },
+        "example": { "nrOsp": "1", "nume": "Ion Pop", "parola": "1234", "blocat": false }
+      },
+      "PaymentFormInput": {
+        "type": "object",
+        "required": ["fpid"],
+        "properties": {
+          "fpid": { "type": "integer", "description": "Obligatoriu. Cheia (PK). FPID=1 este rezervat pentru card." },
+          "denumire": { "type": "string", "default": "" },
+          "status": { "type": "integer", "default": 1, "description": "1 = activa, 0 = ascunsa." },
+          "poz": { "type": "integer", "nullable": true }
+        },
+        "example": { "fpid": 2, "denumire": "Tichet", "status": 1, "poz": 2 }
+      },
+      "VatInput": {
+        "type": "object",
+        "required": ["nrTva", "cota"],
+        "properties": {
+          "nrTva": { "type": "integer", "description": "Obligatoriu. Cheia (PK)." },
+          "cota": { "type": "integer", "description": "Obligatoriu. Procentul de TVA." }
+        },
+        "example": { "nrTva": 9, "cota": 9 }
+      }
+    }
+  }
+}

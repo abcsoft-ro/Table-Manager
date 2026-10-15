@@ -39,6 +39,11 @@ DEFAULTS = {
     "cleanup_interval_hours": 24,
     "log_max_mb": 5,
     "log_keep_mb": 1,
+    # Curatarea cozii de tiparire (tblPrintQueue): joburile finalizate (done)
+    # mai vechi de N zile si cele esuate (failed) mai vechi de M zile sunt
+    # sterse automat. 0 = dezactiveaza partea respectiva.
+    "queue_cleanup_done_days": 10,
+    "queue_cleanup_failed_days": 1,
 }
 
 

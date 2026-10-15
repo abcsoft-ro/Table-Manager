@@ -155,6 +155,31 @@ function apiRespond($data, $meta = null, $statusCode = 200) {
 }
 
 /**
+ * Retine conexiunea curenta (pentru rollback la eroare, ca tranzactia deschisa
+ * de un import sa nu anuleze randul de audit scris la shutdown).
+ *
+ * @param resource $conn
+ * @return void
+ */
+function apiSetConn($conn) {
+    $GLOBALS['__api_conn'] = $conn;
+}
+
+/**
+ * Face rollback daca o tranzactie este deschisa pe conexiunea curenta. Fara
+ * aceasta, un apiError in timpul unui import ar iesi cu tranzactia deschisa,
+ * iar INSERT-ul de audit din shutdown (rulat pe aceeasi conexiune) ar fi
+ * anulat la inchiderea conexiunii.
+ *
+ * @return void
+ */
+function apiRollbackIfAny() {
+    if (!empty($GLOBALS['__api_conn'])) {
+        @sqlsrv_rollback($GLOBALS['__api_conn']);
+    }
+}
+
+/**
  * Raspuns JSON de eroare. Nu iese din functie (sendJsonResponse face exit).
  *
  * @param string $message
@@ -163,6 +188,7 @@ function apiRespond($data, $meta = null, $statusCode = 200) {
  * @return void
  */
 function apiError($message, $statusCode = 400, $extra = []) {
+    apiRollbackIfAny();
     header('Cache-Control: no-store');
     sendJsonResponse(array_merge(['status' => 'error', 'message' => $message], $extra), $statusCode);
 }

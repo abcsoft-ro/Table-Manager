@@ -38,6 +38,7 @@ $resource = strtolower((string)($segments[0] ?? ''));
 $id = $segments[1] ?? null;
 
 $conn = getDBConnection();
+apiSetConn($conn);
 $ip = apiRequireAuth($conn);
 
 $endpoint = $resource . ($id !== null && $id !== '' ? '/' . $id : '');

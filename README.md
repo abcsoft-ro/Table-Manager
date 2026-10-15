@@ -1,4 +1,4 @@
-# TableManager 1.6.0
+# TableManager 2.0.0
 
 ### POS complet pentru restaurante și fast-food — instalare automată, fiabilitate în exploatare, fără dependențe grele.
 
@@ -8,7 +8,20 @@ TableManager gestionează **mesele, bonurile, ospătarii, meniul, discounturile,
 
 Aceeași aplicație rulează în **două moduri** — **Restaurant** (comandă la masă) și **FastFood** (vânzare rapidă la tejghea) — alese dintr-o singură setare. Este rescrisă de la zero pe tehnologii moderne și ușoare, cu **cozi durabile**: *nu se pierde nicio comandă și niciun bon*.
 
-`Versiune 1.6.0` · `PHP 8.3 + MSSQL` · `Fără build step` · `Windows + Apache` · `Modul mobil inclus`
+`Versiune 2.0.0` · `PHP 8.3 + MSSQL` · `Fără build step` · `Windows + Apache` · `Modul mobil inclus` · `API de integrare`
+
+---
+
+## Noutăți în versiunea 2.0 — API de integrare (actualizare majoră)
+
+Versiunea **2.0** aduce **API-ul public de integrare** pentru aplicații terțe, o
+actualizare majoră de versiune:
+
+- **API REST versionat `/api/v1/`** pentru **export (citire)** și **import (scriere)** de date de către alte aplicații (servere/backend-uri): produse, grupe, mese, bonuri (curente și arhivate după Z), plăți, rapoarte X și un flux incremental de bonuri închise (`/events`) pentru sincronizare.
+- **Autentificare cu o singură cheie globală** (`X-Api-Key`), generabilă din **Setări → Integrare** (se stochează doar SHA‑256), cu opțiuni de **restricționare pe IP** și **limitare a numărului de cereri**.
+- **Acces extern exclusiv prin VPN** (recomandat *SoftEther VPN Azure + SecureNAT*, alternativ *Tailscale/ZeroTier*) — fără expunere pe internet, fără domeniu/certificat/TLS; aplicația rămâne pe HTTP în rețeaua locală.
+- **Scriere tranzacțională** cu suport `Idempotency-Key` (reîncercări sigure) și **audit** al fiecărei cereri (`tblApiLog`).
+- **Documentație completă** pentru integratori: `docs/API-INTEGRARE.md`, specificația OpenAPI (`docs/openapi.json`) și referința HTML (`docs/api-reference.html`).
 
 ---
 
@@ -102,6 +115,7 @@ Alegerea se face din **Setări → General** (`TipVanz`). Aceeași bază de date
 ![Modul mobil](docs/img/07-mobil.png)
 
 ### Multi-stație & integrare
+- **API public de integrare (`/api/v1/`)** — aplicații terțe pot **exporta** (produse, grupe, mese, bonuri curente/arhivate, plăți, rapoarte X) și **importa** (produse, grupe, mese, ospătari, forme de plată, cote TVA) date, cu autentificare pe cheie (`X-Api-Key`), idempotență la scriere și audit. Accesul din exterior se face exclusiv prin VPN. Vezi `docs/API-INTEGRARE.md`.
 - **Export către server** — la închiderea fiecărei note se scrie o comandă `EXEC EmitBon_Ext_NOU` (Restaurant) / `EmitBon_Ext_2` (FastFood) într-o coadă durabilă; un serviciu Python o execută pe serverul din `tblConectare`. Dacă serverul e oprit, comanda se reîncearcă **la infinit**, cu backoff.
 - **Import produse/grupe la pornire** — sincronizare de pe serverul extern prin procedura `dbo.ImportProd`. Se pot importa una sau mai multe magazii (`tblSet.MagID`, ex. `1,2`); la produsele prezente în mai multe magazii câștigă prima din listă.
 
