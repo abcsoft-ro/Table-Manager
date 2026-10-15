@@ -114,7 +114,7 @@ Alegerea se face din **Setări → General** (`TipVanz`). Aceeași bază de date
 ### Modul mobil
 - Pagină dedicată pentru tabletă/telefon (`mobile.html`) pentru marcarea meselor, independentă de POS-ul desktop, dar folosind aceleași API-uri.
 
-![Modul mobil](docs/img/07-mobil.png)
+<img src="docs/img/07-mobil.png" alt="Modul mobil" width="330">
 
 ### Multi-stație & integrare
 - **API public de integrare (`/api/v1/`)** — aplicații terțe pot **exporta** (produse, grupe, mese, bonuri curente/arhivate, plăți, rapoarte X) și **importa** (produse, grupe, mese, ospătari, forme de plată, cote TVA) date, cu autentificare pe cheie (`X-Api-Key`), idempotență la scriere și audit. Accesul din exterior se face exclusiv prin VPN. Vezi `docs/API-INTEGRARE.md`.

@@ -113,7 +113,7 @@ Selected from **Setări → General** (`TipVanz`). Same database, same menu, sam
 ### Mobile module
 - Dedicated page for tablet/phone (`mobile.html`) for table ordering, independent of the desktop POS, but using the same APIs.
 
-![Mobile module](docs/img/07-mobil.png)
+<img src="docs/img/07-mobil.png" alt="Mobile module" width="330">
 
 ### Multi-station & integration
 - **Public integration API (`/api/v1/`)** — third-party applications can **export** (products, groups, tables, current/archived bills, payments, X reports) and **import** (products, groups, tables, waiters, payment forms, VAT rates) data, with key authentication (`X-Api-Key`), idempotent writes and audit. External access is exclusively via VPN. See `docs/API-INTEGRARE.md`.
