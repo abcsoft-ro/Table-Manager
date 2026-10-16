@@ -10,6 +10,10 @@ echo ################ LINT ################
 php tests\lint.php
 if errorlevel 1 set FAIL=1
 
+echo ################ FAZA JS - client (i18n) ################
+php tests\js.php
+if errorlevel 1 set FAIL=1
+
 echo ################ FAZA A - static ################
 php tests\static.php
 if errorlevel 1 set FAIL=1

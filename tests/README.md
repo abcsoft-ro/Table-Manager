@@ -14,6 +14,7 @@ sau individual:
 
 ```
 php tests/lint.php        # sintaxa PHP + JS (echivalentul pasilor din AGENTS.md)
+php tests/js.php          # Faza JS - logica de client (js/i18n.js) rulata in Node
 php tests/static.php      # Faza A - contract static, i18n, OpenAPI, DOM
 php tests/invariants.php  # Faza B - invariante DB (DOAR CITIRE)
 php tests/api.php         # Faza C - oracle API, validari negative, securitate, API v1
@@ -28,7 +29,9 @@ php tests/fiscal_wait.php # Faza F - asteptarea raspunsului casei de marcat (SCR
 `Rual` (cu curatare completa la final); pe statii nu se instaleaza deloc.
 
 1. **Faza D scrie in baza `Rual`** (mesele 80 si 79) si curata tot la final.
-2. Fazele A/B/C/E nu distrug date. C salveaza si restaureaza setarile atinse;
+2. Fazele A/B/C/E si Faza JS nu distrug date (Faza JS nu atinge baza deloc: ruleaza
+   `js/i18n.js` intr-un Node cu `window` stubuit si catalogurile reale trecute in
+   JSON). C salveaza si restaureaza setarile atinse;
    E linisteste worker-ele prin `poll_interval_sec` mare (hot-reload) si
    restaureaza configul (nu opreste serviciile).
 3. E nu imprima fizic: foloseste tinte `preview`/`file` sau o tinta moarta
@@ -52,7 +55,8 @@ oricare a esuat (cauta `[FAIL]` in iesire).
 ## Nota
 
 Fisierele de test nu fac parte din aplicatie si nu ajung pe statiile de productie:
-`sync.sh` le exclude din arhiva de instalare, iar `api/update_common.php`
+`sync.sh` le exclude din arhiva de instalare (`dev/sync.sh` de cand scriptul de
+release s-a mutat in `dev/`), iar `api/update_common.php`
 (`updateIgnorePrefixes`) le exclude si la autoactualizare. Nu din grija pentru
 datele de pe statii (acolo nu se ruleaza teste), ci ca sa nu impachetam unelte de
 dezvoltare in instalarea livrata.

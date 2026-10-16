@@ -14,6 +14,7 @@ phase() {
 }
 
 phase "LINT" php.exe tests/lint.php
+phase "FAZA JS - client (i18n)" php.exe tests/js.php
 phase "FAZA A - static" php.exe tests/static.php
 phase "FAZA B - invariante DB" php.exe tests/invariants.php
 phase "FAZA C - API / securitate" php.exe tests/api.php
