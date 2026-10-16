@@ -16,8 +16,8 @@ $LANG = appLang();
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>TableManager Mobil - Marcare</title>
   <?= i18nJs($LANG) ?>
-  <script src="js/i18n.js?v=20261016q"></script>
-  <link rel="stylesheet" href="css/mobile.css?v=20261016q">
+  <script src="js/i18n.js?v=20261016r"></script>
+  <link rel="stylesheet" href="css/mobile.css?v=20261016r">
 </head>
 <body>
 
@@ -234,7 +234,7 @@ $LANG = appLang();
 
 <div class="mv-toast" id="mv-toast"></div>
 
-<script src="js/mobile.js?v=20261016q"></script>
+<script src="js/mobile.js?v=20261016r"></script>
 <script>if (typeof applyI18n === "function") applyI18n();</script>
 </body>
 </html>

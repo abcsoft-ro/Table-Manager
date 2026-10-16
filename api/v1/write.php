@@ -65,12 +65,11 @@ function apiV1RefuseWhenServer($conn, $resursa) {
     if (apiSetting($conn, 'Server', '0') !== '1') {
         return;
     }
-    $message = "Importul de $resursa prin API nu este permis: setarea \"Server\" "
-        . "(import/sincronizare cu serverul extern) este activa (tblSet.Server = 1). "
-        . "In acest mod, grupele si produsele sunt administrate de serverul extern prin "
-        . "procedura dbo.ImportProd (butonul \"Sincronizare produse\"), iar importul local "
-        . "(inclusiv prin API) este blocat. Pentru a permite importul prin API, setati "
-        . "\"Server\" = NU in Setari -> General (tblSet.Server = 0).";
+    // Mesajul este tradus explicit (parametrizat) ca sa nu se amestece limbile
+    // prin potrivirea de prefix din tr() la re-traducerea centrala.
+    if (!function_exists('t')) { @require_once __DIR__ . '/../i18n.php'; }
+    $resLabel = t($resursa === 'produse' ? 'api.res.produse' : 'api.res.grupe');
+    $message = t('api.refuse_server', ['resursa' => $resLabel]);
     apiError($message, 409, [
         'code' => 'server_managed',
         'setting' => 'Server',

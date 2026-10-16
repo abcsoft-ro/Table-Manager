@@ -249,4 +249,10 @@ return [
     'vd.motiv'                 => 'MOTIV ANULARE',
     'vd.parola'                => 'PAROLA STORNARE',
     'vd.confirma'              => 'CONFIRMA ANULARE',
+
+    // ------------------------------------------------- API v1 / Integrare
+    'integrare.vpn_note'       => 'Accesul din exterior se face exclusiv prin VPN, fara expunere pe internet: recomandat <strong>SoftEther VPN Azure + SecureNAT</strong>, alternativ <strong>Tailscale / ZeroTier</strong>. SoftEther VPN se descarca de la <a href="https://www.softether.org/5-download" target="_blank" rel="noopener">softether.org/5-download</a>.',
+    'api.refuse_server'        => 'Importul de {resursa} prin API nu este permis: setarea "Server" (import/sincronizare cu serverul extern) este activa (tblSet.Server = 1). In acest mod, grupele si produsele sunt administrate de serverul extern prin procedura dbo.ImportProd (butonul "Sincronizare produse"), iar importul local (inclusiv prin API) este blocat. Pentru a permite importul prin API, setati "Server" = NU in Setari -> General (tblSet.Server = 0).',
+    'api.res.grupe'            => 'grupe',
+    'api.res.produse'          => 'produse',
 ];

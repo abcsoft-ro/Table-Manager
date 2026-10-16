@@ -15,8 +15,8 @@ $LANG = appLang();
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>TableManager 2.0.0 - Modern Web POS</title>
   <?= i18nJs($LANG) ?>
-  <script src="js/i18n.js?v=20261016q"></script>
-  <link rel="stylesheet" href="css/pos.css?v=20261016q">
+  <script src="js/i18n.js?v=20261016r"></script>
+  <link rel="stylesheet" href="css/pos.css?v=20261016r">
   <script>
     /* Scalare UI libera pe AMBELE axe, plecand de la canvasul minim 1024x768.
        --pos-scale = factorul proportional (limitat de axa cu raportul cel mai mic);
@@ -124,7 +124,7 @@ $LANG = appLang();
           
           <!-- Bara de titlu grupa activa cand suntem in modul de produse -->
           <div id="group-nav-header" style="display: none; justify-content: space-between; align-items: center; margin-bottom: 6px; padding: 0 2px;">
-            <button id="btn-group-back" class="act-btn" onclick="returnToGroups()" style="height: 38px; background: #ffff00; color: #000; font-weight: 900; font-size: 13px; border: 2px solid #000;">
+            <button id="btn-group-back" class="act-btn" data-i18n="⬅ INAPOI LA GRUPE" onclick="returnToGroups()" style="height: 38px; background: #ffff00; color: #000; font-weight: 900; font-size: 13px; border: 2px solid #000;">
               ⬅ INAPOI LA GRUPE
             </button>
             <span id="active-group-title" style="color: #ffffff; font-size: 18px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">
@@ -454,7 +454,7 @@ $LANG = appLang();
           </div>
           <div class="tva-field">
             <label data-i18n="PlatitorTVA">PlatitorTVA</label>
-            <button class="act-btn" id="antet-platitor-toggle" onclick="toggleAntetPlatitor()" style="width:100%;">Nu</button>
+            <button class="act-btn" data-i18n="common.nu" id="antet-platitor-toggle" onclick="toggleAntetPlatitor()" style="width:100%;">Nu</button>
           </div>
           <div class="tva-field">
             <label data-i18n="Cale Date logo">Cale Date logo</label>
@@ -921,11 +921,11 @@ $LANG = appLang();
             <div class="mese-toggle-row">
               <div class="tva-field">
                 <label data-i18n="Bold">Bold</label>
-                <button class="act-btn" id="prod-bold-toggle" onclick="toggleProdBold()" style="width:100%;">Nu</button>
+                <button class="act-btn" data-i18n="common.nu" id="prod-bold-toggle" onclick="toggleProdBold()" style="width:100%;">Nu</button>
               </div>
               <div class="tva-field">
                 <label data-i18n="Meniul Zilei (MZ)">Meniul Zilei (MZ)</label>
-                <button class="act-btn" id="prod-mz-toggle" onclick="toggleProdMz()" style="width:100%;">Nu</button>
+                <button class="act-btn" data-i18n="common.nu" id="prod-mz-toggle" onclick="toggleProdMz()" style="width:100%;">Nu</button>
               </div>
             </div>
 
@@ -1028,7 +1028,7 @@ $LANG = appLang();
 
             <div class="tva-field">
               <label data-i18n="Bold">Bold</label>
-              <button class="act-btn" id="grup-bold-toggle" onclick="toggleGrupBold()" style="width:100%;">Nu</button>
+              <button class="act-btn" data-i18n="common.nu" id="grup-bold-toggle" onclick="toggleGrupBold()" style="width:100%;">Nu</button>
             </div>
 
             <div class="tva-actions">
@@ -1102,7 +1102,7 @@ $LANG = appLang();
             <div class="mese-toggle-row">
               <div class="tva-field">
                 <label data-i18n="Bold">Bold</label>
-                <button class="act-btn" id="mese-bold-toggle" onclick="toggleMeseBold()" style="width:100%;">Nu</button>
+                <button class="act-btn" data-i18n="common.nu" id="mese-bold-toggle" onclick="toggleMeseBold()" style="width:100%;">Nu</button>
               </div>
               <div class="tva-field">
                 <label data-i18n="Afisez">Afisez</label>
@@ -1581,7 +1581,7 @@ $LANG = appLang();
 
         <div class="tva-field">
           <label data-i18n="Blocat">Blocat</label>
-          <button class="act-btn" id="osp-blocat-toggle" onclick="toggleOspBlocat()" style="width:100%;">Nu</button>
+          <button class="act-btn" data-i18n="common.nu" id="osp-blocat-toggle" onclick="toggleOspBlocat()" style="width:100%;">Nu</button>
         </div>
 
         <div class="tva-actions">
@@ -1707,7 +1707,7 @@ $LANG = appLang();
         </div>
         <div class="tva-field">
           <label data-i18n="Status (activ)">Status (activ)</label>
-          <button class="act-btn" id="fp-status-toggle" onclick="toggleFpStatus()" style="width:100%;">Nu</button>
+          <button class="act-btn" data-i18n="common.nu" id="fp-status-toggle" onclick="toggleFpStatus()" style="width:100%;">Nu</button>
         </div>
         <div class="tva-actions">
           <button class="act-btn" onclick="saveFp()" style="background:#ffff00;" data-i18n="Salveaza">Salveaza</button>
@@ -2130,8 +2130,8 @@ $LANG = appLang();
   </div><!-- /#pos-stage -->
 
   <!-- Script aplicatie -->
-  <script src="js/help.js?v=20261016q"></script>
-  <script src="js/pos.js?v=20261016q"></script>
+  <script src="js/help.js?v=20261016r"></script>
+  <script src="js/pos.js?v=20261016r"></script>
   <script>if (typeof applyI18n === "function") applyI18n();</script>
 </body>
 </html>

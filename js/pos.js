@@ -3174,7 +3174,7 @@ function renderIntegrareTab(wrap) {
   const vpnNote = document.createElement("div");
   vpnNote.className = "setari-desc";
   vpnNote.style.marginBottom = "12px";
-  vpnNote.innerHTML = tr('Accesul din exterior se face exclusiv prin VPN, fara expunere pe internet: recomandat <strong>SoftEther VPN Azure + SecureNAT</strong>, alternativ <strong>Tailscale / ZeroTier</strong>. SoftEther VPN se descarca de la <a href="https://www.softether.org/5-download" target="_blank" rel="noopener">softether.org/5-download</a>.');
+  vpnNote.innerHTML = t("integrare.vpn_note");
   wrap.appendChild(vpnNote);
 
   const card = document.createElement("div");
