@@ -26,6 +26,23 @@ function insJob($tip, $payload, $printerNr = null) {
 function job($id) { return q1("SELECT Stare,Attempts,LastError FROM tblPrintQueue WHERE JobID=?", [$id]); }
 function delJob($id) { q("DELETE FROM tblPrintQueue WHERE JobID=?", [$id]); }
 
+/* ------------------------------------------------ E0 - lansatoare (statice) */
+section('E0 - lansatoarele serviciilor (instanta unica, regula de cont)');
+$printBat = (string)@file_get_contents(ROOT_DIR . '/print-service/start-print-service.bat');
+$syncBat  = (string)@file_get_contents(ROOT_DIR . '/sync-service/start-sync-service.bat');
+test('print: garda de instanta unica pe portul 8756',
+    str_contains($printBat, 'netstat') && str_contains($printBat, ':8756') && str_contains($printBat, 'LISTENING'));
+test('sync: garda de instanta unica pe portul 8757',
+    str_contains($syncBat, 'netstat') && str_contains($syncBat, ':8757') && str_contains($syncBat, 'LISTENING'));
+test('print: iese fara sa porneasca daca portul asculta deja', str_contains($printBat, 'exit /b 0'));
+test('sync: iese fara sa porneasca daca portul asculta deja', str_contains($syncBat, 'exit /b 0'));
+test('lansatoarele spun ca shortcut-ul nu se pune in contul de service',
+    str_contains($printBat, 'contul de service') && str_contains($syncBat, 'contul de service'));
+test('sync: linia de oprire are echo (nu executa comanda)',
+    str_contains($syncBat, 'echo Serviciul s-a oprit.'));
+test('create-shortcuts.vbs scrie in Startup-ul contului curent',
+    str_contains((string)@file_get_contents(ROOT_DIR . '/tools/create-shortcuts.vbs'), 'SpecialFolders("Startup")'));
+
 $PREV = ROOT_DIR . '/print-service/preview';
 $cfgRes = jget('/api/print_config.php?action=config');
 $origCfg = $cfgRes['json']['config'] ?? null;
