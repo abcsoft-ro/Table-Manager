@@ -7,6 +7,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/print_common.php';
 require_once __DIR__ . '/send_common.php';
 require_once __DIR__ . '/i18n.php';
+require_once __DIR__ . '/app_events.php';
 
 /**
  * Tipul de vanzare configurat in tblSet (TipVanz): "fastfood" cand valoarea
@@ -2115,6 +2116,15 @@ switch ($action) {
     case 'authenticate':
         $parola = trim($input['parola'] ?? '');
 
+        // Context pentru jurnal (logs/app_events.log). `sursa` vine de la client:
+        // "login" = modalul de autentificare ospatar, "parola" = promptul
+        // deschis de butonul Parola. Nu se jurnalizeaza NICIODATA parola, doar
+        // lungimea ei - suficient ca sa stim ce s-a tastat cand aplicatia se inchide.
+        $authCtx = appEventClientCtx();
+        $authSursa = trim((string)($input['sursa'] ?? ''));
+        $authCtx['sursa'] = $authSursa !== '' ? $authSursa : '(neindicat)';
+        $authCtx['parola_len'] = strlen($parola);
+
         // 1. Parole POS (tblParola): programare / rapoarte / inchidere aplicatie
         $stmtP = @sqlsrv_query($conn, "SELECT TOP 1 ParolaProgramare, ParolaRapoarte, ParolaExit FROM tblParola");
         $p = $stmtP ? sqlsrv_fetch_array($stmtP, SQLSRV_FETCH_ASSOC) : null;
@@ -2123,6 +2133,7 @@ switch ($action) {
         $exitParola = $p ? trim((string)$p['ParolaExit']) : '';
 
         if ($prgParola !== '' && $prgParola === $parola) {
+            appEventLog('auth', $authCtx + ['rezultat' => 'programare']);
             sendJsonResponse([
                 "status" => "success",
                 "programare" => true,
@@ -2131,6 +2142,7 @@ switch ($action) {
         }
 
         if ($rapParola !== '' && $rapParola === $parola) {
+            appEventLog('auth', $authCtx + ['rezultat' => 'rapoarte']);
             sendJsonResponse([
                 "status" => "success",
                 "rapoarte" => true,
@@ -2139,6 +2151,7 @@ switch ($action) {
         }
 
         if ($exitParola !== '' && $exitParola === $parola) {
+            appEventLog('auth', $authCtx + ['rezultat' => 'EXIT']);
             sendJsonResponse([
                 "status" => "success",
                 "exit" => true,
@@ -2152,6 +2165,7 @@ switch ($action) {
         $osp = sqlsrv_fetch_array($stmtOsp, SQLSRV_FETCH_ASSOC);
 
         if ($osp) {
+            appEventLog('auth', $authCtx + ['rezultat' => 'ospatar', 'ospatar' => trim((string)$osp['Nume'])]);
             sendJsonResponse([
                 "status" => "success",
                 "nrOsp" => (int)$osp['NrOsp'],
@@ -2159,8 +2173,26 @@ switch ($action) {
                 "rol" => trim($osp['Expl'])
             ]);
         } else {
+            appEventLog('auth', $authCtx + ['rezultat' => 'refuzat']);
             sendJsonResponse(["status" => "error", "message" => "Parola incorecta!"], 401);
         }
+        break;
+
+    case 'client_event':
+        // Eveniment de UI trimis de client (ex. deschiderea promptului de parola),
+        // ca sa avem contextul complet in logs/app_events.log atunci cand aplicatia
+        // se inchide. Se accepta doar nume de eveniment si campuri scurte.
+        $ev = preg_replace('/[^a-z_]/', '', strtolower((string)($input['event'] ?? '')));
+        if ($ev === '') {
+            sendJsonResponse(["status" => "error", "message" => "Eveniment lipsa"], 400);
+        }
+        $evCtx = appEventClientCtx();
+        $evCtx['event'] = $ev;
+        foreach (['modul', 'buton', 'ecran', 'detaliu'] as $k) {
+            if (isset($input[$k]) && is_scalar($input[$k])) { $evCtx[$k] = (string)$input[$k]; }
+        }
+        appEventLog('client', $evCtx);
+        sendJsonResponse(["status" => "success", "event" => $ev]);
         break;
 
     case 'transfer_products':

@@ -7,7 +7,12 @@
  * Textul static este marcat cu data-i18n* si tradus de js/i18n.js.
  */
 require_once __DIR__ . '/api/i18n.php';
+require_once __DIR__ . '/api/app_events.php';
+require_once __DIR__ . '/api/version_common.php';
 $LANG = appLang();
+// Jurnal (logs/app_events.log): fiecare DESCHIDERE a aplicatiei, cu versiunea
+// instalata - ca sa putem corela cu inchiderile si cu prompturile de parola.
+appEventLog('open', appEventClientCtx() + ['versiune' => appVersionReadHuman()]);
 ?><!DOCTYPE html>
 <html lang="<?= htmlspecialchars($LANG, ENT_QUOTES) ?>">
 <head>

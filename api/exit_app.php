@@ -10,18 +10,22 @@
  */
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/app_events.php';
 
 /**
  * Inchide procesele de browser care ruleaza aplicatia POS.
+ *
+ * @return int numarul de procese omorate, -1 daca nu se poate aplica
+ *             (nu ruleaza pe Windows / exec dezactivat / eroare PowerShell)
  */
 function posExitKillKioskBrowser() {
     if (stripos(PHP_OS, 'WIN') !== 0 || !function_exists('exec')) {
-        return false;
+        return -1;
     }
     // Numele folderului proiectului, dedus din locatia acestui fisier
     // (merge si daca folderul este redenumit). Doar caractere sigure.
     $folder = preg_replace('/[^A-Za-z0-9_.-]/', '', basename(dirname(__DIR__)));
-    $script = "Get-CimInstance Win32_Process | Where-Object { " .
+    $script = "\$procs = Get-CimInstance Win32_Process | Where-Object { " .
         "(\$_.Name -eq 'chrome.exe' -or \$_.Name -eq 'msedge.exe') -and " .
         "(\$_.CommandLine -like '*TableManagerKiosk*'";
     if ($folder !== '') {
@@ -29,13 +33,19 @@ function posExitKillKioskBrowser() {
             "\$_.CommandLine -like '*127.0.0.1/" . $folder . "*' -or " .
             "\$_.CommandLine -like '*localhost/" . $folder . "*'";
     }
-    $script .= ") } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }";
+    $script .= ") }; " .
+        "\$procs | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }; " .
+        "'KILLED=' + @(\$procs).Count";
     $encoded = base64_encode(mb_convert_encoding($script, 'UTF-16LE', 'UTF-8'));
     $cmd = 'powershell.exe -NoProfile -NonInteractive -EncodedCommand ' . $encoded;
     $out = [];
     $code = 0;
     @exec($cmd . ' 2>&1', $out, $code);
-    return $code === 0;
+    if ($code !== 0) { return -1; }
+    foreach ($out as $line) {
+        if (preg_match('/KILLED=(\d+)/', (string)$line, $m)) { return (int)$m[1]; }
+    }
+    return -1;
 }
 
 $raw = file_get_contents('php://input');
@@ -52,8 +62,20 @@ if ($exitParola === '') {
     sendJsonResponse(["status" => "error", "message" => "Parola de inchidere aplicatie nu este configurata"], 400);
 }
 if ($parola === '' || !hash_equals($exitParola, $parola)) {
+    // Incercare de inchidere cu parola gresita - util in jurnal (ex. un cod
+    // tastat din greseala intr-un prompt deschis fara sa vrei).
+    appEventLog('exit_refuzat', appEventClientCtx() + ['parola_len' => strlen($parola)]);
     sendJsonResponse(["status" => "error", "message" => "Parola incorecta"], 401);
 }
 
 $killed = posExitKillKioskBrowser();
-sendJsonResponse(["status" => "success", "message" => "Aplicatie inchisa", "killed" => $killed]);
+appEventLog('exit', appEventClientCtx() + [
+    'parola_len'      => strlen($parola),
+    'procese_browser' => $killed,
+]);
+sendJsonResponse([
+    "status"  => "success",
+    "message" => "Aplicatie inchisa",
+    "killed"  => ($killed > 0),
+    "procese" => $killed,
+]);

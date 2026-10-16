@@ -1620,11 +1620,31 @@ function logoutWaiter() {
   updateCashierLabel();
 }
 
+// Trimite un eveniment de UI in jurnalul de pe server (logs/app_events.log).
+// Scop: sa avem contextul complet cand aplicatia "se inchide singura" - ce modal
+// de parola s-a deschis, in ce mod si pe ce ecran. Nu trimite date sensibile.
+function logUiEvent(event, extra) {
+  try {
+    fetch("api/order_action.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.assign({ action: "client_event", event: event }, extra || {})),
+      keepalive: true
+    }).catch(() => {});
+  } catch (e) { /* jurnalul nu are voie sa strice fluxul */ }
+}
+
+function currentScreenId() {
+  const s = document.querySelector(".screen.active");
+  return s ? (s.id || "") : "";
+}
+
 // Deschide modalul de autentificare in modul "ospatar" si executa callback-ul
 // dupa autentificare reusita (ex. continuarea deschiderii mesei).
 function openLoginModal(callback) {
   keyboardAction = "login";
   pendingLoginCallback = callback || null;
+  logUiEvent("kb_open", { modul: "login", ecran: currentScreenId() });
   const title = document.getElementById("kb-title");
   const subtitle = document.getElementById("kb-subtitle");
   if (title) title.innerText = tr("AUTENTIFICARE OSPATAR");
@@ -1640,6 +1660,7 @@ function openLoginModal(callback) {
 
 function openKeyboardModal(mode) {
   keyboardAction = mode === "Cautare" ? "search" : "parola";
+  logUiEvent("kb_open", { modul: keyboardAction, buton: mode, ecran: currentScreenId() });
   const title = document.getElementById("kb-title");
   const subtitle = document.getElementById("kb-subtitle");
   if (title) title.innerText = tr(keyboardAction === "search" ? "CAUTARE PRODUS" : "AUTENTIFICARE");
@@ -1657,6 +1678,7 @@ function openKeyboardModal(mode) {
 
 function closeKeyboardModal() {
   document.getElementById("modal-keyboard").classList.remove("active");
+  logUiEvent("kb_close", { modul: keyboardAction, ecran: currentScreenId() });
 }
 
 function vkeyInput(char) {
@@ -1778,7 +1800,8 @@ async function vkeyValidate() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "authenticate",
-        parola: valoare
+        parola: valoare,
+        sursa: keyboardAction
       })
     });
 
