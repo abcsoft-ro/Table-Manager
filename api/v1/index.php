@@ -49,7 +49,13 @@ if ($method === 'POST' && $idemKey !== '') {
     $cached = apiIdempotencyLookup($conn, $idemKey, $method, $endpoint);
     if ($cached !== null) {
         header('Cache-Control: no-store');
-        sendJsonResponse($cached);
+        // Refacem si codul HTTP original, nu doar corpul: altfel replay-ul unui
+        // esec (ex. 400) raspundea cu 200, iar clientul il trata ca succes.
+        $cachedStatus = (int)($cached['status'] ?? 0);
+        if ($cachedStatus >= 100 && $cachedStatus <= 599) {
+            http_response_code($cachedStatus);
+        }
+        sendJsonResponse($cached['body'], $cachedStatus > 0 ? $cachedStatus : 200);
     }
 }
 

@@ -118,8 +118,7 @@ function apiV1GroupsPost($conn) {
             ]
         );
         if ($ok === false) {
-            sqlsrv_rollback($conn);
-            apiError('Eroare salvare grupa: ' . apiV1SqlError(), 500);
+            apiV1RollbackWithError($conn, 'Eroare salvare grupa: ');
         }
         $saved++;
     }
@@ -174,8 +173,7 @@ function apiV1ProductsPost($conn) {
             ]
         );
         if ($ok === false) {
-            sqlsrv_rollback($conn);
-            apiError('Eroare salvare produs: ' . apiV1SqlError(), 500);
+            apiV1RollbackWithError($conn, 'Eroare salvare produs: ');
         }
         $saved++;
     }
@@ -217,8 +215,7 @@ function apiV1WaitersPost($conn) {
             ]
         );
         if ($ok === false) {
-            sqlsrv_rollback($conn);
-            apiError('Eroare salvare ospatar: ' . apiV1SqlError(), 500);
+            apiV1RollbackWithError($conn, 'Eroare salvare ospatar: ');
         }
         $saved++;
     }
@@ -265,8 +262,7 @@ function apiV1TablesPost($conn) {
             ]
         );
         if ($ok === false) {
-            sqlsrv_rollback($conn);
-            apiError('Eroare salvare masa: ' . apiV1SqlError(), 500);
+            apiV1RollbackWithError($conn, 'Eroare salvare masa: ');
         }
         $saved++;
     }
@@ -306,8 +302,7 @@ function apiV1PaymentFormsPost($conn) {
             ]
         );
         if ($ok === false) {
-            sqlsrv_rollback($conn);
-            apiError('Eroare salvare forma de plata: ' . apiV1SqlError(), 500);
+            apiV1RollbackWithError($conn, 'Eroare salvare forma de plata: ');
         }
         $saved++;
     }
@@ -341,8 +336,7 @@ function apiV1VatPost($conn) {
             [$nrTva, (int)$it['cota'], $nrTva, $nrTva, (int)$it['cota']]
         );
         if ($ok === false) {
-            sqlsrv_rollback($conn);
-            apiError('Eroare salvare cota TVA: ' . apiV1SqlError(), 500);
+            apiV1RollbackWithError($conn, 'Eroare salvare cota TVA: ');
         }
         $saved++;
     }

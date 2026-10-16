@@ -1,6 +1,6 @@
 """Mock FiscalWire - simulator al casei de marcat pentru testare.
 
-Urmareste folderul de comenzi (implicit logs/mock_fiscal/comenzi), iar pentru
+Urmareste folderul de comenzi (implicit logs/mock_fiscal_wire/comenzi), iar pentru
 fiecare fisier `pos_tm_*.inp` scris de POS genereaza fisierele de raspuns pe
 care le-ar genera driverul FiscalWire real: `.txt` (copie a bonului cu status
 pe fiecare linie) si `.nrb` (confirmarea bonului, cu Z/NR/BF/UNIQUE_ID).
@@ -34,9 +34,11 @@ import time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(BASE_DIR)
-DEFAULT_COMENZI = os.path.join(PROJECT_DIR, "logs", "mock_fiscal", "comenzi")
-DEFAULT_RASPUNS = os.path.join(PROJECT_DIR, "logs", "mock_fiscal", "raspuns")
-DEFAULT_STATE = os.path.join(PROJECT_DIR, "logs", "mock_fiscal", "state.json")
+# Folderele mock-ului FiscalWire. Numele este paralel cu al mock-ului FiscalNet
+# (logs/mock_fiscal_net), ca sa nu se confunde cele doua case de marcat.
+DEFAULT_COMENZI = os.path.join(PROJECT_DIR, "logs", "mock_fiscal_wire", "comenzi")
+DEFAULT_RASPUNS = os.path.join(PROJECT_DIR, "logs", "mock_fiscal_wire", "raspuns")
+DEFAULT_STATE = os.path.join(PROJECT_DIR, "logs", "mock_fiscal_wire", "state.json")
 
 # Fisierul de log (setat in main). Scriem si in el, nu doar in consola, ca sa
 # putem diagnostica si daca fereastra de consola se inchide.

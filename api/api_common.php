@@ -276,18 +276,21 @@ function apiIdempotencyKey() {
 /**
  * Intoarce raspunsul salvat anterior pentru (cheie, metoda, endpoint), sau null.
  *
+ * Rezultatul contine si codul HTTP original: la replay trebuie refacut, altfel
+ * un esec (400) salvat ar fi servit a doua oara cu 200 (vezi tests/REPORT.md B-03).
+ *
  * @param resource $conn
  * @param string $key
  * @param string $method
  * @param string $endpoint
- * @return array|null
+ * @return array{body: array, status: int}|null
  */
 function apiIdempotencyLookup($conn, $key, $method, $endpoint) {
     if ($key === '') { return null; }
     apiEnsureTables($conn);
     $stmt = @sqlsrv_query(
         $conn,
-        "SELECT TOP 1 ResponseBody FROM tblApiLog
+        "SELECT TOP 1 ResponseBody, StatusCode FROM tblApiLog
          WHERE IdempotencyKey = ? AND Method = ? AND Endpoint = ? AND ResponseBody IS NOT NULL
          ORDER BY Id DESC",
         [$key, $method, $endpoint]
@@ -295,7 +298,11 @@ function apiIdempotencyLookup($conn, $key, $method, $endpoint) {
     $row = $stmt ? sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC) : null;
     if (!$row || $row['ResponseBody'] === null) { return null; }
     $decoded = json_decode((string)$row['ResponseBody'], true);
-    return is_array($decoded) ? $decoded : null;
+    if (!is_array($decoded)) { return null; }
+    return [
+        'body' => $decoded,
+        'status' => (int)($row['StatusCode'] ?? 0),
+    ];
 }
 
 /**

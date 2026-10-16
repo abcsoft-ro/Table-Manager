@@ -31,6 +31,9 @@ function updateIgnorePrefixes() {
         '.git/', '.venv/', 'logs/', '__pycache__/',
         'print-service/logs/', 'print-service/spool/', 'print-service/preview/',
         'sync-service/logs/',
+        // Unelte de test: nu se instaleaza pe statiile de productie (la fel ca
+        // in sync.sh, care le exclude din arhiva de instalare).
+        'tests/',
     ];
 }
 

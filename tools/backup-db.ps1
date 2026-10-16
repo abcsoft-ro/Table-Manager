@@ -94,10 +94,14 @@ function Read-DbLocal {
 function Test-LocalServer {
     param([string]$Server)
     $s = $Server.Trim().ToLowerInvariant()
-    $host = $env:COMPUTERNAME.ToLowerInvariant()
+    # NU folosi $host: este o variabila automata read-only in PowerShell, iar
+    # atribuirea arunca "Cannot overwrite variable Host because it is read-only
+    # or constant." (cu Set-StrictMode + ErrorActionPreference='Stop' scriptul
+    # murea imediat - vezi tests/REPORT.md B-01).
+    $hostName = $env:COMPUTERNAME.ToLowerInvariant()
     if ($s -in @('.', '(local)', 'localhost')) { return $true }
     if ($s -like 'localhost\*' -or $s -like '.\*' -or $s -like '(local)\*') { return $true }
-    if ($s -eq $host -or $s -like ($host + '\*')) { return $true }
+    if ($s -eq $hostName -or $s -like ($hostName + '\*')) { return $true }
     return $false
 }
 

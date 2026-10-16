@@ -95,6 +95,22 @@ function apiV1SqlError() {
 }
 
 /**
+ * Face rollback si raspunde cu eroarea SQL, capturand mesajul INAINTE de
+ * rollback: sqlsrv_rollback() goleste sqlsrv_errors(), deci citirea ei dupa
+ * rollback intoarce "eroare necunoscuta" si ascunde cauza reala
+ * (vezi tests/REPORT.md B-05).
+ *
+ * @param resource $conn
+ * @param string $prefix
+ * @return void
+ */
+function apiV1RollbackWithError($conn, $prefix) {
+    $message = apiV1SqlError();
+    @sqlsrv_rollback($conn);
+    apiError($prefix . $message, 500);
+}
+
+/**
  * Corpul JSON al cererii (array). Fallback pe $_POST.
  *
  * @return array

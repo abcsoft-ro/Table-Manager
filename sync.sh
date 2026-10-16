@@ -156,7 +156,8 @@ tar -czf "$SETUP_DIR/payload/app.tgz" -C "$ROOT/.." \
   --exclude='rual/docs' --exclude='rual/docs/*' \
   --exclude='rual/*.pdf' \
   --exclude='rual/print-service/config.json' --exclude='rual/sync-service/config.json' \
-  --exclude='rual/db/tools' --exclude='rual/db/tools/*' rual
+  --exclude='rual/db/tools' --exclude='rual/db/tools/*' \
+  --exclude='rual/tests' --exclude='rual/tests/*' rual
 
 (
   cd "$SETUP_DIR"

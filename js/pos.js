@@ -657,10 +657,11 @@ async function loadOrder(nrMasa) {
     const cashierEl = document.getElementById("current-cashier-label");
     if (cashierEl) cashierEl.innerText = POS_STATE.loggedIn ? (POS_STATE.casierCurent || "") : tr("Neautentificat");
     
-    const dtEl = document.getElementById("order-datetime");
-    if (data.dataOra && dtEl) {
-      dtEl.innerHTML = data.dataOra;
-    }
+    // Ecranul de marcare nu are element de data/ora: locul din coltul stanga-sus
+    // este ocupat de caseta de scanare (#scan-input). "order-datetime" era doar
+    // clasa CSS; singurul element real este #pay-datetime, pe ecranul de plata,
+    // setat la deschiderea lui. Ramura veche, care cauta un id inexistent, a
+    // fost eliminata (tests/REPORT.md B-09).
 
     renderOrderItems(data.subtotal || 0, data.total || 0);
     // Un bon nou incepe: panoul revine la forma initiala (cu linia Total).

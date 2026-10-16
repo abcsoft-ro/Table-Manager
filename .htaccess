@@ -7,3 +7,21 @@ RewriteRule ^\.venv(/|$) - [F,L]
 # Nu expunem repository-ul git si fisierele de log/stare (date locale, versiune).
 RewriteRule ^\.git(/|$) - [F,L]
 RewriteRule ^logs(/|$) - [F,L]
+
+# Credentiale locale si documentatie interna: nu au ce cauta pe HTTP.
+# github_api.txt contine tokenul GitHub, iar AGENTS.md / PLAN-* descriu
+# internals; erau servite cu 200 inainte de aceste reguli (tests/REPORT.md B-02/B-06).
+RewriteRule ^github_api\.txt$ - [F,L]
+RewriteRule ^ssh\.txt$ - [F,L]
+RewriteRule ^AGENTS\.md$ - [F,L]
+RewriteRule ^PLAN-INSTALARE-PRODUCTIE\.md$ - [F,L]
+RewriteRule ^manual_fiscalwire\.pdf$ - [F,L]
+RewriteRule ^FiscalNet\.pdf$ - [F,L]
+
+# Serviciile Python si uneltele interne ruleaza local (PHP le vorbeste direct pe
+# 127.0.0.1:8756/8757, iar preview-ul se serveste prin api/print_preview.php).
+# Fisierele lor (inclusiv config.json) nu se servesc niciodata prin web.
+RewriteRule ^print-service(/|$) - [F,L]
+RewriteRule ^sync-service(/|$) - [F,L]
+RewriteRule ^db/tools(/|$) - [F,L]
+RewriteRule ^tests(/|$) - [F,L]
