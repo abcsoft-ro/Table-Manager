@@ -4,9 +4,12 @@
 
 .DESCRIPTION
     Citeste credentialele din api/db.local.php, executa BACKUP DATABASE prin ADO.NET
-    (System.Data.SqlClient, fara dependinte externe gen sqlcmd/SQLPS), verifica
-    backup-ul cu RESTORE VERIFYONLY si sterge fisierele mai vechi de RetentionDays
-    zile. Scrie un log in logs/backup_db.log.
+    (System.Data.SqlClient, fara dependinte externe gen sqlcmd/SQLPS) si verifica
+    backup-ul cu RESTORE VERIFYONLY. Sterge apoi backup-urile mai vechi de
+    RetentionDays zile - citind lista din msdb si stergand PER FISIER cu
+    xp_delete_file, ca sa functioneze si cand SQL Server ruleaza pe alta masina
+    (fisierele sunt pe acea masina) si fara sa atinga backup-urile altor baze care
+    scriu in acelasi folder. Scrie un log in logs/backup_db.log.
 
     Este destinat rularii din Task Scheduler (tools/backup-db-task.xml), ca SYSTEM,
     zilnic la 03:00, dar poate fi rulat si manual.
@@ -107,13 +110,16 @@ function Test-LocalServer {
 
 function Ensure-BackupDir {
     param([string]$Dir, [string]$Server)
+    # Cand SQL Server ruleaza pe alta masina, folderul de backup este pe ACEA
+    # masina: nu are sens sa-l cream local, nici sa dam drepturi unui serviciu
+    # local. Verificam intai, ca sa nu lasam un folder inutil pe statia asta.
+    if (-not (Test-LocalServer $Server)) {
+        Write-Log "AVERTISMENT: serverul '$Server' pare remote; folderul '$Dir' trebuie sa existe si sa fie scriibil pe masina SQL (nu il creez local)."
+        return
+    }
     if (-not (Test-Path -LiteralPath $Dir)) {
         New-Item -ItemType Directory -Force -Path $Dir | Out-Null
         Write-Log "Folder creat: $Dir"
-    }
-    if (-not (Test-LocalServer $Server)) {
-        Write-Log "AVERTISMENT: serverul '$Server' pare remote; folderul '$Dir' trebuie sa existe si sa fie scriibil pe masina SQL."
-        return
     }
     $instance = 'MSSQLSERVER'
     if ($Server -match '\\') { $instance = 'MSSQL$' + (($Server -split '\\')[-1]) }
@@ -137,6 +143,41 @@ function Invoke-Sql {
         $cmd.CommandText = $Query
         $cmd.CommandTimeout = $TimeoutSec
         $cmd.ExecuteNonQuery() | Out-Null
+    } finally {
+        $conn.Dispose()
+    }
+}
+
+function Invoke-SqlScalar {
+    param([string]$ConnString, [string]$Query, [int]$TimeoutSec = 0)
+    $conn = New-Object System.Data.SqlClient.SqlConnection($ConnString)
+    try {
+        $conn.Open()
+        $cmd = $conn.CreateCommand()
+        $cmd.CommandText = $Query
+        $cmd.CommandTimeout = $TimeoutSec
+        return $cmd.ExecuteScalar()
+    } finally {
+        $conn.Dispose()
+    }
+}
+
+function Invoke-SqlReader {
+    param([string]$ConnString, [string]$Query, [int]$TimeoutSec = 0)
+    $conn = New-Object System.Data.SqlClient.SqlConnection($ConnString)
+    try {
+        $conn.Open()
+        $cmd = $conn.CreateCommand()
+        $cmd.CommandText = $Query
+        $cmd.CommandTimeout = $TimeoutSec
+        $rd = $cmd.ExecuteReader()
+        $rows = @()
+        while ($rd.Read()) {
+            $row = @{}
+            for ($i = 0; $i -lt $rd.FieldCount; $i++) { $row[$rd.GetName($i)] = $rd.GetValue($i) }
+            $rows += (New-Object psobject -Property $row)
+        }
+        return $rows
     } finally {
         $conn.Dispose()
     }
@@ -177,19 +218,52 @@ try {
         Write-Log "Verificare OK: $bakPath"
     }
 
+    $dbQ = $database.Replace("'", "''")
     $ok = $true
-    $sizeMb = [math]::Round((Get-Item -LiteralPath $bakPath).Length / 1MB, 2)
-    $dur    = [int]((Get-Date) - $started).TotalSeconds
-    Write-Log ("rezultat=ok fisier={0} marime={1}MB durata={2}s" -f (Split-Path -Leaf $bakPath), $sizeMb, $dur)
+
+    # Marimea se citeste din msdb, nu de pe disc: fisierul .bak este pe masina
+    # SQL, care poate fi alta masina decat cea care ruleaza scriptul (inainte se
+    # folosea Get-Item pe cale locala si scriptul murea cu "Cannot find path").
+    $sizeTxt = '?'
+    try {
+        $sizeMb = Invoke-SqlScalar -ConnString $cs -Query ("SELECT TOP 1 CAST(backup_size AS float) / 1048576 FROM msdb.dbo.backupset WHERE database_name = '{0}' AND type = 'D' ORDER BY backup_finish_date DESC" -f $dbQ)
+        if ($null -ne $sizeMb) { $sizeTxt = ([math]::Round([double]$sizeMb, 2)).ToString() + 'MB' }
+    } catch {
+        Write-Log "AVERTISMENT: nu am putut citi marimea din msdb ($($_.Exception.Message))."
+    }
+    $dur = [int]((Get-Date) - $started).TotalSeconds
+    Write-Log ("rezultat=ok fisier={0} marime={1} durata={2}s" -f (Split-Path -Leaf $bakPath), $sizeTxt, $dur)
 
     if (-not $NoPrune) {
+        # Curatarea se face pe masina SQL, din msdb, si sterge PER FISIER.
+        # NU se foloseste forma pe folder (xp_delete_file 0, folder, 'bak', data):
+        # in acelasi folder scriu si alte baze (ex. DataRON_CIORB_NT, DataRON_new),
+        # iar un filtru pe folder le-ar sterge si lor backup-urile.
         try {
-            $cutoff = (Get-Date).AddDays(-1 * $RetentionDays)
-            $expired = Get-ChildItem -LiteralPath $BackupDir -File |
-                Where-Object { $_.Name -like ($database + '_*.bak') -and $_.LastWriteTime -lt $cutoff }
-            foreach ($f in $expired) {
-                Remove-Item -LiteralPath $f.FullName -Force
-                Write-Log "Sters backup expirat: $($f.Name)"
+            $expired = @(Invoke-SqlReader -ConnString $cs -Query ("SELECT DISTINCT mf.physical_device_name AS Cale
+                FROM msdb.dbo.backupset bs
+                JOIN msdb.dbo.backupmediafamily mf ON mf.media_set_id = bs.media_set_id
+                WHERE bs.database_name = '{0}' AND bs.type = 'D'
+                  AND bs.backup_finish_date < DATEADD(day, -{1}, GETDATE())" -f $dbQ, $RetentionDays))
+            if ($expired.Count -eq 0) {
+                Write-Log "Curatare: niciun backup mai vechi de $RetentionDays zile."
+            }
+            foreach ($e in $expired) {
+                $cale = [string]$e.Cale
+                if ([string]::IsNullOrWhiteSpace($cale)) { continue }
+                try {
+                    Invoke-Sql -ConnString $cs -Query ("EXEC master.dbo.xp_delete_file 0, N'{0}'" -f $cale.Replace("'", "''"))
+                    Write-Log "Sters backup expirat: $(Split-Path -Leaf $cale)"
+                } catch {
+                    $mesaj = $_.Exception.Message
+                    if ($mesaj -match 'cannot find the file') {
+                        # Fisierul nu mai exista (sters manual, sau istoric msdb vechi
+                        # ramas fara fisier): retentia si-a atins scopul, nu e eroare.
+                        Write-Log "Curatare: fisier deja inexistent (istoric msdb): $cale"
+                    } else {
+                        Write-Log "AVERTISMENT: nu am putut sterge '$cale' ($mesaj)."
+                    }
+                }
             }
         } catch {
             Write-Log "AVERTISMENT la curatare: $($_.Exception.Message)"
