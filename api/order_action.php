@@ -1560,6 +1560,36 @@ function fiscalNetWaitResponse($raspunsDir, $cmdBase, $sentAt, $timeoutSec) {
  * @param string $tipCasa
  * @param array $fiscalLines
  */
+/**
+ * Sterge din folderul de raspuns fisierele care poarta exact baza comenzii pe
+ * care o trimitem acum.
+ *
+ * Numele comenzii are rezolutia de o secunda (`pos_tm_<DocID>_<YmdHis>`), deci
+ * doua incercari de inchidere a ACELEIASI note in aceeasi secunda (ex. OK apasat
+ * de doua ori foarte repede dupa un esec) folosesc acelasi nume - iar a doua ar
+ * citi instant raspunsul primei in loc sa trimita o comanda noua. Stergem
+ * preventiv acele fisiere, ca raspunsul folosit sa fie mereu al acestei comenzi.
+ *
+ * @param string $raspunsDir
+ * @param string $cmdBase
+ * @return int numarul de fisiere sterse
+ */
+function fiscalRemoveResponses($raspunsDir, $cmdBase) {
+    $dir = rtrim($raspunsDir, "\\/");
+    $files = @scandir($dir);
+    if ($files === false) { return 0; }
+    $n = 0;
+    foreach ($files as $f) {
+        if ($f === '.' || $f === '..') { continue; }
+        $ext = strtolower(pathinfo($f, PATHINFO_EXTENSION));
+        if ($ext !== 'nrb' && $ext !== 'txt') { continue; }
+        if (strncmp($f, $cmdBase, strlen($cmdBase)) !== 0) { continue; }
+        $full = $dir . DIRECTORY_SEPARATOR . $f;
+        if (is_file($full) && @unlink($full)) { $n++; }
+    }
+    return $n;
+}
+
 function fiscalSendAndWait($conn, $docId, $bon, $tipCasa, $fiscalLines) {
     // Asteptarea poate depasi max_execution_time implicit; o permitem explicit
     // (ca la api/pos_banca.php).
@@ -1588,6 +1618,11 @@ function fiscalSendAndWait($conn, $docId, $bon, $tipCasa, $fiscalLines) {
     // Curatam intai comenzile abandonate (ramase de la un crash / reboot / o
     // oprire brusca a PHP-ului), ca sa nu fie tiparite la pornirea registrului.
     fiscalWireCleanupStale($comenziDir, max(getAsteptareCasaSec($conn), 120));
+
+    // Si raspunsurile care ar purta exact baza acestei comenzi (vezi
+    // fiscalRemoveResponses): altfel o reincercare in aceeasi secunda ar citi
+    // raspunsul incercarii anterioare in loc sa trimita comanda noua.
+    fiscalRemoveResponses($raspunsDir, $cmdBase);
 
     if (!fiscalWireWriteCommand($comenziDir, $cmdName, $fiscalLines)) {
         $msg = "Nu pot scrie fisierul de comenzi al casei de marcat: " . $cmdName;

@@ -193,11 +193,18 @@ try {
     $r = act(['action' => 'add_product', 'nrMasa' => $MASA, 'nrOp' => 8, 'prodId' => $P1]);
     $docC = (int)($r['json']['docId'] ?? 0);
     $docIds[] = $docC;
+    // Diagnostice: F2 lasa nota DESCHISA pe aceeasi masa, deci F3 poate primi
+    // exact acelasi DocID (comanda se adauga la nota existenta). Daca F3 pica pe
+    // viitor, vrem sa stim dintr-o privire daca documentul e reutilizat si ce a
+    // raspuns exact close_bill (ex. 409 "se inchide deja" de la application lock,
+    // care nu ajunge in logs/fiscal_wait.log).
+    info('docB=' . $docB . ' docC=' . $docC . ($docB === $docC ? ' (REUTILIZAT: aceeasi nota ca F2)' : ''));
     $totC = (float)cell("SELECT COALESCE(SUM(Cant*PV),0) FROM tblNoteD WHERE DocID=?", [$docC]);
     $t0 = microtime(true);
     $resC = act(['action' => 'close_bill', 'docId' => $docC, 'plati' => ['0' => round($totC, 2)]], 90);
     $elapsedC = microtime(true) - $t0;
     info(sprintf('close_bill a asteptat %.2fs (AsteptareCasaSec=8 + gratie 2s)', $elapsedC));
+    info('raspuns F3: ' . substr(preg_replace('/\s+/', ' ', $resC['body']), 0, 200));
 
     test('F3: close_bill -> 409 (timeout)', $resC['code'] === 409, substr($resC['body'], 0, 200));
     $billC = billOf($docC);
@@ -211,6 +218,36 @@ try {
     $logTail = file_exists($logFile) ? (string)file_get_contents($logFile, false, null, $logSizeStart) : '';
     test('F3: esecul este logat in logs/fiscal_wait.log',
         strpos($logTail, 'rezultat=timeout') !== false, substr(trim($logTail), 0, 120));
+
+    // =====================================================================
+    // Numele comenzii are rezolutia de o secunda (`pos_tm_<DocID>_<YmdHis>`),
+    // deci o reincercare a aceleiasi note in aceeasi secunda ar folosi acelasi
+    // nume si ar citi raspunsul incercarii anterioare in loc sa trimita comanda.
+    // Plantam intentionat raspunsuri "vechi" pentru baza de acum + urmatoarele
+    // doua secunde (ca sa garantam coliziunea) si verificam ca sunt ignorate.
+    section('F4 - raspuns vechi pentru aceeasi comanda (reincercare in aceeasi secunda)');
+
+    $r = act(['action' => 'add_product', 'nrMasa' => $MASA, 'nrOp' => 8, 'prodId' => $P1]);
+    $docD = (int)($r['json']['docId'] ?? 0);
+    $docIds[] = $docD;
+    $totD = (float)cell("SELECT COALESCE(SUM(Cant*PV),0) FROM tblNoteD WHERE DocID=?", [$docD]);
+
+    $nowD = time();
+    for ($i = 0; $i <= 2; $i++) {
+        $baseD = 'pos_tm_' . $docD . '_' . date('YmdHis', $nowD + $i);
+        file_put_contents($DIR_RASPUNS . '/' . $baseD . '.txt', "1,1,Er;COTA_TVA_DEZACTIVATA,\r\n");
+    }
+    info('plantat ' . count(glob($DIR_RASPUNS . '/*.txt') ?: []) . ' raspunsuri "vechi"');
+
+    $t0D = microtime(true);
+    $resD = act(['action' => 'close_bill', 'docId' => $docD, 'plati' => ['0' => round($totD, 2)]], 90);
+    $elapsedD = microtime(true) - $t0D;
+    info(sprintf('close_bill a asteptat %.2fs (raspunsurile vechi trebuie ignorate)', $elapsedD));
+
+    test('F4: nu preia eroarea din raspunsul vechi', strpos((string)$resD['body'], 'COTA_TVA') === false, substr($resD['body'], 0, 150));
+    test('F4: a asteptat timeout-ul (>= AsteaptareCasaSec)', $elapsedD >= 8.0, sprintf('%.2fs', $elapsedD));
+    $billD = billOf($docD);
+    test('F4: nota ramane DESCHISA', $billD && $billD['Stare'] === 'D', $billD ? $billD['Stare'] : 'lipsa');
 
 } finally {
     stopMock($mock);
