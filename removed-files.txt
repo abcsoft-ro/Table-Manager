@@ -18,5 +18,11 @@
 # inofensiv, dar nu mai are rost sa rămâna pe stații.
 index.html
 
+# 2026-10-16: driverul POS bancar a ajuns din greseala in proiect. Nu are ce
+# cauta acolo si nici nu putea funcționa de acolo - isi cauta `ecr_client.py`
+# chiar langa el (%~dp0), iar `ecr_client.py` nu a existat niciodata in repo.
+# Driverul real se ia din `tblSet.CaleDriverPoSbanca` (la noi C:\Sunmi\vanzare.bat).
+tools/vanzare.bat
+
 # ATENTIE: mobile.html NU se sterge - este pastrat intentionat ca redirect catre
 # mobile.php (si il folosesc linkurile vechi).

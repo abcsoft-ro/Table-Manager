@@ -150,6 +150,7 @@ tar -czf "$SETUP_DIR/payload/app.tgz" -C "$ROOT/.." \
   --exclude='rual/print-service/spool' --exclude='rual/print-service/spool/*' \
   --exclude='rual/sync-service/__pycache__' --exclude='rual/sync-service/__pycache__/*' \
   --exclude='rual/sync-service/logs' --exclude='rual/sync-service/logs/*' \
+  --exclude='rual/tools/__pycache__' --exclude='rual/tools/__pycache__/*' \
   --exclude='rual/api/db.local.php' \
   --exclude='rual/github_api.txt' --exclude='rual/ssh.txt' \
   --exclude='rual/AGENTS.md' --exclude='rual/PLAN-INSTALARE-PRODUCTIE.md' \
