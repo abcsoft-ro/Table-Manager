@@ -34,6 +34,11 @@ function updateIgnorePrefixes() {
         // Unelte de test: nu se instaleaza pe statiile de productie (la fel ca
         // in sync.sh, care le exclude din arhiva de instalare).
         'tests/',
+        // Artefacte de dezvoltare/release (scriptul de release, DDL-uri de
+        // referinta): nici ele nu se livreaza, iar de aici NU se sterg niciodata
+        // - pe masina de dezvoltare `dev/sync.sh` trebuie sa rămâna (vezi si
+        // removed-files.txt, unde sta calea veche `sync.sh`, de la radacina).
+        'dev/',
     ];
 }
 

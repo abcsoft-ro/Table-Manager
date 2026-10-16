@@ -266,7 +266,7 @@ tools/backup-db.ps1     full database backup (scheduled, verified, with retentio
 tools/backup-db-task.xml    Windows Scheduler task for backup (daily 03:00, as SYSTEM)
 tools/install-backup-task.bat  mounts the backup task (Run as administrator)
 .venv/                  Python virtual environment (created locally, ignored by git)
-sync.sh                 commit + push to GitHub + regenerate the install snapshot
+dev/sync.sh             commit + push to GitHub + regenerate the install snapshot
 ```
 
 ---

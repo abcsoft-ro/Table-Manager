@@ -13,7 +13,10 @@
 # Folderul repo-ului de setup se poate schimba cu variabila SETUP_DIR.
 #
 set -euo pipefail
-cd "$(dirname "$0")"
+
+# Scriptul sta in dev/ (artefacte de dezvoltare care nu se livreaza pe statiile
+# de productie), dar lucreaza pe radacina proiectului.
+cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 
 # Garda de branch: sync.sh publica pe canalul de productie (branch-ul main si
@@ -158,7 +161,8 @@ tar -czf "$SETUP_DIR/payload/app.tgz" -C "$ROOT/.." \
   --exclude='rual/*.pdf' \
   --exclude='rual/print-service/config.json' --exclude='rual/sync-service/config.json' \
   --exclude='rual/db/tools' --exclude='rual/db/tools/*' \
-  --exclude='rual/tests' --exclude='rual/tests/*' rual
+  --exclude='rual/tests' --exclude='rual/tests/*' \
+  --exclude='rual/dev' --exclude='rual/dev/*' rual
 
 (
   cd "$SETUP_DIR"

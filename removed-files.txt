@@ -24,5 +24,12 @@ index.html
 # Driverul real se ia din `tblSet.CaleDriverPoSbanca` (la noi C:\Sunmi\vanzare.bat).
 tools/vanzare.bat
 
+# 2026-10-16: sync.sh (scriptul de release) si EmitBon_Ext3.sql (DDL-ul procedurii
+# de pe serverul extern) nu au ce cauta pe statiile de productie. Au fost mutate in
+# `dev/`, care nu se livreaza nici de updater (prefix ignorat), nici de installer
+# (exclus in sync.sh); intrarile de aici curata doar copiile vechi de la radacina.
+sync.sh
+EmitBon_Ext3.sql
+
 # ATENTIE: mobile.html NU se sterge - este pastrat intentionat ca redirect catre
 # mobile.php (si il folosesc linkurile vechi).

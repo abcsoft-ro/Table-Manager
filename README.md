@@ -267,7 +267,7 @@ tools/backup-db.ps1     backup full al bazei de date (planificat, verificat, cu 
 tools/backup-db-task.xml    task Windows Scheduler pentru backup (zilnic 03:00, ca SYSTEM)
 tools/install-backup-task.bat  monteaza task-ul de backup (Run as administrator)
 .venv/                  mediul virtual Python (creat local, ignorat de git)
-sync.sh                 commit + push catre GitHub + regenereaza snapshot-ul de instalare
+dev/sync.sh             commit + push catre GitHub + regenereaza snapshot-ul de instalare
 ```
 
 ---
