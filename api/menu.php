@@ -7,6 +7,7 @@
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/colors.php';
 require_once __DIR__ . '/i18n.php';
+require_once __DIR__ . '/parola_local.php';
 
 $conn = getDBConnection();
 
@@ -344,6 +345,16 @@ if ($stmtPS) {
     $ps = sqlsrv_fetch_array($stmtPS, SQLSRV_FETCH_ASSOC);
     if ($ps && trim((string)($ps['ParolaStornare'] ?? '')) !== '') { $parolaStornare = 1; }
 }
+
+// 4h2. Copia locala a parolei de inchidere (logs/parola_local.json): inchiderea
+//      aplicatiei trebuie sa functioneze si daca baza de date nu raspunde (vezi
+//      api/parola_local.php). Best-effort, nu influenteaza raspunsul.
+parolaLocalSyncFromDb($conn);
+
+// 4h3. Copia locala a timeout-ului de conectare (tblSet.ODBC_TimeOut) - se
+//      citeste la fiecare pornire, ca urmatoarea conectare sa foloseasca exact
+//      valoarea configurata (vezi dbOdbcTimeout() din api/db.php).
+dbOdbcTimeout($conn);
 
 // 4i. Motivele de discount si de stornare (tblSet.MotivDiscount /
 //     tblSet.MotivStornare), liste separate prin punct si virgula.

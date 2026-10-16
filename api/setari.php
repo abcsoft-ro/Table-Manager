@@ -299,6 +299,14 @@ function ensureSetariMeta($conn) {
     ensureSetariValue($conn, 'ApiKeyHash', '',
         "SHA-256 al cheii API. Se seteaza automat la generarea cheii; cheia in clar se afiseaza o singura data si nu este pastrata.", 'Integrare');
 
+    // Timeout de conectare la bazele de date, in secunde (tblSet.ODBC_TimeOut).
+    // Se foloseste la ORICE conectare: baza locala a POS-ului (api/db.php,
+    // inclusiv serviciile Python care il citesc din logs/db_timeout.json),
+    // serverul de produse (api/conectare.php) si worker-ul de sincronizare
+    // (care il primeste prin api/send_queue.php). Se creeaza doar daca lipseste.
+    ensureSetariValue($conn, 'ODBC_TimeOut', (string)DB_TIMEOUT_DEFAULT,
+        "Timeout de conectare la bazele de date, in secunde. Se foloseste la orice conectare (baza locala a POS-ului si serverul de produse), ca aplicatia sa reactioneze repede cand baza de date nu raspunde.", 'ODBC');
+
     // Chei legacy, fara efect in aplicatie: se sterg din tblSet daca exista
     // (nu mai apar nici in ecranul Setari).
     @sqlsrv_query(
@@ -403,6 +411,16 @@ if ($action === 'update') {
         }
     }
     sqlsrv_commit($conn);
+
+    // Copiile locale ale setarilor de care depinde functionarea cand baza de date
+    // nu raspunde / la conectare: se actualizeaza imediat, nu dupa urmatoarea
+    // pornire a aplicatiei (vezi APP_LANG_FAST si dbOdbcTimeout()).
+    if (array_key_exists('Limba', $values)) {
+        appLangLocalWrite((string)$values['Limba']);
+    }
+    if (array_key_exists('ODBC_TimeOut', $values)) {
+        dbTimeoutLocalWrite((int)$values['ODBC_TimeOut']);
+    }
 
     sendJsonResponse(["status" => "success", "message" => "Setarile au fost salvate"]);
 }

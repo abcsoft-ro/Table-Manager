@@ -21,6 +21,7 @@ Exemple:
 
 import argparse
 import datetime
+import json
 import os
 import re
 import sys
@@ -70,6 +71,22 @@ def read_db_config():
     return cfg
 
 
+def read_local_timeout(default=10):
+    """Timeout-ul de conectare folosit pentru baza locala.
+
+    Valoarea reala este tblSet.ODBC_TimeOut; PHP o pastreaza in
+    logs/db_timeout.json (vezi api/db.php -> dbOdbcTimeout()), pentru ca prima
+    conectare - cea care citeste setarea - are nevoie de o valoare dinainte.
+    """
+    try:
+        path = os.path.join(BASE_DIR, "logs", "db_timeout.json")
+        with open(path, "r", encoding="utf-8") as fh:
+            value = int(json.load(fh).get("sec") or 0)
+        return value if value > 0 else default
+    except (OSError, ValueError, TypeError):
+        return default
+
+
 def pick_driver():
     preferred = [
         "ODBC Driver 18 for SQL Server",
@@ -116,7 +133,7 @@ def main(note_mode="run"):
         return 3
 
     try:
-        cn = pyodbc.connect(build_local_connection_string(cfg), autocommit=True, timeout=10)
+        cn = pyodbc.connect(build_local_connection_string(cfg), autocommit=True, timeout=read_local_timeout())
     except pyodbc.Error as exc:
         log("EROARE conexiune la baza locala: %s" % exc)
         return 3

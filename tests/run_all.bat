@@ -26,6 +26,10 @@ echo ################ FAZA C - API / securitate ################
 php tests\api.php
 if errorlevel 1 set FAIL=1
 
+echo ################ FAZA G - inchidere aplicatie fara baza de date ################
+php tests\parola_local.php
+if errorlevel 1 set FAIL=1
+
 echo ################ FAZA E - servicii ################
 php tests\services.php
 if errorlevel 1 set FAIL=1

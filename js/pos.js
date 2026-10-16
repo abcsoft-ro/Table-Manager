@@ -116,11 +116,45 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // Numaratoarea reincerarilor de incarcare initiala (tipic: dupa un reboot,
 // SQL Server nu e inca pornit). Se reseteaza la fiecare incarcare reusita.
+const MAX_INIT_RETRY = 20;
 let initRetryCount = 0;
+// Banner-ul de stare se afiseaza doar daca incarcarea intarzie (pe o pornire
+// normala nu are rost sa clipeasca pe ecran).
+let initStatusTimer = null;
+
+// --------------------------------------------------------------------------
+// STARE BAZA DE DATE (banner vizibil cat timp datele nu pot fi citite)
+// --------------------------------------------------------------------------
+// Fara baza de date aplicatia nu poate citi nimic. In loc sa rămâna ecranul gol
+// (sau sa apara doar un toast care dispare in 2 secunde), aratam un banner care
+// rămâne pe ecran pana cand datele se incarca. Banner-ul nu blocheaza clicurile
+// (vezi .db-status din css/pos.css), deci butonul Parola rămâne utilizabil:
+// parola de inchidere functioneaza si fara baza de date (api/parola_local.php).
+function showDbStatus(title, text) {
+  const box = document.getElementById("db-status");
+  if (!box) return;
+  const elTitle = document.getElementById("db-status-title");
+  const elText = document.getElementById("db-status-text");
+  if (elTitle) elTitle.innerText = title;
+  if (elText) elText.innerText = text || "";
+  box.classList.add("visible");
+}
+
+function hideDbStatus() {
+  if (initStatusTimer) { clearTimeout(initStatusTimer); initStatusTimer = null; }
+  const box = document.getElementById("db-status");
+  if (box) box.classList.remove("visible");
+}
 
 async function initApp() {
   try {
-    showToast("Conectare la baza de date a aplicației...");
+    if (initRetryCount === 0) {
+      initStatusTimer = setTimeout(() => {
+        initStatusTimer = null;
+        showDbStatus(tr("Se conecteaza la baza de date..."),
+          tr("Aplicatia citeste meniul si mesele din baza de date locala."));
+      }, 2500);
+    }
     // Titlul tabului reflecta versiunea reala a aplicatiei (api/version.php).
     loadAppVersion();
     // 1. Incarcam meniul si produsele din MSSQL
@@ -132,6 +166,7 @@ async function initApp() {
     selectLastAndScroll();
     // 3. Incarcam starea celor 80 de mese
     await loadTables();
+    hideDbStatus();
     showToast("Conectat la baza de date a aplicației!");
     initRetryCount = 0;
 
@@ -146,17 +181,22 @@ async function initApp() {
 }
 
 // Daca incarcarea initiala esueaza (tipic: dupa un reboot Windows, instanta SQL
-// locala nu e inca pornita), NU rămânem cu ecranul gol: reincercam automat si
-// afisam un mesaj clar, iar la final aratam si eroarea tehnica primita.
+// locala nu e inca pornita), NU rămânem cu ecranul gol: aratam un banner clar cu
+// eroarea tehnica primita si reincercam automat. Banner-ul spune si ca parola de
+// inchidere functioneaza in continuare, ca sa nu fie nevoie sa omori procese.
 function scheduleInitRetry(err) {
   initRetryCount++;
-  if (initRetryCount > 15) {
-    appAlert(tr("Baza de date nu raspunde. Reporniti aplicatia POS.") +
-      "\n\n" + (err && err.message ? err.message : ""));
+  const detaliu = (err && err.message) ? String(err.message) : "";
+  if (initRetryCount > MAX_INIT_RETRY) {
+    showDbStatus(tr("Baza de date nu raspunde. Reporniti aplicatia POS."),
+      tr("Incercarile automate s-au terminat.") + (detaliu ? "\n" + detaliu : ""));
     return;
   }
-  const sec = Math.min(3 + initRetryCount * 2, 10);
-  showToast(tr("Baza de date nu raspunde inca. Reincerc automat (") + sec + "s)...", sec * 1000);
+  const sec = Math.min(5 + initRetryCount * 2, 15);
+  showDbStatus(tr("Baza de date nu raspunde."),
+    tr("Se reincearca automat") + " (" + initRetryCount + "/" + MAX_INIT_RETRY + ", " + sec + "s).\n"
+    + tr("Parola de inchidere functioneaza si fara baza de date.")
+    + (detaliu ? "\n" + detaliu : ""));
   setTimeout(initApp, sec * 1000);
 }
 

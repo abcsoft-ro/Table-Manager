@@ -8,6 +8,7 @@
  */
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/print_common.php';
+require_once __DIR__ . '/parola_local.php';
 
 $conn = getDBConnection();
 ensureParolaUpdateColumn($conn);
@@ -77,6 +78,10 @@ switch ($action) {
         if (!$stmt) {
             sendJsonResponse(["status" => "error", "message" => "Eroare actualizare parole: " . sqlsrv_errors()[0]['message']], 500);
         }
+        // Copia locala a parolei de inchidere se actualizeaza odata cu tabela, ca
+        // inchiderea aplicatiei sa functioneze si daca baza de date nu raspunde
+        // (vezi api/parola_local.php).
+        parolaLocalWriteExit($values['ParolaExit'] ?? '');
         sendJsonResponse(["status" => "success", "message" => "Parole actualizate"]);
         break;
 

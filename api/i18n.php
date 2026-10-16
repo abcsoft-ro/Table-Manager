@@ -23,6 +23,67 @@ function appLangList() {
 }
 
 /**
+ * Randare rapida a paginii (index.php / mobile.php): NU asteptam dupa baza de
+ * date doar ca sa aflam limba. Daca baza de date nu raspunde (instanta oprita
+ * sau inca pornind dupa un reboot), pagina rămânea alba pana la ~30 de secunde
+ * - exact cand utilizatorul are nevoie de un mesaj clar. Cu acest flag, limba
+ * se ia din copia locala (logs/lang_local.json), iar endpoint-urile API
+ * continua sa citeasca tblSet.Limba (ele oricum au nevoie de baza de date).
+ *
+ * @var bool
+ */
+$GLOBALS['APP_LANG_FAST'] = false;
+
+/**
+ * Copia locala a limbii: `logs/lang_local.json` (gitignorat, blocat la accesul
+ * HTTP de .htaccess). Se scrie de fiecare data cand limba este citita din baza
+ * de date si la salvarea ei din Setari.
+ *
+ * @return string
+ */
+function appLangLocalPath() {
+    return dirname(__DIR__) . '/logs/lang_local.json';
+}
+
+/**
+ * @return string|null Limba din copia locala, null daca lipseste/este ilizibila.
+ */
+function appLangLocalRead() {
+    try {
+        $file = appLangLocalPath();
+        if (!is_file($file)) { return null; }
+        $data = json_decode((string)@file_get_contents($file), true);
+        $lang = is_array($data) ? strtolower(trim((string)($data['lang'] ?? ''))) : '';
+        return in_array($lang, appLangList(), true) ? $lang : null;
+    } catch (\Throwable $e) {
+        return null;
+    }
+}
+
+/**
+ * Scrie copia locala a limbii (atomic, best-effort).
+ *
+ * @param string $lang
+ * @return bool
+ */
+function appLangLocalWrite($lang) {
+    try {
+        $lang = strtolower(trim((string)$lang));
+        if (!in_array($lang, appLangList(), true)) { return false; }
+        $dir = dirname(__DIR__) . '/logs';
+        if (!is_dir($dir)) { @mkdir($dir, 0777, true); }
+        $file = $dir . '/lang_local.json';
+        $json = json_encode(['lang' => $lang]);
+        if (is_file($file) && @file_get_contents($file) === $json) { return true; }
+        $tmp = $file . '.tmp';
+        if (@file_put_contents($tmp, $json, LOCK_EX) === false) { return false; }
+        return @rename($tmp, $file);
+    } catch (\Throwable $e) {
+        return false;
+    }
+}
+
+/**
  * Limba activa din tblSet.Limba. Daca baza de date nu este disponibila sau
  * setarea lipseste, revine la limba implicita (ro). Rezultatul este cache-uit
  * pe durata cererii.
@@ -33,6 +94,11 @@ function appLangList() {
 function appLang($conn = null) {
     static $cached = null;
     if ($cached !== null) {
+        return $cached;
+    }
+    if (!empty($GLOBALS['APP_LANG_FAST'])) {
+        $local = appLangLocalRead();
+        $cached = $local !== null ? $local : APP_LANG_DEFAULT;
         return $cached;
     }
     $lang = APP_LANG_DEFAULT;
@@ -46,6 +112,14 @@ function appLang($conn = null) {
                 if (in_array($v, appLangList(), true)) { $lang = $v; }
             }
         }
+        // Copia locala, ca pagina sa se poata randa instant daca baza de date
+        // nu va raspunde la urmatoarea cerere (vezi APP_LANG_FAST).
+        appLangLocalWrite($lang);
+    } else {
+        // Baza de date nu raspunde: pastram limba cunoscuta (copia locala), ca
+        // mesajele de eroare sa nu treaca in romana peste un UI in engleza.
+        $local = appLangLocalRead();
+        if ($local !== null) { $lang = $local; }
     }
     $cached = $lang;
     return $lang;

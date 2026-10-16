@@ -105,7 +105,9 @@ function readRemoteOptions($conn) {
     $srv = ($instance !== '' && strcasecmp($instance, $server) !== 0) ? $server . '\\' . $instance : $server;
     if ($srv === '') { $out['error'] = "ServerIP lipsa."; return $out; }
 
-    $ci = ["CharacterSet" => "UTF-8", "LoginTimeout" => 3];
+    // Timeout-ul de conectare vine din tblSet.ODBC_TimeOut (aceeasi setare ca la
+    // orice alta conectare la baze de date).
+    $ci = ["CharacterSet" => "UTF-8", "LoginTimeout" => dbOdbcTimeout($conn)];
     if (trim((string)$c['DataBaseName']) !== '') { $ci["Database"] = $c['DataBaseName']; }
     if ((int)$c['TC'] !== 1) { $ci["UID"] = $c['UserName']; $ci["PWD"] = $c['Password']; }
 
@@ -256,7 +258,8 @@ switch ($action) {
 
         $ci = [
             "CharacterSet" => "UTF-8",
-            "LoginTimeout" => 5
+            // tblSet.ODBC_TimeOut: aceeasi valoare ca la orice conectare.
+            "LoginTimeout" => dbOdbcTimeout($conn)
         ];
         if ($database !== '') {
             $ci["Database"] = $database;

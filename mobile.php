@@ -4,6 +4,9 @@
  * Limba vine din tblSet.Limba (api/i18n.php) si este injectata pentru JS.
  */
 require_once __DIR__ . '/api/i18n.php';
+// Pagina se randeaza instant, fara sa astepte baza de date (limba se ia din
+// copia locala daca baza de date nu raspunde - vezi api/i18n.php, APP_LANG_FAST).
+$GLOBALS['APP_LANG_FAST'] = true;
 require_once __DIR__ . '/api/version_common.php';
 $LANG = appLang();
 // Token de cache pentru active (JS/CSS): se schimba la fiecare versiune, altfel

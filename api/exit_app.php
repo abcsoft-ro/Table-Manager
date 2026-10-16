@@ -11,6 +11,7 @@
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/app_events.php';
+require_once __DIR__ . '/parola_local.php';
 
 /**
  * Inchide procesele de browser care ruleaza aplicatia POS.
@@ -64,19 +65,48 @@ $input = json_decode($raw, true);
 if (!$input || !is_array($input)) { $input = $_POST; }
 $parola = trim((string)($input['parola'] ?? ''));
 
-$conn = getDBConnection();
-$stmt = @sqlsrv_query($conn, "SELECT TOP 1 ParolaExit FROM tblParola");
-$row = $stmt ? sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC) : null;
-$exitParola = $row ? trim((string)$row['ParolaExit']) : '';
+// Verificarea parolei se face normal in baza de date. Daca baza de date nu
+// raspunde (instanta SQL oprita sau inca pornind dupa un reboot), folosim copia
+// locala a parolei (api/parola_local.php): inchiderea aplicatiei trebuie sa
+// functioneze in ORICE situatie, altfel POS-ul rămâne blocat pe ecran.
+$conn = getDBConnection(true);
+$offline = false;
+$copiaLocala = '';
+if ($conn === null) {
+    $offline = true;
+    $stare = parolaLocalCheckExit($parola);
+    $copiaLocala = $stare;
+    if ($stare === 'wrong') {
+        appEventLog('exit_refuzat', appEventClientCtx() + [
+            'parola_len'  => strlen($parola),
+            'baza_date'   => 'indisponibila',
+        ]);
+        sendJsonResponse(["status" => "error", "message" => "Parola incorecta"], 401);
+    }
+    if ($stare === 'not_set') {
+        sendJsonResponse(["status" => "error", "message" => "Parola de inchidere aplicatie nu este configurata"], 400);
+    }
+    // 'ok' = parola confirmata din copia locala; 'unknown' = nu exista copie
+    // locala (nicio pornire reusita de la instalare). Aplicatia este oricum
+    // inutilizabila fara baza de date, deci permitem inchiderea - se noteaza
+    // explicit in jurnal (vezi mai jos).
+} else {
+    $stmt = @sqlsrv_query($conn, "SELECT TOP 1 ParolaExit FROM tblParola");
+    $row = $stmt ? sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC) : null;
+    $exitParola = $row ? trim((string)$row['ParolaExit']) : '';
 
-if ($exitParola === '') {
-    sendJsonResponse(["status" => "error", "message" => "Parola de inchidere aplicatie nu este configurata"], 400);
-}
-if ($parola === '' || !hash_equals($exitParola, $parola)) {
-    // Incercare de inchidere cu parola gresita - util in jurnal (ex. un cod
-    // tastat din greseala intr-un prompt deschis fara sa vrei).
-    appEventLog('exit_refuzat', appEventClientCtx() + ['parola_len' => strlen($parola)]);
-    sendJsonResponse(["status" => "error", "message" => "Parola incorecta"], 401);
+    if ($exitParola === '') {
+        sendJsonResponse(["status" => "error", "message" => "Parola de inchidere aplicatie nu este configurata"], 400);
+    }
+    if ($parola === '' || !hash_equals($exitParola, $parola)) {
+        // Incercare de inchidere cu parola gresita - util in jurnal (ex. un cod
+        // tastat din greseala intr-un prompt deschis fara sa vrei).
+        appEventLog('exit_refuzat', appEventClientCtx() + ['parola_len' => strlen($parola)]);
+        sendJsonResponse(["status" => "error", "message" => "Parola incorecta"], 401);
+    }
+    // Parola confirmata in DB: reimprospatam copia locala, ca inchiderea sa
+    // functioneze si daca data viitoare baza de date nu raspunde.
+    parolaLocalWriteExit($exitParola);
 }
 
 $kill = posExitKillKioskBrowser();
@@ -88,6 +118,7 @@ appEventLog('exit', appEventClientCtx() + [
     'procese_browser' => $killed,
     'browsere_total'  => $browsere,
     'browsere_prea_noi' => $noi,
+    'baza_date'       => $offline ? ('indisponibila' . ($copiaLocala === 'unknown' ? ', fara copie locala' : ', parola din copia locala')) : 'ok',
     'rezultat'        => $killed > 0 ? 'browsere kiosk omorate'
                        : ($browsere > 0 ? 'niciun proces de kiosk gasit (browsere exista)'
                        : ($browsere === 0 ? 'nu rula niciun browser' : 'fara suport (exec/Windows)')),
@@ -99,4 +130,5 @@ sendJsonResponse([
     "procese"  => $killed,
     "browsere" => $browsere,
     "noi"      => $noi,
+    "offline"  => $offline,
 ]);

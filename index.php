@@ -7,6 +7,9 @@
  * Textul static este marcat cu data-i18n* si tradus de js/i18n.js.
  */
 require_once __DIR__ . '/api/i18n.php';
+// Pagina se randeaza instant, fara sa astepte baza de date (limba se ia din
+// copia locala daca baza de date nu raspunde - vezi api/i18n.php, APP_LANG_FAST).
+$GLOBALS['APP_LANG_FAST'] = true;
 require_once __DIR__ . '/api/app_events.php';
 require_once __DIR__ . '/api/version_common.php';
 $LANG = appLang();
@@ -2140,6 +2143,16 @@ $ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
   <div class="pos-toast" id="pos-toast" data-i18n="Notificare">Notificare</div>
 
   </div><!-- /#pos-stage -->
+
+  <!-- Stare baza de date: banner care rămâne vizibil cat timp aplicatia nu poate
+       citi datele (ex. instanta SQL oprita sau inca pornind dupa un reboot).
+       Sta in afara canvasului scalat (deci nu este afectat de --pos-scale) si nu
+       blocheaza clicurile, ca butonul Parola sa rămâna folosibil: parola de
+       inchidere functioneaza si fara baza de date. -->
+  <div class="db-status" id="db-status">
+    <div class="db-status-title" id="db-status-title"></div>
+    <div class="db-status-text" id="db-status-text"></div>
+  </div>
 
   <!-- Script aplicatie -->
   <script src="js/help.js?v=<?= $ASSET_V ?>"></script>

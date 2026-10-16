@@ -18,6 +18,7 @@ phase "FAZA JS - client (i18n)" php.exe tests/js.php
 phase "FAZA A - static" php.exe tests/static.php
 phase "FAZA B - invariante DB" php.exe tests/invariants.php
 phase "FAZA C - API / securitate" php.exe tests/api.php
+phase "FAZA G - inchidere aplicatie fara baza de date" php.exe tests/parola_local.php
 phase "FAZA E - servicii" php.exe tests/services.php
 phase "FAZA D - fluxuri (scrie in DB!)" php.exe tests/flows.php
 phase "FAZA F - asteptare casa de marcat (scrie in DB!)" php.exe tests/fiscal_wait.php

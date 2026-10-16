@@ -164,7 +164,11 @@ function getConectareDb($conn) {
         "database" => trim((string)($r['DataBaseName'] ?? '')),
         "user" => trim((string)($r['UserName'] ?? '')),
         "password" => (string)($r['Password'] ?? ''),
-        "tc" => ((int)($r['TC'] ?? 0) === 1)
+        "tc" => ((int)($r['TC'] ?? 0) === 1),
+        // Timeout de conectare (tblSet.ODBC_TimeOut): trimis si worker-ului de
+        // sincronizare (sync-service), care altfel ar folosi valoarea lui
+        // implicita din config.json. "Orice conectare" foloseste aceeasi setare.
+        "timeout" => dbOdbcTimeout($conn)
     ];
 }
 

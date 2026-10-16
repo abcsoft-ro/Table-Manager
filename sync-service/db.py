@@ -58,10 +58,17 @@ def execute_statements(info, statements, cfg):
         raise DbError("Nicio comanda SQL de executat")
 
     conn_str = build_connection_string(info, cfg)
+    # Timeout-ul de conectare vine din tblSet.ODBC_TimeOut (api/send_queue.php il
+    # trimite la claim); db_timeout din config.json este doar rezerva, pentru
+    # cazul in care setarea nu este disponibila.
+    try:
+        timeout = int(info.get("timeout") or 0) or int(cfg.get("db_timeout", 10) or 10)
+    except (TypeError, ValueError):
+        timeout = 10
     try:
         cn = pyodbc.connect(
             conn_str,
-            timeout=int(cfg.get("db_timeout", 10)),
+            timeout=timeout,
             autocommit=True,
         )
     except pyodbc.Error as exc:

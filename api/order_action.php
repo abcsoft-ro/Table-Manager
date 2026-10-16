@@ -8,6 +8,7 @@ require_once __DIR__ . '/print_common.php';
 require_once __DIR__ . '/send_common.php';
 require_once __DIR__ . '/i18n.php';
 require_once __DIR__ . '/app_events.php';
+require_once __DIR__ . '/parola_local.php';
 
 /**
  * Tipul de vanzare configurat in tblSet (TipVanz): "fastfood" cand valoarea
@@ -1778,7 +1779,64 @@ function buildFiscalTextFiscalNet($items, $platiArr, $tvaMap = [], $cui = '') {
     return $lines;
 }
 
-$conn = getDBConnection();
+/**
+ * Raspuns pentru cererile primite cat timp baza de date nu raspunde.
+ *
+ * Fara baza de date aplicatia nu poate face nimic, cu o singura exceptie:
+ * INCHIDEREA cu parola de iesire, verificata din copia locala a parolei
+ * (api/parola_local.php). Asa utilizatorul poate inchide POS-ul in orice
+ * situatie, fara sa fie nevoit sa omoare procese manual.
+ *
+ * @return void
+ */
+function handleOfflineAction() {
+    $raw = file_get_contents('php://input');
+    $input = json_decode($raw, true);
+    if (!$input || !is_array($input)) { $input = $_POST; }
+    $action = (string)($input['action'] ?? '');
+
+    if ($action === 'authenticate') {
+        $parola = trim((string)($input['parola'] ?? ''));
+        $ctx = appEventClientCtx();
+        $sursa = trim((string)($input['sursa'] ?? ''));
+        $ctx['sursa'] = $sursa !== '' ? $sursa : '(neindicat)';
+        $ctx['parola_len'] = strlen($parola);
+        $ctx['baza_date'] = 'indisponibila';
+
+        $stare = parolaLocalCheckExit($parola);
+        // 'ok' = parola confirmata din copia locala. 'unknown' = nu avem nicio
+        // copie locala (nicio pornire reusita de la instalare): permitem
+        // inchiderea, aplicatia fiind oricum inutilizabila fara baza de date.
+        if ($stare === 'ok' || $stare === 'unknown') {
+            appEventLog('auth', $ctx + ['rezultat' => 'EXIT']);
+            sendJsonResponse([
+                "status"  => "success",
+                "exit"    => true,
+                "offline" => true,
+                "message" => "Inchidere aplicatie (baza de date indisponibila)"
+            ]);
+        }
+        appEventLog('auth', $ctx + ['rezultat' => 'refuzat']);
+        if ($stare === 'not_set') {
+            sendJsonResponse(["status" => "error", "message" => "Parola de inchidere aplicatie nu este configurata"], 400);
+        }
+    }
+
+    // Orice altceva are nevoie de baza de date: mesaj clar, nu eroare tehnica.
+    sendJsonResponse([
+        "status" => "error",
+        "message" => "Baza de date nu raspunde. Doar parola de inchidere a aplicatiei poate fi folosita acum."
+    ], 503);
+}
+
+// Baza de date poate lipsi (instanta SQL oprita sau inca pornind dupa un reboot):
+// cererile care au nevoie de ea primesc un mesaj clar, iar inchiderea aplicatiei
+// functioneaza in continuare din copia locala a parolei.
+$conn = getDBConnection(true);
+if ($conn === null) {
+    handleOfflineAction();
+    exit;
+}
 ensureOrderSchema($conn);
 $raw = file_get_contents('php://input');
 $input = json_decode($raw, true);

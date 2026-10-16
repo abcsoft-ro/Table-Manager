@@ -1468,6 +1468,43 @@ body {
   border: 1px solid #fff;
 }
 
+/* Banner de stare a bazei de date: se afiseaza DOAR cat timp aplicatia nu poate
+   citi datele (instanta SQL oprita sau inca pornind dupa un reboot). Sta in
+   afara canvasului scalat, deci nu este afectat de --pos-scale, si NU blocheaza
+   clicurile (pointer-events: none) - butonul Parola trebuie sa rămâna folosibil
+   ca sa se poata inchide aplicatia oricand. */
+.db-status {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3000;
+  pointer-events: none;
+  display: none;
+  max-width: 920px;
+  padding: 12px 22px;
+  border-radius: 10px;
+  background: #7a1f1f;
+  color: #ffffff;
+  border: 2px solid #ffd400;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.6);
+  text-align: center;
+}
+
+.db-status.visible { display: block; }
+
+.db-status-title {
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.db-status-text {
+  font-size: 14px;
+  line-height: 1.35;
+  white-space: pre-line;
+}
+
 /* ==========================================================================
    MODAL CANTITATE (editare cantitate produs cu tastatura numerica)
    ========================================================================== */
