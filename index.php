@@ -13,7 +13,7 @@ $LANG = appLang();
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TableManager 2.0.0 - Modern Web POS</title>
+  <title>TableManager 2.1.0 - Modern Web POS</title>
   <?= i18nJs($LANG) ?>
   <script src="js/i18n.js?v=20261016r"></script>
   <link rel="stylesheet" href="css/pos.css?v=20261016r">
