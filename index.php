@@ -15,8 +15,8 @@ $LANG = appLang();
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>TableManager 2.0.0 - Modern Web POS</title>
   <?= i18nJs($LANG) ?>
-  <script src="js/i18n.js?v=20261016n"></script>
-  <link rel="stylesheet" href="css/pos.css?v=20261016n">
+  <script src="js/i18n.js?v=20261016q"></script>
+  <link rel="stylesheet" href="css/pos.css?v=20261016q">
   <script>
     /* Scalare UI libera pe AMBELE axe, plecand de la canvasul minim 1024x768.
        --pos-scale = factorul proportional (limitat de axa cu raportul cel mai mic);
@@ -1201,8 +1201,6 @@ $LANG = appLang();
             <button class="numpad-key key-zero" style="grid-column: span 3;" onclick="vkeyInput('0')">0</button>
           </div>
         </div>
-
-        <div style="font-size: 11px; color: #b00;" data-i18n="validare = OK + OK">validare = OK + OK</div>
       </div>
     </div>
   </div>
@@ -2132,8 +2130,8 @@ $LANG = appLang();
   </div><!-- /#pos-stage -->
 
   <!-- Script aplicatie -->
-  <script src="js/help.js?v=20261016n"></script>
-  <script src="js/pos.js?v=20261016n"></script>
+  <script src="js/help.js?v=20261016q"></script>
+  <script src="js/pos.js?v=20261016q"></script>
   <script>if (typeof applyI18n === "function") applyI18n();</script>
 </body>
 </html>

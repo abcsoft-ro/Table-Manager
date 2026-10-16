@@ -1179,13 +1179,13 @@ function showFastFoodReceipt(payments, total, rest) {
     return { label: f ? f.Denumire : ("FP " + id), val: Number(val) || 0 };
   });
 
-  let html = '<div class="ff-receipt-title">PLATA EFECTUATA</div>';
+  let html = '<div class="ff-receipt-title">' + tr("PLATA EFECTUATA") + '</div>';
   parts.forEach(p => {
     html += `<div class="ff-receipt-line"><span>${escapeHtml(p.label)}</span><span>${p.val.toFixed(2)}</span></div>`;
   });
-  html += `<div class="ff-receipt-line ff-receipt-total"><span>Total</span><span>${(Number(total) || 0).toFixed(2)}</span></div>`;
+  html += `<div class="ff-receipt-line ff-receipt-total"><span>${tr("Total")}</span><span>${(Number(total) || 0).toFixed(2)}</span></div>`;
   if (rest > 0) {
-    html += `<div class="ff-receipt-line ff-receipt-rest"><span>Rest</span><span>${Number(rest).toFixed(2)}</span></div>`;
+    html += `<div class="ff-receipt-line ff-receipt-rest"><span>${tr("Rest")}</span><span>${Number(rest).toFixed(2)}</span></div>`;
   }
 
   box.innerHTML = html;
@@ -1363,12 +1363,12 @@ async function executeClose(total, rest) {
       return `${escapeHtml(f ? f.Denumire : ("FP " + id))}: ${val.toFixed(2)} Lei`;
     }).join("<br>");
 
-    let msgHtml = `NOTA A FOST TRIMISA LA APARATUL FISCAL<br>${detalii}<br>Total: ${total.toFixed(2)} Lei`;
+    let msgHtml = `${tr("NOTA A FOST TRIMISA LA APARATUL FISCAL")}<br>${detalii}<br>${tr("Total: ")}${total.toFixed(2)} Lei`;
     if (rest > 0) {
       msgHtml += `<br><span style="font-size:22px; font-weight:bold;">${tr("Rest de dat: ")}${rest.toFixed(2)} Lei</span>`;
     }
     if (res.fiscal) {
-      let casaLinie = `<br>Casa de marcat: NR ${res.fiscal.nr != null ? res.fiscal.nr : "-"}`;
+      let casaLinie = `<br>${tr("Casa de marcat: NR ")}${res.fiscal.nr != null ? res.fiscal.nr : "-"}`;
       if (res.fiscal.z != null) { casaLinie += ` / Z ${res.fiscal.z}`; }
       msgHtml += casaLinie;
     }
@@ -1498,14 +1498,14 @@ function openPosBancaDialog(info) {
   const modal = document.getElementById("modal-pos-banca");
   if (!modal) {
     // Fallback fara modal: confirm() ofera Retry / Cancel (fara Ignore).
-    return Promise.resolve(window.confirm("Tranzactie refuzata. Incercati din nou?") ? "retry" : "cancel");
+    return Promise.resolve(window.confirm(tr("Tranzactie refuzata. Incercati din nou?")) ? "retry" : "cancel");
   }
 
   const status = String(info.posStatus || "ERROR").toUpperCase();
   const mesaj = String(info.posMessage || "").trim();
   const trx = String(info.trxId || "").trim();
   let text = status;
-  if (mesaj) { text += "\n" + mesaj; }
+  if (mesaj) { text += "\n" + tr(mesaj); }
   if (trx) { text += "\nTRX_ID: " + trx; }
   document.getElementById("pos-banca-message").textContent = text;
 
