@@ -56,9 +56,15 @@
       }
     }
     if (bestKey !== null) {
-      return fill(CATALOG[bestKey], params) + s.slice(bestKey.length);
+      // Parametrii se aplica pe rezultatul complet (partea tradusa + restul),
+      // nu doar pe partea tradusa.
+      return fill(CATALOG[bestKey] + s.slice(bestKey.length), params);
     }
-    return s;
+    // Text care nu are intrare in catalog: in romana, textele-sursa lipsesc
+    // intentionat din ro.php (sunt deja in romana), dar placeholderele {nume}
+    // trebuie completate si aici - altfel ajung literal in UI (ex. dialogul de
+    // update afisa "Exista o versiune noua ({v})" in loc de versiune).
+    return fill(s, params);
   }
 
   function applyI18n(root) {
