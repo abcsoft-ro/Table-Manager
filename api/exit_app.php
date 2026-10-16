@@ -25,7 +25,7 @@ function posExitKillKioskBrowser() {
     // Numele folderului proiectului, dedus din locatia acestui fisier
     // (merge si daca folderul este redenumit). Doar caractere sigure.
     $folder = preg_replace('/[^A-Za-z0-9_.-]/', '', basename(dirname(__DIR__)));
-    $script = "\$procs = Get-CimInstance Win32_Process | Where-Object { " .
+    $script = "\$all = Get-CimInstance Win32_Process | Where-Object { " .
         "(\$_.Name -eq 'chrome.exe' -or \$_.Name -eq 'msedge.exe') -and " .
         "(\$_.CommandLine -like '*TableManagerKiosk*'";
     if ($folder !== '') {
@@ -33,23 +33,30 @@ function posExitKillKioskBrowser() {
             "\$_.CommandLine -like '*127.0.0.1/" . $folder . "*' -or " .
             "\$_.CommandLine -like '*localhost/" . $folder . "*'";
     }
+    // Omoram doar ferestrele care existau deja: PowerShell-ul porneste in ~cateva
+    // secunde, iar intre timp utilizatorul poate deschide o fereastra noua - aceea
+    // nu trebuie omorata (de aceea parea ca "s-a deschis si s-a inchis singura").
     $script .= ") }; " .
+        "\$nou = @(\$all | Where-Object { \$_.CreationDate -gt (Get-Date).AddSeconds(-5) }).Count; " .
+        "\$procs = @(\$all | Where-Object { \$_.CreationDate -lt (Get-Date).AddSeconds(-5) }); " .
         "\$procs | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }; " .
-        "'KILLED=' + @(\$procs).Count + ' TOTAL=' + @(Get-CimInstance Win32_Process | " .
+        "'KILLED=' + @(\$procs).Count + ' NOU=' + \$nou + ' TOTAL=' + @(Get-CimInstance Win32_Process | " .
         "Where-Object { \$_.Name -eq 'chrome.exe' -or \$_.Name -eq 'msedge.exe' }).Count";
     $encoded = base64_encode(mb_convert_encoding($script, 'UTF-16LE', 'UTF-8'));
     $cmd = 'powershell.exe -NoProfile -NonInteractive -EncodedCommand ' . $encoded;
     $out = [];
     $code = 0;
     @exec($cmd . ' 2>&1', $out, $code);
-    if ($code !== 0) { return ['killed' => -1, 'total' => -1]; }
+    if ($code !== 0) { return ['killed' => -1, 'total' => -1, 'nou' => -1]; }
     $killed = -1;
     $total = -1;
+    $nou = -1;
     foreach ($out as $line) {
         if (preg_match('/KILLED=(\d+)/', (string)$line, $m)) { $killed = (int)$m[1]; }
+        if (preg_match('/NOU=(\d+)/', (string)$line, $m)) { $nou = (int)$m[1]; }
         if (preg_match('/TOTAL=(\d+)/', (string)$line, $m)) { $total = (int)$m[1]; }
     }
-    return ['killed' => $killed, 'total' => $total];
+    return ['killed' => $killed, 'total' => $total, 'nou' => $nou];
 }
 
 $raw = file_get_contents('php://input');
@@ -75,10 +82,12 @@ if ($parola === '' || !hash_equals($exitParola, $parola)) {
 $kill = posExitKillKioskBrowser();
 $killed = (int)($kill['killed'] ?? -1);
 $browsere = (int)($kill['total'] ?? -1);
+$noi = (int)($kill['nou'] ?? -1);
 appEventLog('exit', appEventClientCtx() + [
     'parola_len'      => strlen($parola),
     'procese_browser' => $killed,
     'browsere_total'  => $browsere,
+    'browsere_prea_noi' => $noi,
     'rezultat'        => $killed > 0 ? 'browsere kiosk omorate'
                        : ($browsere > 0 ? 'niciun proces de kiosk gasit (browsere exista)'
                        : ($browsere === 0 ? 'nu rula niciun browser' : 'fara suport (exec/Windows)')),
@@ -89,4 +98,5 @@ sendJsonResponse([
     "killed"   => ($killed > 0),
     "procese"  => $killed,
     "browsere" => $browsere,
+    "noi"      => $noi,
 ]);

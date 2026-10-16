@@ -375,6 +375,8 @@ return [
     'Eroare coada export: '    => 'Export queue error: ',
     'Eroare coada printare: '  => 'Print queue error: ',
     'Eroare comunicare server: ' => 'Server communication error: ',
+    'Baza de date nu raspunde. Reporniti aplicatia POS.' => 'The database is not responding. Restart the POS application.',
+    'Baza de date nu raspunde inca. Reincerc automat (' => 'The database is not responding yet. Retrying automatically (',
     'Eroare conectare server: ' => 'Server connection error: ',
     'Eroare forme de plata: '  => 'Payment forms error: ',
     'Eroare generare cheie: '  => 'Key generation error: ',

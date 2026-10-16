@@ -114,6 +114,10 @@ document.addEventListener("DOMContentLoaded", () => {
   setInterval(refreshPrintStatus, 5000);
 });
 
+// Numaratoarea reincerarilor de incarcare initiala (tipic: dupa un reboot,
+// SQL Server nu e inca pornit). Se reseteaza la fiecare incarcare reusita.
+let initRetryCount = 0;
+
 async function initApp() {
   try {
     showToast("Conectare la baza de date a aplicației...");
@@ -129,6 +133,7 @@ async function initApp() {
     // 3. Incarcam starea celor 80 de mese
     await loadTables();
     showToast("Conectat la baza de date a aplicației!");
+    initRetryCount = 0;
 
     // Mod FastFood: pornim direct in ecranul de marcare (fara selectie de mese).
     if (isFastFood()) {
@@ -136,8 +141,23 @@ async function initApp() {
     }
   } catch (err) {
     console.error("Eroare la initializare:", err);
-    showToast("Eroare comunicare server: " + err.message);
+    scheduleInitRetry(err);
   }
+}
+
+// Daca incarcarea initiala esueaza (tipic: dupa un reboot Windows, instanta SQL
+// locala nu e inca pornita), NU rămânem cu ecranul gol: reincercam automat si
+// afisam un mesaj clar, iar la final aratam si eroarea tehnica primita.
+function scheduleInitRetry(err) {
+  initRetryCount++;
+  if (initRetryCount > 15) {
+    appAlert(tr("Baza de date nu raspunde. Reporniti aplicatia POS.") +
+      "\n\n" + (err && err.message ? err.message : ""));
+    return;
+  }
+  const sec = Math.min(3 + initRetryCount * 2, 10);
+  showToast(tr("Baza de date nu raspunde inca. Reincerc automat (") + sec + "s)...", sec * 1000);
+  setTimeout(initApp, sec * 1000);
 }
 
 // --------------------------------------------------------------------------
@@ -1635,7 +1655,7 @@ function logUiEvent(event, extra) {
 }
 
 function currentScreenId() {
-  const s = document.querySelector(".screen.active");
+  const s = document.querySelector(".pos-screen.active");
   return s ? (s.id || "") : "";
 }
 
@@ -9240,14 +9260,15 @@ async function actionProforma() {
   }
 }
 
-function showToast(text) {
+function showToast(text, ms) {
   const toast = document.getElementById("pos-toast");
   if (!toast) return;
   toast.innerText = tr(text);
   toast.style.display = "block";
-  setTimeout(() => {
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => {
     toast.style.display = "none";
-  }, 1800);
+  }, ms || 1800);
 }
 
 // Scrie cu litera mare prima litera a unui nume, restul il lasa intact (doar afisare)
