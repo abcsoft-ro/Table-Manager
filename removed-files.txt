@@ -1,0 +1,22 @@
+# Fisiere care nu mai fac parte din aplicatie si trebuie STERSE la update.
+#
+# Un rand = o cale relativa la radacina proiectului. Randurile goale si cele
+# care incep cu # sunt ignorate.
+#
+# De ce exista: api/update.php scrie peste proiect doar fisierele care exista in
+# arhiva noua, deci un fisier redenumit sau scos rămâne pe stație (updaterul nu
+# sterge niciodata nimic de la sine). Lista de aici se aplica dupa fiecare update
+# si dupa fiecare rollback (vezi updateDeleteObsolete() din api/update_common.php).
+#
+# Protectii aplicate la stergere: doar cai relative, fara `..`, doar fisiere
+# normale (nu directoare) si niciodata fisiere protejate/ignorate
+# (api/db.local.php, print-service/config.json, sync-service/config.json,
+# github_api.txt, AGENTS.md, .git/, .venv/, logs/).
+
+# 2026-10-16 (i18n): pagina principala a devenit index.php (randare server-side,
+# pentru traduceri). Apache prefera oricum index.php, deci fisierul vechi era
+# inofensiv, dar nu mai are rost sa rămâna pe stații.
+index.html
+
+# ATENTIE: mobile.html NU se sterge - este pastrat intentionat ca redirect catre
+# mobile.php (si il folosesc linkurile vechi).

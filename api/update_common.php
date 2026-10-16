@@ -469,6 +469,67 @@ function updateApplyFiles($root, $toWrite) {
 }
 
 /**
+ * Fisierele eliminate intre versiuni, listate in `removed-files.txt` (radacina).
+ *
+ * Updaterul scrie doar fisierele care exista in arhiva noua: un fisier care nu
+ * mai exista acolo (tipic o redenumire, ex. `index.html` -> `index.php`) rămâne
+ * pe stație. Lista spune ce trebuie sters. Randurile goale si cele care incep
+ * cu `#` sunt ignorate.
+ *
+ * @param string $root
+ * @param string|null $manifest cale explicita (pentru teste)
+ * @return array
+ */
+function updateRemovedFilesList($root, $manifest = null) {
+    $path = $manifest !== null ? $manifest : ($root . '/removed-files.txt');
+    if (!is_file($path)) { return []; }
+    $lines = @file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if ($lines === false) { return []; }
+    $out = [];
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || $line[0] === '#') { continue; }
+        $out[] = $line;
+    }
+    return $out;
+}
+
+/**
+ * Sterge fisierele listate ca eliminate. Intoarce lista celor sterse efectiv.
+ *
+ * Protectii:
+ *  - doar cai relative (se ignora ce incepe cu `/` sau cu o litera de unitate),
+ *    fara `..`;
+ *  - doar fisiere normale (nu directoare);
+ *  - niciodata fisiere protejate/ignorate (`updateIsIgnored`) sau pastrate
+ *    (`updatePreserveExtra`: `api/db.php` cat timp lipseste `db.local.php`);
+ *  - NU se sterge un fisier care exista in versiunea noua ($shipped): altfel
+ *    inseamna ca manifestul e gresit, nu ca fisierul a fost eliminat.
+ *
+ * @param string $root
+ * @param string|null $manifest cale explicita (pentru teste)
+ * @param array $shipped caile livrate in versiunea noua (cheile din $toWrite)
+ * @return array
+ */
+function updateDeleteObsolete($root, $manifest = null, array $shipped = []) {
+    $deleted = [];
+    foreach (updateRemovedFilesList($root, $manifest) as $linie) {
+        $rel = str_replace('\\', '/', trim($linie));
+        if ($rel === '') { continue; }
+        // doar cai relative: fara `/` initial si fara `C:` / `C:\`
+        if ($rel[0] === '/' || preg_match('#^[A-Za-z]:#', $rel)) { continue; }
+        if (strpos($rel, '..') !== false) { continue; }
+        if (updateIsIgnored($rel)) { continue; }
+        if (updatePreserveExtra($rel, $root)) { continue; }
+        if (in_array($rel, $shipped, true)) { continue; }
+        $abs = rtrim($root, '/\\') . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+        if (!is_file($abs)) { continue; }
+        if (@unlink($abs)) { $deleted[] = $rel; }
+    }
+    return $deleted;
+}
+
+/**
  * Calea registrului de snapshot-uri locale.
  *
  * @return string

@@ -1,0 +1,10 @@
+{
+  "printers": {
+    "1": { "target": "windows", "name": "EPSON TM-T20III" },
+    "2": { "target": "network", "host": "192.0.2.10", "port": 9100 }
+  },
+  "nota_target": { "target": "preview" },
+  "raport_target": { "target": "preview" },
+  "fiscal_target": { "target": "file" },
+  "default_printer_nr": "1"
+}

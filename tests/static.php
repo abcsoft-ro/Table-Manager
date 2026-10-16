@@ -168,8 +168,10 @@ info('case order_action nefolosite din client: ' . implode(', ', array_diff($srv
 
 /* -------------------------------------------------------- A7 drift doc */
 section('A7 - drift documentatie');
+// Doar CODUL conteaza: comentariile care explica redenumirea (in update.php,
+// removed-files.txt etc.) au voie sa mentioneze index.html.
 $code = '';
-foreach (array_merge(glob("$R/*.php"), glob("$R/api/*.php"), glob("$R/js/*.js")) as $f) $code .= (string)@file_get_contents($f);
+foreach (array_merge(glob("$R/*.php"), glob("$R/api/*.php"), glob("$R/js/*.js")) as $f) $code .= stripComments((string)@file_get_contents($f));
 test('niciun cod nu mai refera index.html (redenumit index.php)', substr_count($code, 'index.html') === 0, 'aparitii=' . substr_count($code, 'index.html'));
 info('index.html in AGENTS.md: ' . substr_count((string)@file_get_contents("$R/AGENTS.md"), 'index.html'));
 

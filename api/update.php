@@ -209,6 +209,9 @@ if ($action === 'rollback') {
         sendJsonResponse(["status" => "error", "message" => "Arhiva nu contine fisiere de instalat."], 500);
     }
     list($written, $failed) = updateApplyFiles($UPDATE_ROOT, $toWrite);
+    // Fisierele eliminate intre versiuni (ex. index.html -> index.php):
+    // updaterul nu sterge ce nu mai exista in arhiva, deci le stergem explicit.
+    $sterse = updateDeleteObsolete($UPDATE_ROOT, null, array_keys($toWrite));
     updateRemoveDir($extractDir);
 
     if ($written === 0) {
@@ -237,6 +240,7 @@ if ($action === 'rollback') {
         "label"        => $newLabel,
         "filesWritten" => $written,
         "filesFailed"  => $failed,
+        "filesRemoved" => $sterse,
         "preserved"    => array_keys($preserved),
         "message"      => "Rollback aplicat (" . $newLabel . "). Reporniti serviciile de tiparire si export, apoi reincarcati pagina.",
     ]);
@@ -321,6 +325,9 @@ if ($snapFile !== null) {
 
 // Copiaza atomic, fisier cu fisier.
 list($written, $failed) = updateApplyFiles($UPDATE_ROOT, $toWrite);
+// Fisierele eliminate intre versiuni (ex. index.html -> index.php): updaterul
+// nu sterge ce nu mai exista in arhiva, deci le stergem explicit.
+$sterse = updateDeleteObsolete($UPDATE_ROOT, null, array_keys($toWrite));
 updateRemoveDir($extractDir);
 
 if ($written === 0) {
@@ -353,6 +360,7 @@ sendJsonResponse([
     "label"         => $newLabel,
     "filesWritten"  => $written,
     "filesFailed"   => $failed,
+    "filesRemoved"  => $sterse,
     "preserved"     => array_keys($preserved),
     "backup"        => $backupRel,
     "message"       => "Actualizare aplicata (" . appVersionShort($latest) . "). Reporniti serviciile de tiparire si export, apoi reincarcati pagina."

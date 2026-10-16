@@ -2785,31 +2785,6 @@ switch ($action) {
         ]);
         break;
 
-    case 'mark_sent':
-        // Marcheaza comanda ca trimisa la bucatarie/bar: Preluat = 1 pe toate
-        // liniile notei (produse, moduri si linii de storno).
-        $sqlBon = "SELECT TOP 1 DocID FROM tblBonCurent WHERE NrMasa = ? AND Stare = 'D' ORDER BY DocID DESC";
-        $stmtBon = sqlsrv_query($conn, $sqlBon, [$nrMasa]);
-        $bon = sqlsrv_fetch_array($stmtBon, SQLSRV_FETCH_ASSOC);
-        if (!$bon) {
-            sendJsonResponse(["status" => "error", "message" => "Nu exista o nota deschisa pe aceasta masa"], 404);
-        }
-        $docId = (int)$bon['DocID'];
-
-        $sqlMark = "UPDATE tblNoteD SET Preluat = 1 WHERE DocID = ?";
-        $stmtMark = sqlsrv_query($conn, $sqlMark, [$docId]);
-        if (!$stmtMark) {
-            sendJsonResponse(["status" => "error", "message" => "Eroare marcare: " . sqlsrv_errors()[0]['message']], 500);
-        }
-
-        sendJsonResponse([
-            "status" => "success",
-            "message" => "Comanda a fost trimisa la bucatarie",
-            "docId" => $docId,
-            "marcate" => sqlsrv_rows_affected($stmtMark)
-        ]);
-        break;
-
     default:
         sendJsonResponse(["status" => "error", "message" => "Actiune necunoscuta"], 400);
 }
