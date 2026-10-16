@@ -24,9 +24,10 @@ php tests/fiscal_wait.php # Faza F - asteptarea raspunsului casei de marcat (SCR
 
 ## Reguli de siguranta
 
+**Harness-ul se ruleaza pe masina de dezvoltare.** Fazele D si F scriu in baza
+`Rual` (cu curatare completa la final); pe statii nu se instaleaza deloc.
+
 1. **Faza D scrie in baza `Rual`** (mesele 80 si 79) si curata tot la final.
-   Faceti backup inainte: `tools/backup-db.ps1` este **stricat** (vezi
-   `REPORT.md` B-01) — folositi `sqlcmd` / `BACKUP DATABASE`.
 2. Fazele A/B/C/E nu distrug date. C salveaza si restaureaza setarile atinse;
    E linisteste worker-ele prin `poll_interval_sec` mare (hot-reload) si
    restaureaza configul (nu opreste serviciile).
@@ -34,12 +35,15 @@ php tests/fiscal_wait.php # Faza F - asteptarea raspunsului casei de marcat (SCR
    (`127.0.0.1:9`).
 4. Nu se executa un raport Z real (ar modifica numerotarea contabila);
    se testeaza doar guard-ul.
-5. **Faza F scrie in baza `Rual`** (doar masa 80) si porneste singura mock-ul
-   FiscalWire in foldere izolate (`logs/mock_fiscal_test/`, sterse la final),
-   deci nu atinge mock-ul real (`logs/mock_fiscal_wire/`) si nici contoarele lui.
-   Nu este inclusa automat in `run_all` tocmai pentru ca scrie in baza; se ruleaza
-   individual. Pune tintele de tiparire pe `preview` in timpul testului si le
-   restaureaza la final, ca sa nu atinga nicio imprimanta.
+5. **Faza F scrie in baza `Rual`** (doar masa 80, ca faza D - deci se ruleaza
+   dupa ea, niciodata in paralel) si porneste singura mock-ul FiscalWire in
+   foldere izolate (`logs/mock_fiscal_test/`, sterse la final), deci nu atinge
+   mock-ul real (`logs/mock_fiscal_wire/`) si nici contoarele lui. Pune tintele
+   de tiparire pe `preview` in timpul testului si le restaureaza la final, ca sa
+   nu atinga nicio imprimanta.
+
+`run_all.sh` / `run_all.bat` ruleaza toate fazele si ies cu cod non-zero daca
+oricare a esuat (cauta `[FAIL]` in iesire).
 
 ## Rezultat
 
@@ -49,7 +53,6 @@ php tests/fiscal_wait.php # Faza F - asteptarea raspunsului casei de marcat (SCR
 
 Fisierele de test nu fac parte din aplicatie si nu ajung pe statiile de productie:
 `sync.sh` le exclude din arhiva de instalare, iar `api/update_common.php`
-(`updateIgnorePrefixes`) le exclude si la autoactualizare.
-
-**Exceptie:** Faza F (`fiscal_wait.php`) scrie in baza `Rual` (doar masa 80) —
-vezi regula 5 mai sus.
+(`updateIgnorePrefixes`) le exclude si la autoactualizare. Nu din grija pentru
+datele de pe statii (acolo nu se ruleaza teste), ci ca sa nu impachetam unelte de
+dezvoltare in instalarea livrata.
