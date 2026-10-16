@@ -35,17 +35,21 @@ function posExitKillKioskBrowser() {
     }
     $script .= ") }; " .
         "\$procs | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }; " .
-        "'KILLED=' + @(\$procs).Count";
+        "'KILLED=' + @(\$procs).Count + ' TOTAL=' + @(Get-CimInstance Win32_Process | " .
+        "Where-Object { \$_.Name -eq 'chrome.exe' -or \$_.Name -eq 'msedge.exe' }).Count";
     $encoded = base64_encode(mb_convert_encoding($script, 'UTF-16LE', 'UTF-8'));
     $cmd = 'powershell.exe -NoProfile -NonInteractive -EncodedCommand ' . $encoded;
     $out = [];
     $code = 0;
     @exec($cmd . ' 2>&1', $out, $code);
-    if ($code !== 0) { return -1; }
+    if ($code !== 0) { return ['killed' => -1, 'total' => -1]; }
+    $killed = -1;
+    $total = -1;
     foreach ($out as $line) {
-        if (preg_match('/KILLED=(\d+)/', (string)$line, $m)) { return (int)$m[1]; }
+        if (preg_match('/KILLED=(\d+)/', (string)$line, $m)) { $killed = (int)$m[1]; }
+        if (preg_match('/TOTAL=(\d+)/', (string)$line, $m)) { $total = (int)$m[1]; }
     }
-    return -1;
+    return ['killed' => $killed, 'total' => $total];
 }
 
 $raw = file_get_contents('php://input');
@@ -68,14 +72,21 @@ if ($parola === '' || !hash_equals($exitParola, $parola)) {
     sendJsonResponse(["status" => "error", "message" => "Parola incorecta"], 401);
 }
 
-$killed = posExitKillKioskBrowser();
+$kill = posExitKillKioskBrowser();
+$killed = (int)($kill['killed'] ?? -1);
+$browsere = (int)($kill['total'] ?? -1);
 appEventLog('exit', appEventClientCtx() + [
     'parola_len'      => strlen($parola),
     'procese_browser' => $killed,
+    'browsere_total'  => $browsere,
+    'rezultat'        => $killed > 0 ? 'browsere kiosk omorate'
+                       : ($browsere > 0 ? 'niciun proces de kiosk gasit (browsere exista)'
+                       : ($browsere === 0 ? 'nu rula niciun browser' : 'fara suport (exec/Windows)')),
 ]);
 sendJsonResponse([
-    "status"  => "success",
-    "message" => "Aplicatie inchisa",
-    "killed"  => ($killed > 0),
-    "procese" => $killed,
+    "status"   => "success",
+    "message"  => "Aplicatie inchisa",
+    "killed"   => ($killed > 0),
+    "procese"  => $killed,
+    "browsere" => $browsere,
 ]);

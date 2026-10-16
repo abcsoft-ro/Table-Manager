@@ -13,6 +13,13 @@ $LANG = appLang();
 // Jurnal (logs/app_events.log): fiecare DESCHIDERE a aplicatiei, cu versiunea
 // instalata - ca sa putem corela cu inchiderile si cu prompturile de parola.
 appEventLog('open', appEventClientCtx() + ['versiune' => appVersionReadHuman()]);
+
+// Token de cache pentru active (JS/CSS): se schimba la fiecare versiune. Fara el
+// browserul ruleaza JS-ul/CSS-ul vechi din cache la nesfarsit (pe kiosk nu se face
+// niciodata hard-refresh), deci un fix in js/*.js nu ajunge efectiv pe statie.
+$ASSET_V = (string)(appVersionInfo()['short'] ?? '');
+if ($ASSET_V === '') { $ASSET_V = appVersionReadHuman(); }
+$ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
 ?><!DOCTYPE html>
 <html lang="<?= htmlspecialchars($LANG, ENT_QUOTES) ?>">
 <head>
@@ -20,8 +27,8 @@ appEventLog('open', appEventClientCtx() + ['versiune' => appVersionReadHuman()])
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>TableManager 2.1.0 - Modern Web POS</title>
   <?= i18nJs($LANG) ?>
-  <script src="js/i18n.js?v=20261016r"></script>
-  <link rel="stylesheet" href="css/pos.css?v=20261016r">
+  <script src="js/i18n.js?v=<?= $ASSET_V ?>"></script>
+  <link rel="stylesheet" href="css/pos.css?v=<?= $ASSET_V ?>">
   <script>
     /* Scalare UI libera pe AMBELE axe, plecand de la canvasul minim 1024x768.
        --pos-scale = factorul proportional (limitat de axa cu raportul cel mai mic);
@@ -2135,8 +2142,8 @@ appEventLog('open', appEventClientCtx() + ['versiune' => appVersionReadHuman()])
   </div><!-- /#pos-stage -->
 
   <!-- Script aplicatie -->
-  <script src="js/help.js?v=20261016r"></script>
-  <script src="js/pos.js?v=20261016r"></script>
+  <script src="js/help.js?v=<?= $ASSET_V ?>"></script>
+  <script src="js/pos.js?v=<?= $ASSET_V ?>"></script>
   <script>if (typeof applyI18n === "function") applyI18n();</script>
 </body>
 </html>

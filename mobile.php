@@ -4,7 +4,13 @@
  * Limba vine din tblSet.Limba (api/i18n.php) si este injectata pentru JS.
  */
 require_once __DIR__ . '/api/i18n.php';
+require_once __DIR__ . '/api/version_common.php';
 $LANG = appLang();
+// Token de cache pentru active (JS/CSS): se schimba la fiecare versiune, altfel
+// browserul ruleaza JS-ul vechi din cache (vezi comentariul din index.php).
+$ASSET_V = (string)(appVersionInfo()['short'] ?? '');
+if ($ASSET_V === '') { $ASSET_V = appVersionReadHuman(); }
+$ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
 ?><!DOCTYPE html>
 <html lang="<?= htmlspecialchars($LANG, ENT_QUOTES) ?>">
 <head>
@@ -16,8 +22,8 @@ $LANG = appLang();
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>TableManager Mobil - Marcare</title>
   <?= i18nJs($LANG) ?>
-  <script src="js/i18n.js?v=20261016r"></script>
-  <link rel="stylesheet" href="css/mobile.css?v=20261016r">
+  <script src="js/i18n.js?v=<?= $ASSET_V ?>"></script>
+  <link rel="stylesheet" href="css/mobile.css?v=<?= $ASSET_V ?>">
 </head>
 <body>
 
@@ -234,7 +240,7 @@ $LANG = appLang();
 
 <div class="mv-toast" id="mv-toast"></div>
 
-<script src="js/mobile.js?v=20261016r"></script>
+<script src="js/mobile.js?v=<?= $ASSET_V ?>"></script>
 <script>if (typeof applyI18n === "function") applyI18n();</script>
 </body>
 </html>
