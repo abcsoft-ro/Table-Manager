@@ -693,3 +693,47 @@ function updateGithubCommits($root, $limit = 15) {
     }
     return $out;
 }
+
+/**
+ * Tag-urile de release de pe GitHub, ca harta sha => nume (pentru a eticheta
+ * versiunile din lista de rollback, ex. "v2.1.1"). Best-effort: intoarce [] daca
+ * API-ul nu raspunde sau repo-ul nu are tag-uri. Fiecare: {name, sha, short}.
+ *
+ * GitHub intoarce pentru un tag adnotat sha-ul commit-ului (nu al obiectului
+ * tag), deci se potriveste direct cu sha-ul din updateGithubCommits().
+ *
+ * @param string $root
+ * @param int $limit
+ * @return array
+ */
+function updateGithubTags($root, $limit = 100) {
+    $perPage = max(1, min(100, (int)$limit));
+    $url = 'https://api.github.com/repos/' . UPDATE_REPO . '/tags?per_page=' . $perPage;
+    $token = updateGithubToken($root);
+    $headers = ['Accept: application/vnd.github+json', 'User-Agent: TableManager-Updater'];
+    if ($token !== '') {
+        $headers[] = 'Authorization: Bearer ' . $token;
+    }
+    list($body, $code, $err) = updateHttpGet($url, $headers, 20);
+    if ($body === null || $code < 200 || $code >= 300) {
+        return [];
+    }
+    $json = json_decode($body, true);
+    if (!is_array($json)) {
+        return [];
+    }
+    $out = [];
+    foreach ($json as $t) {
+        $name = trim((string)($t['name'] ?? ''));
+        $sha  = (string)($t['commit']['sha'] ?? '');
+        if ($name === '' || $sha === '') {
+            continue;
+        }
+        $out[] = [
+            'name'  => $name,
+            'sha'   => strtolower($sha),
+            'short' => appVersionShort($sha),
+        ];
+    }
+    return $out;
+}

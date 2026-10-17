@@ -73,6 +73,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $github = [];
         try {
             $github = updateGithubCommits($UPDATE_ROOT, 15);
+            // Eticheteaza versiunile care au tag de release (ex. "v2.1.1"), ca sa
+            // fie usor de recunoscut in lista de rollback. Best-effort: daca
+            // endpoint-ul de tag-uri nu raspunde, lista de commit-uri ramane cea
+            // de dinainte (fara etichete).
+            if ($github) {
+                $tagBySha = [];
+                foreach (updateGithubTags($UPDATE_ROOT) as $t) {
+                    $tagBySha[$t['sha']] = $t['name'];
+                }
+                foreach ($github as $i => $c) {
+                    $s = strtolower((string)$c['sha']);
+                    if (isset($tagBySha[$s])) { $github[$i]['tag'] = $tagBySha[$s]; }
+                }
+            }
         } catch (Throwable $ex) {
             $github = [];
         }

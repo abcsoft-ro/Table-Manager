@@ -2341,10 +2341,16 @@ function renderRollbackList(data) {
   if ((data.github || []).length) {
     mkSection("Versiuni din istoric (GitHub)");
     data.github.forEach(c => {
-      const label = [c.short, c.date, c.message].filter(Boolean).join(" · ");
+      // Tag-ul de release (ex. "v2.1.1"), cand exista, e primul in eticheta.
+      const tag = String(c.tag || "").trim();
+      const label = [tag, c.short, c.date, c.message].filter(Boolean).join(" · ");
       const isCur = !!c.short && c.short === cur;
       mkItem(isCur, label, () => {
-        rollbackSelected = { type: "github", sha: c.sha, label: "v " + (c.short || "") };
+        rollbackSelected = {
+          type: "github",
+          sha: c.sha,
+          label: tag ? (tag + " · " + (c.short || "")) : ("v " + (c.short || ""))
+        };
       });
     });
   }
