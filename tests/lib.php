@@ -1,6 +1,6 @@
 <?php
 /**
- * TableManager 2.0.0 - harness de test (ruleaza cu php.exe CLI).
+ * TableManager 2.1.2 - harness de test (ruleaza cu php.exe CLI).
  *
  * NU se serveste prin web (tests/.htaccess). Folosit de scripturile run_*.php.
  */

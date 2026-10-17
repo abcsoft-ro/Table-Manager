@@ -1,5 +1,5 @@
 /**
- * TableManager 2.0.0 - Client Logic conectat direct la MSSQL
+ * TableManager 2.1.2 - Client Logic conectat direct la MSSQL
  * Afisare produse direct pe panoul albastru (Poz, BackColor, FontColor, Bold)
  * Suport pentru BackColor = 0 (fond negru) cu FontColor alb
  */

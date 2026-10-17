@@ -1,5 +1,5 @@
 -- ============================================================================
--- TableManager 2.0.0 - date de referinta (seed) pentru o instalare noua
+-- TableManager 2.1.2 - date de referinta (seed) pentru o instalare noua
 -- Generat automat dintr-un script local de dezvoltare, apoi sanitizat.
 -- NU contine date reale: parolele, credențialele si datele firmei sunt demo.
 -- Se ruleaza dupa db/schema.sql, pe o baza de date goala.
@@ -116,14 +116,14 @@ GO
 DELETE FROM dbo.[tblAntet];
 GO
 INSERT INTO dbo.[tblAntet] ([Nume], [Adresa], [Seria], [NumeFont], [Size], [CodFiscF], [RegCom], [Judet], [Cont], [Banca], [Denumire2], [Bold], [VersiuneDB], [PlatitorTVA], [CaleDateLogo], [QRCodeText], [SizeModeLogo], [Oras], [CodPostal], [PersContact], [email], [website], [telefon]) VALUES
-(N'RESTAURANT DEMO', N'Strada Exemplu nr. 1', N'0001', N'A', 10, N'RO00000000', N'J00/0000/2024', N'BUCURESTI', N'RO00BANK000000000000', N'BANCA DEMO', N'DEMO SRL', 0, N'TableManager 2.0.0', 1, N'', N'', 2, N'Bucuresti', N'010101', N'', N'contact@example.com', N'https://example.com', N''),
-(N'Va multumim!', NULL, N'F1', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.0.0', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
-(N'Va mai asteptam!', NULL, N'F2', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.0.0', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
-(N'RESTAURANT DEMO', NULL, N'H1', N'A', 17, NULL, NULL, NULL, NULL, NULL, NULL, 1, N'TableManager 2.0.0', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
-(N'Strada Exemplu nr. 1', NULL, N'H2', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.0.0', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
-(N'Telefon: 0000.000.000', NULL, N'H3', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.0.0', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
-(N'', NULL, N'P1', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.0.0', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
-(N'', NULL, N'P2', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.0.0', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL);
+(N'RESTAURANT DEMO', N'Strada Exemplu nr. 1', N'0001', N'A', 10, N'RO00000000', N'J00/0000/2024', N'BUCURESTI', N'RO00BANK000000000000', N'BANCA DEMO', N'DEMO SRL', 0, N'TableManager 2.1.2', 1, N'', N'', 2, N'Bucuresti', N'010101', N'', N'contact@example.com', N'https://example.com', N''),
+(N'Va multumim!', NULL, N'F1', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.1.2', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
+(N'Va mai asteptam!', NULL, N'F2', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.1.2', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
+(N'RESTAURANT DEMO', NULL, N'H1', N'A', 17, NULL, NULL, NULL, NULL, NULL, NULL, 1, N'TableManager 2.1.2', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
+(N'Strada Exemplu nr. 1', NULL, N'H2', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.1.2', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
+(N'Telefon: 0000.000.000', NULL, N'H3', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.1.2', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
+(N'', NULL, N'P1', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.1.2', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL),
+(N'', NULL, N'P2', N'A', 0, NULL, NULL, NULL, NULL, NULL, NULL, 0, N'TableManager 2.1.2', 1, N'', NULL, 3, NULL, NULL, NULL, NULL, NULL, NULL);
 GO
 
 ------------------------------------------------------------ tblMese (80 randuri)
