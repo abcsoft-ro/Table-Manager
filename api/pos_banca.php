@@ -224,6 +224,34 @@ function posBancaParseResult($content) {
 }
 
 /**
+ * Normalizeaza textul scris de driverul POS bancar intr-un mesaj clar pentru
+ * casier, care se traduce apoi prin catalogul i18n (api/lang/*.php).
+ *
+ * Driverul (ex. C:\Sunmi\ecr_client.py) scrie texte in romana si include
+ * detaliul de transport ("Nu s-a putut conecta la POS prin WIFI."), care induce
+ * in eroare: comunicarea cu terminalul se face local (TCP catre serviciul
+ * SmartPay sau serial), nu prin WiFi. Textul brut rămâne in tblPosBancaLog
+ * (coloana Mesaj), pentru diagnoza.
+ *
+ * @param string $raw
+ * @return string
+ */
+function posBancaUserMessage($raw) {
+    $raw = trim((string)$raw);
+    if ($raw === '') { return ''; }
+    if (preg_match('/^Nu s-a putut conecta la (POS|terminalul bancar)/iu', $raw)) {
+        return 'Nu s-a putut conecta la terminalul bancar (POS).';
+    }
+    if (preg_match('/^Eroare de comunicatie cu (POS|terminalul bancar)/iu', $raw)) {
+        return 'Eroare de comunicatie cu terminalul bancar (POS).';
+    }
+    if (preg_match('/^Eroare la lansarea (PoS|driverului terminalului bancar)/iu', $raw)) {
+        return 'Eroare la lansarea driverului terminalului bancar (POS).';
+    }
+    return $raw;
+}
+
+/**
  * Persista o incercare de tranzactie. Returneaza Id-ul randului inserat.
  *
  * @param resource $conn
@@ -349,7 +377,7 @@ $batPath = posBancaResolveBatPath($driverRaw);
 
 // Eroare de configurare: ca in VBA, se emite bonul fiscal, dar se raporteaza eroarea.
 if ($batPath === '' || !is_file($batPath)) {
-    $msg = "Nu gasesc executabilul PoS: " . $driverRaw;
+    $msg = "Nu gasesc executabilul terminalului bancar (POS): " . $driverRaw;
     $logId = posBancaLogAttempt($conn, $docId, $nrDoc, $amount, '', 'ERROR', $msg, true, 'config');
     sendJsonResponse([
         "status" => "success",
@@ -396,7 +424,7 @@ $descriptors = [
 ];
 $proc = @proc_open($cmd, $descriptors, $pipes, $childCwd, $childEnv);
 if (!is_resource($proc)) {
-    $msg = "Nu pot lansa driverul PoS: " . $batPath;
+    $msg = "Nu pot lansa driverul terminalului bancar (POS): " . $batPath;
     $logId = posBancaLogAttempt($conn, $docId, $nrDoc, $amount, $txId, 'ERROR', $msg, true, 'config');
     sendJsonResponse([
         "status" => "success",
@@ -423,7 +451,7 @@ while (!posBancaResultReady($resultPath)) {
 if (is_resource($proc)) { @proc_close($proc); }
 
 if (!posBancaResultReady($resultPath)) {
-    $msg = "PoS nu a returnat rezultat in timp util.";
+    $msg = "Terminalul bancar (POS) nu a returnat rezultat in timp util.";
     $tail = posBancaDriverTail($driverLog, 400);
     if ($tail !== '') { $msg .= " Detalii driver: " . $tail; }
     $logId = posBancaLogAttempt($conn, $docId, $nrDoc, $amount, $txId, 'TIMEOUT', $msg, false, null);
@@ -444,9 +472,13 @@ $fields = posBancaParseResult($content);
 
 $posStatus = $fields['STATUS'] ?? '';
 $posMessage = $fields['MESAJ'] ?? '';
+// Mesajul afisat in POS trece prin posBancaUserMessage(): textele cunoscute ale
+// driverului sunt inlocuite cu un mesaj clar, care se traduce normal in engleza.
+$userMessage = posBancaUserMessage($posMessage);
 // Driverul .bat scrie "Python sau script lipsa" si cand de fapt scriptul a
 // crapat fara sa scrie rezultatul (ex. o exceptie Python). Completam mesajul
-// cu iesirea reala a driverului, ca diagnosticul sa fie util.
+// brut (care merge in audit) cu iesirea reala a driverului, ca diagnosticul
+// sa fie util.
 if (stripos($posMessage, 'Python sau script lipsa') !== false) {
     $tail = posBancaDriverTail($driverLog, 400);
     if ($tail !== '') { $posMessage .= ' Detalii driver: ' . $tail; }
@@ -472,7 +504,7 @@ sendJsonResponse([
     "enabled" => true,
     "emiteBon" => $emiteBon,
     "posStatus" => $posStatus,
-    "posMessage" => $posMessage,
+    "posMessage" => $userMessage,
     "trxId" => $txId,
     "logId" => $logId
 ]);

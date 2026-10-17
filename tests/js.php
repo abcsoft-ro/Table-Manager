@@ -77,11 +77,24 @@ if (lang === "en") {
   const p = trText("Exista o versiune noua (X) rest {y}.", { y: "ABC" });
   out(p.indexOf("A new version is available (") === 0 && p.indexOf("{y}") === -1 && p.indexOf("ABC") !== -1,
       "[" + lang + "] prefixul e tradus si placeholderul din rest se completeaza", p);
+
+  // Mesajele POS bancar: textul afisat in dialog este normalizat de
+  // api/pos_banca.php (posBancaUserMessage) si trebuie tradus in EN.
+  const banca = trText("Nu s-a putut conecta la terminalul bancar (POS).");
+  out(banca === "Could not connect to the bank terminal (POS).",
+      "[" + lang + "] mesaj POS bancar (conexiune) tradus", banca);
+  const bancaPrefix = trText("Eroare comunicare POS bancar: fetch failed");
+  out(bancaPrefix === "Bank POS communication error: fetch failed",
+      "[" + lang + "] eroare comunicare POS bancar (prefix) tradusa", bancaPrefix);
 } else {
   // ro.php nu contine propozitiile-sursa (sunt deja in romana): textul trebuie
   // sa rămâna sursa, dar cu placeholderul completat.
   out(res === "Exista o versiune noua (9.9.9). Configurarile locale nu sunt afectate. Actualizati acum?",
       "[" + lang + "] sursa rămâne, doar placeholderul se completeaza", res.slice(0, 80));
+
+  // In ro, mesajul POS bancar este deja sursa (nu se traduce).
+  out(trText("Nu s-a putut conecta la terminalul bancar (POS).") === "Nu s-a putut conecta la terminalul bancar (POS).",
+      "[" + lang + "] mesaj POS bancar rămâne sursa", "");
 }
 
 // --- text complet inexistent, cu placeholder ---------------------------

@@ -66,6 +66,23 @@ foreach ($srcs as $f) {
 test('fiecare literal t()/tr()/trText() de cod are traducere in en', count($miss) === 0, implode(' | ', array_map(fn($k) => "\"$k\"(" . implode(',', array_unique($miss[$k])) . ')', array_slice(array_keys($miss), 0, 12))));
 if ($miss) { info('total literali netradusi: ' . count($miss) . ' (multe in js/mobile.js: ' . substr_count(implode(',', array_map(fn($v) => implode(',', $v), $miss)), 'mobile.js') . ')'); }
 
+// A4c: mesajele POS bancar (dialogul Cancel/Retry/Ignore) vin din textul
+// dinamic al driverului / din api/pos_banca.php, deci nu apar ca literali tr()
+// in cod. Verificam explicit ca textele canonice au traducere in en, altfel
+// modul EN afiseaza romana (ex. vechiul "Nu s-a putut conecta la POS prin WIFI.").
+$bancaMsgs = [
+    'Nu s-a putut conecta la terminalul bancar (POS).',
+    'Eroare de comunicatie cu terminalul bancar (POS).',
+    'Eroare la lansarea driverului terminalului bancar (POS).',
+    'Nu gasesc executabilul terminalului bancar (POS): ',
+    'Nu pot lansa driverul terminalului bancar (POS): ',
+    'Terminalul bancar (POS) nu a returnat rezultat in timp util.',
+    'Python sau script lipsa',
+    'Eroare comunicare POS bancar: ',
+];
+$missBanca = array_values(array_filter($bancaMsgs, fn($k) => !array_key_exists($k, $enF)));
+test('mesajele POS bancar au traducere in en', count($missBanca) === 0, implode(' | ', $missBanca));
+
 $htmlAll = (string)@file_get_contents("$R/index.php") . (string)@file_get_contents("$R/mobile.php");
 preg_match_all('/data-i18n(?:-html|-title|-placeholder)?=["\']([^"\']+)["\']/', $htmlAll, $m2);
 $dk = array_unique($m2[1]);
