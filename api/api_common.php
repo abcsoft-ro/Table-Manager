@@ -76,7 +76,10 @@ function apiClientIp() {
 
 /**
  * Verifica daca un IP se afla intr-o lista de IP-uri / retele CIDR separate
- * prin virgula. Lista goala = fara restrictie.
+ * prin virgula. Lista goala = fara restrictie (semantica API-ului v1).
+ *
+ * Potrivirea propriu-zisa este comuna cu whitelist-ul general de IP-uri
+ * (api/ip_guard.php), ca ambele sa accepte exact aceleasi formate.
  *
  * @param string $ip
  * @param string $list
@@ -85,34 +88,11 @@ function apiClientIp() {
 function apiIpAllowed($ip, $list) {
     $list = trim((string)$list);
     if ($list === '') { return true; }
-    $ipBin = @inet_pton($ip);
-    if ($ipBin === false) { return false; }
+    if (!function_exists('ipGuardMatchEntry')) {
+        require_once __DIR__ . '/ip_guard.php';
+    }
     foreach (explode(',', $list) as $entry) {
-        $entry = trim($entry);
-        if ($entry === '') { continue; }
-        if (strpos($entry, '/') === false) {
-            $entryBin = @inet_pton($entry);
-            if ($entryBin !== false && $entryBin === $ipBin) { return true; }
-            continue;
-        }
-        [$net, $bits] = explode('/', $entry, 2);
-        $netBin = @inet_pton(trim($net));
-        $bits = (int)trim($bits);
-        if ($netBin === false) { continue; }
-        $len = strlen($netBin) * 8;
-        if ($bits < 0 || $bits > $len) { continue; }
-        $fullBytes = intdiv($bits, 8);
-        $remBits = $bits % 8;
-        if ($fullBytes > 0 && substr($ipBin, 0, $fullBytes) !== substr($netBin, 0, $fullBytes)) {
-            continue;
-        }
-        if ($remBits > 0) {
-            $mask = 0xFF << (8 - $remBits) & 0xFF;
-            $ipByte = ord($ipBin[$fullBytes]);
-            $netByte = ord($netBin[$fullBytes]);
-            if (($ipByte & $mask) !== ($netByte & $mask)) { continue; }
-        }
-        return true;
+        if (ipGuardMatchEntry($ip, trim($entry))) { return true; }
     }
     return false;
 }

@@ -162,6 +162,46 @@ test('v1 re-dezactivat -> 503 (stare restaurata)', $after['code'] === 503, 'code
 test('ApiEnabled restaurat', (string)getSetting('ApiEnabled') === (string)$origEnabled);
 test('ApiKeyHash restaurat', (string)getSetting('ApiKeyHash') === (string)$origHash);
 
+/* ------------------------------------------------ C10 whitelist IP */
+section('C10 - whitelist IP (tblSet.IpPermise)');
+require_once ROOT_DIR . '/api/ip_guard.php';
+// Functiile pure: localhost mereu permis, potrivire CIDR, lista goala = doar localhost.
+test('ip_guard: localhost permis chiar si cu lista goala', ipGuardIpAllowed('127.0.0.1', '') && ipGuardIpAllowed('::1', ''));
+test('ip_guard: lista goala blocheaza un IP din retea', !ipGuardIpAllowed('192.168.1.20', ''));
+test('ip_guard: IP exact permis', ipGuardIpAllowed('192.168.1.20', '192.168.1.20'));
+test('ip_guard: CIDR /24 permite adresa din retea', ipGuardIpAllowed('192.168.1.99', '192.168.1.0/24'));
+test('ip_guard: CIDR /24 nu permite alta retea', !ipGuardIpAllowed('192.168.2.5', '192.168.1.0/24'));
+test('ip_guard: IPv4-mapped localhost tratat ca localhost', ipGuardIsLocal('::ffff:127.0.0.1'));
+$inv = [];
+test('ip_guard: localhost fortat + CIDR normalizat',
+    ipGuardNormalizeList('10.0.0.5, 192.168.1.77/24, localhost', $inv) === '127.0.0.1,::1,10.0.0.5,192.168.1.0/24',
+    ipGuardNormalizeList('10.0.0.5, 192.168.1.77/24, localhost'));
+test('ip_guard: nicio intrare invalida in lista valida', count($inv) === 0, json_encode($inv));
+$inv2 = [];
+ipGuardNormalizeList('10.0.0.5, nu-e-ip', $inv2);
+test('ip_guard: IP invalid este detectat', count($inv2) === 1 && $inv2[0] === 'nu-e-ip', json_encode($inv2));
+test('ip_guard: localhost nu poate fi scos din lista', ipGuardNormalizeList('10.0.0.5') === '127.0.0.1,::1,10.0.0.5');
+
+// Endpoint-ul Setari: IP invalid -> 400; localhost readaugat la salvare.
+jget('/api/setari.php'); // ensureSetariMeta creeaza randul IpPermise
+$origIp = getSetting('IpPermise');
+try {
+    $badIp = jpost('/api/setari.php', ['action' => 'update', 'values' => ['IpPermise' => '127.0.0.1, nu-e-ip']]);
+    test('setari: IP invalid -> 400', $badIp['code'] === 400, 'code=' . $badIp['code'] . ' body=' . substr($badIp['body'], 0, 100));
+    $okIp = jpost('/api/setari.php', ['action' => 'update', 'values' => ['IpPermise' => '10.9.9.9']]);
+    test('setari: localhost readaugat la salvare',
+        $okIp['code'] === 200 && (string)getSetting('IpPermise') === '127.0.0.1,::1,10.9.9.9',
+        'code=' . $okIp['code'] . ' val=' . getSetting('IpPermise'));
+} finally {
+    if ($origIp === null) {
+        q("DELETE FROM tblSet WHERE Setting='IpPermise'");
+    } else {
+        setSetting('IpPermise', $origIp);
+    }
+    ipGuardLocalWrite((string)($origIp === null ? '127.0.0.1,::1' : $origIp));
+}
+test('IpPermise restaurat', (string)getSetting('IpPermise') === (string)$origIp, 'val=' . getSetting('IpPermise'));
+
 /* ------------------------------------------------ C7 expunere fisiere */
 section('C7 - fisiere servite prin web care nu ar trebui');
 $exposed = ['github_api.txt', 'print-service/config.json', 'sync-service/config.json', 'AGENTS.md', 'db/tools/export_schema.php'];

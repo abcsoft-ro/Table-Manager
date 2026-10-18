@@ -17,6 +17,9 @@ const MOBILE_STATE = {
   nrZecCant: 1,
   // Discountul permis/interzis (tblSet.RED: 1 = DA, 0 = NU).
   red: 1,
+  // Marcarea de pe tableta/telefon (tblSet.MarcareMobil): 0 = NU (implicit,
+  // pagina se blocheaza), 1 = DA.
+  marcareMobil: 0,
   // Tipul discountului (tblSet.TipDiscount): 0 = complet, 1 = doar procent la
   // subtotal (popup cu tastatura numerica), 2 = procent fix la subtotal.
   tipDiscount: 0,
@@ -63,6 +66,10 @@ const MV_WAITER_KEY = "rual_mobile_waiter";
 document.addEventListener("DOMContentLoaded", async () => {
   try {
     await loadMenu();
+    // Marcarea de pe tableta/telefon poate fi oprita din Setari (MarcareMobil =
+    // NU): nu incarcam mesele/nota, afisam doar mesajul de blocare.
+    applyMarcareMobilUI();
+    if (!MOBILE_STATE.marcareMobil) return;
     restoreWaiterSession();
     await loadTables();
     showView("view-tables");
@@ -100,6 +107,25 @@ async function mvPost(action, payload) {
     data = { status: "error", message: "Raspuns invalid de la server" };
   }
   return data;
+}
+
+/**
+ * Setarea MarcareMobil (tblSet) citita de loadMenu(): cand este NU (0),
+ * marcarea de pe tableta/telefon este dezactivata din Setari. Ascundem
+ * aplicatia si afisam ecranul de blocare (fara mese, fara nota); POS-ul
+ * desktop nu este afectat.
+ */
+function applyMarcareMobilUI() {
+  const blocked = !MOBILE_STATE.marcareMobil;
+  const app = document.getElementById("mv-app");
+  const screen = document.getElementById("mv-blocked");
+  if (app) app.style.display = blocked ? "none" : "";
+  if (screen) screen.style.display = blocked ? "flex" : "none";
+}
+
+// Reincarca pagina (util dupa ce administratorul reactiveaza marcarea mobila).
+function mvReloadMarcareMobil() {
+  location.reload();
 }
 
 function escapeHtml(s) {
@@ -195,6 +221,8 @@ async function loadMenu() {
   const nz = parseInt(data.nrZecCant, 10);
   MOBILE_STATE.nrZecCant = (nz >= 0 && nz <= 2) ? nz : 1;
   MOBILE_STATE.red = (data.red === 0 || data.red === "0") ? 0 : 1;
+  // Marcarea mobila: implicit NU (0) cand setarea lipseste.
+  MOBILE_STATE.marcareMobil = (data.marcareMobil == 1) ? 1 : 0;
   const td = parseInt(data.tipDiscount, 10);
   MOBILE_STATE.tipDiscount = (td >= 0 && td <= 2) ? td : 0;
   const pf = Number(data.procentDiscountFix);

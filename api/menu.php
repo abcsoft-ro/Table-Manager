@@ -328,6 +328,16 @@ if ($stmtPC) {
     if ($pc && trim((string)$pc['Value']) === '0') { $plataCombinata = 0; }
 }
 
+// Marcarea de pe tableta/telefon (tblSet.MarcareMobil): implicit NU (0). Cand
+// este NU, pagina mobil.php se blocheaza (nu incarca mesele si nu permite
+// marcarea); POS-ul desktop nu este afectat.
+$marcareMobil = 0;
+$stmtMM = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'MarcareMobil'");
+if ($stmtMM) {
+    $mm = sqlsrv_fetch_array($stmtMM, SQLSRV_FETCH_ASSOC);
+    if ($mm && trim((string)$mm['Value']) === '1') { $marcareMobil = 1; }
+}
+
 // 4g. Parola de discount (tblParola.ParolaDiscount): 1 daca este setata (deci
 //     discountul cere parola), 0 daca nu. Valoarea parolei NU se trimite.
 $parolaDiscount = 0;
@@ -355,6 +365,11 @@ parolaLocalSyncFromDb($conn);
 //      citeste la fiecare pornire, ca urmatoarea conectare sa foloseasca exact
 //      valoarea configurata (vezi dbOdbcTimeout() din api/db.php).
 dbOdbcTimeout($conn);
+
+// 4h4. Copia locala a whitelist-ului de IP-uri (tblSet.IpPermise): guard-ul din
+//      api/db.php o foloseste la fiecare cerere, ca restrictia sa fie aplicata
+//      rapid, fara o conexiune suplimentara la baza de date.
+ipGuardSyncFromDb($conn);
 
 // 4i. Motivele de discount si de stornare (tblSet.MotivDiscount /
 //     tblSet.MotivStornare), liste separate prin punct si virgula.
@@ -405,6 +420,7 @@ sendJsonResponse([
     "cantar" => $cantar,
     "asteaptaRaspunsCasa" => $asteaptaRaspunsCasa,
     "plataCombinata" => $plataCombinata,
+    "marcareMobil" => $marcareMobil,
     "parolaDiscount" => $parolaDiscount,
     "parolaStornare" => $parolaStornare,
     "motivDiscount" => $motivDiscount,

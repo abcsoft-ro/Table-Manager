@@ -208,6 +208,37 @@ function ensureSetariMeta($conn) {
     ensureSetariValue($conn, 'PlataCombinata', '1',
         "Plata combinata: 1 = DA (se pot combina mai multe forme de plata, cu introducerea sumelor din numpad); 0 = NU (in ecranul de inchidere apar doar formele de plata, fara numpad, iar la click pe o forma nota se inchide integral cu acea forma).", 'General');
 
+    // Marcarea de pe tableta/telefon (modulul mobil, mobile.php): 1 = DA,
+    // 0 = NU (implicit). Cand e NU, pagina mobile.php afiseaza un mesaj de
+    // blocare si nu incarca mesele/nota, deci nu se poate marca de pe mobil.
+    ensureSetariValue($conn, 'MarcareMobil', '0',
+        "Marcarea de pe tableta/telefon (modulul mobil): 1 = DA, 0 = NU (implicit). Cand e NU, pagina mobil afiseaza un mesaj si nu permite marcarea.", 'General');
+
+    // Whitelist de adrese IP (grup 'Securitate'): doar adresele din lista pot
+    // accesa aplicatia. Localhost (127.0.0.1 / ::1) este intotdeauna permis si
+    // nu poate fi scos din lista; lista goala sau doar localhost = doar
+    // localhost are acces. Verificarea se face in api/ip_guard.php (inclus din
+    // api/db.php), pe baza copiei locale logs/ip_whitelist.json.
+    ensureSetariValue($conn, 'IpPermise', '127.0.0.1,::1',
+        "Lista de adrese IP / retele CIDR care pot accesa aplicatia (whitelist), separate prin virgula (ex. 192.168.1.20,192.168.1.0/24). Lista goala sau doar localhost = doar 127.0.0.1 / ::1 au acces. Localhost este intotdeauna permis si nu poate fi sters.", 'Securitate');
+    // Normalizare fara pasi manuali: localhost mereu prezent, duplicate eliminate
+    // si CIDR uniformizat (si pe instalatiile existente).
+    $chkIp = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'IpPermise'");
+    $rowIp = $chkIp ? sqlsrv_fetch_array($chkIp, SQLSRV_FETCH_ASSOC) : null;
+    if ($rowIp) {
+        $normIp = ipGuardNormalizeList((string)$rowIp['Value']);
+        if ($normIp !== (string)$rowIp['Value']) {
+            @sqlsrv_query($conn, "UPDATE tblSet SET Value = ? WHERE Setting = 'IpPermise'", [$normIp]);
+        }
+        ipGuardLocalWrite($normIp);
+    } else {
+        ipGuardLocalWrite('127.0.0.1,::1');
+    }
+    @sqlsrv_query(
+        $conn,
+        "UPDATE tblSet SET Grup = 'Securitate' WHERE Setting = 'IpPermise' AND (Grup IS NULL OR Grup <> 'Securitate')"
+    );
+
     // Toate setarile de discount sunt grupate in grupul „Discount" (deploy fara
     // pasi manuali: mutam si randurile existente care inca sunt in alt grup).
     @sqlsrv_query(
@@ -364,12 +395,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     // toate mesele sunt inchise (in FastFood nu exista ecran de mese).
     $tipVanz = setariTipVanz($conn);
     $openBills = setariOpenBills($conn);
+    // IP-ul clientului care a deschis Setarile (afisat in editorul whitelist-ului,
+    // ca administratorul sa stie ce adresa trebuie sa adauge).
+    $setariClientIp = ipGuardClientIp();
     sendJsonResponse([
         "status" => "success",
         "rows" => $rows,
         "tipVanz" => $tipVanz,
         "openBills" => $openBills,
         "canEditNrZecCant" => ($tipVanz === "fastfood" || $openBills === 0),
+        "clientIp" => $setariClientIp,
+        "clientIpLocal" => ipGuardIsLocal($setariClientIp),
         "apiKeySet" => $apiKeySet,
         "apiLastUsed" => $apiLastUsed
     ]);
@@ -400,6 +436,29 @@ if ($action === 'update') {
         ], 400);
     }
 
+    // Whitelist de IP-uri (tblSet.IpPermise): validare + normalizare. Localhost
+    // este readaugat mereu, iar o lista care ar bloca clientul curent este
+    // refuzata (ca administratorul sa nu se inchida singur in afara aplicatiei).
+    if (array_key_exists('IpPermise', $values)) {
+        $invalidIp = [];
+        $normIp = ipGuardNormalizeList((string)$values['IpPermise'], $invalidIp);
+        if ($invalidIp) {
+            sendJsonResponse([
+                "status" => "error",
+                "message" => tr("Adresa IP invalida: ") . implode(", ", $invalidIp)
+            ], 400);
+        }
+        $clientIp = ipGuardClientIp();
+        if (!ipGuardIsLocal($clientIp) && !ipGuardIpAllowed($clientIp, $normIp)) {
+            sendJsonResponse([
+                "status" => "error",
+                "message" => tr("Adresa dvs. nu este in lista") . ": " . $clientIp . ". "
+                    . tr("Adaugati-o in lista sau lucrati de pe 127.0.0.1.")
+            ], 400);
+        }
+        $values['IpPermise'] = $normIp;
+    }
+
     sqlsrv_begin_transaction($conn);
     foreach ($values as $setting => $value) {
         $setting = trim((string)$setting);
@@ -420,6 +479,11 @@ if ($action === 'update') {
     }
     if (array_key_exists('ODBC_TimeOut', $values)) {
         dbTimeoutLocalWrite((int)$values['ODBC_TimeOut']);
+    }
+    // Copia locala a whitelist-ului se scrie dupa commit, ca restrictia sa se
+    // aplice imediat la urmatoarea cerere (inclusiv dupa un restart al Apache).
+    if (array_key_exists('IpPermise', $values)) {
+        ipGuardLocalWrite((string)$values['IpPermise']);
     }
 
     sendJsonResponse(["status" => "success", "message" => "Setarile au fost salvate"]);

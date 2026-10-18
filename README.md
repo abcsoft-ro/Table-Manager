@@ -1,6 +1,6 @@
 [English](README.en.md) · **Română**
 
-# TableManager 2.1.2
+# TableManager 2.1.3
 
 ### POS complet pentru restaurante și fast-food — instalare automată, fiabilitate în exploatare, fără dependențe grele.
 
@@ -10,7 +10,7 @@ TableManager gestionează **mesele, bonurile, ospătarii, meniul, discounturile,
 
 Aceeași aplicație rulează în **două moduri** — **Restaurant** (comandă la masă) și **FastFood** (vânzare rapidă la tejghea) — alese dintr-o singură setare. Este rescrisă de la zero pe tehnologii moderne și ușoare, cu **cozi durabile**: *nu se pierde nicio comandă și niciun bon*.
 
-`Versiune 2.1.2` · `PHP 8.3 + MSSQL` · `Fără build step` · `Windows + Apache` · `Modul mobil inclus` · `API de integrare`
+`Versiune 2.1.3` · `PHP 8.3 + MSSQL` · `Fără build step` · `Windows + Apache` · `Modul mobil inclus` · `API de integrare`
 
 ---
 
@@ -139,7 +139,7 @@ Alegerea se face din **Setări → General** (`TipVanz`). Aceeași bază de date
 - **Installer automat** (repo separat `TableManager-Setup`): pe un Windows 11 gol configurează Apache + PHP 8.3 + SQL Server 2022 Express + Python 3.12, deploy-ul aplicației, clonarea bazei de date, mediul virtual `.venv`, serviciile și scurtăturile. Dublu-click pe `Setup.bat`; instalarea este idempotentă.
 - **Pornire kiosc** — `Pornire-POS-Kiosk.vbs` (fără fereastră DOS) deschide aplicația fullscreen și importă produsele la pornire.
 - **Actualizare din aplicație** — butonul **Update** compară versiunea instalată cu GitHub, face backup și aplică automat.
-- **Versionare** — fiecare stație știe exact ce rulează: fișierul `VERSION` (ex. `2.1.2`) plus build + commit + dată, vizibile în **Setări → Servicii**, în dialogul Update și programatic prin `api/version.php`. Procesul de release (bump de versiune, `sync.sh`, tag git) este descris în [docs/VERSIONARE.md](docs/VERSIONARE.md).
+- **Versionare** — fiecare stație știe exact ce rulează: fișierul `VERSION` (ex. `2.1.3`) plus build + commit + dată, vizibile în **Setări → Servicii**, în dialogul Update și programatic prin `api/version.php`. Procesul de release (bump de versiune, `sync.sh`, tag git) este descris în [docs/VERSIONARE.md](docs/VERSIONARE.md).
 
 ![Setări → Servicii (versiune + servicii)](docs/img/08-setari-versiune.png)
 

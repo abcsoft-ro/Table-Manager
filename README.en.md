@@ -1,6 +1,6 @@
 **English** · [Română](README.md)
 
-# TableManager 2.1.2
+# TableManager 2.1.3
 
 ### Complete POS for restaurants and fast-food — automatic installation, operational reliability, no heavy dependencies.
 
@@ -10,7 +10,7 @@ TableManager manages **tables, bills, waiters, the menu, discounts, voids, payme
 
 The same application runs in **two modes** — **Restaurant** (table-side ordering) and **FastFood** (quick counter sales) — selected with a single setting. It is rewritten from scratch on modern, lightweight technologies, with **durable queues**: *no order and no bill is ever lost*.
 
-`Version 2.1.2` · `PHP 8.3 + MSSQL` · `No build step` · `Windows + Apache` · `Mobile module included` · `Integration API`
+`Version 2.1.3` · `PHP 8.3 + MSSQL` · `No build step` · `Windows + Apache` · `Mobile module included` · `Integration API`
 
 ---
 
@@ -138,7 +138,7 @@ Selected from **Setări → General** (`TipVanz`). Same database, same menu, sam
 - **Automatic installer** (separate repo `TableManager-Setup`): on an empty Windows 11 it configures Apache + PHP 8.3 + SQL Server 2022 Express + Python 3.12, the application deploy, the database clone, the `.venv` virtual environment, the services and the shortcuts. Double-click `Setup.bat`; the installation is idempotent.
 - **Kiosk launch** — `Pornire-POS-Kiosk.vbs` (no DOS window) opens the application fullscreen and imports products at startup.
 - **In-app update** — the **Update** button compares the installed version with GitHub, backs up and applies automatically.
-- **Versioning** — each station knows exactly what it runs: the `VERSION` file (e.g. `2.1.2`) plus build + commit + date, visible in **Setări → Servicii**, in the Update dialog and programmatically via `api/version.php`. The release process (version bump, `sync.sh`, git tag) is described in [docs/VERSIONARE.md](docs/VERSIONARE.md).
+- **Versioning** — each station knows exactly what it runs: the `VERSION` file (e.g. `2.1.3`) plus build + commit + date, visible in **Setări → Servicii**, in the Update dialog and programmatically via `api/version.php`. The release process (version bump, `sync.sh`, git tag) is described in [docs/VERSIONARE.md](docs/VERSIONARE.md).
 
 ![Setări → Servicii (version + services)](docs/img/08-setari-versiune.png)
 
@@ -230,7 +230,7 @@ css/pos.css             desktop POS styles
 mobile.html             mobile/tablet client (table ordering)
 js/mobile.js            mobile module logic (global state MOBILE_STATE)
 css/mobile.css          mobile module styles
-VERSION                 human version (e.g. 2.1.2)
+VERSION                 human version (e.g. 2.1.3)
 docs/img/               the screenshots in this README
 api/                    PHP endpoints (JSON)
   db.php                MSSQL connection (+ local db.local.php, ignored)

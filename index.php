@@ -28,7 +28,7 @@ $ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TableManager 2.1.2 - Modern Web POS</title>
+  <title>TableManager 2.1.3 - Modern Web POS</title>
   <?= i18nJs($LANG) ?>
   <script src="js/i18n.js?v=<?= $ASSET_V ?>"></script>
   <link rel="stylesheet" href="css/pos.css?v=<?= $ASSET_V ?>">

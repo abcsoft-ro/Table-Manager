@@ -243,3 +243,14 @@ set_exception_handler(function ($e) {
         ], 500);
     }
 });
+
+/**
+ * Whitelist de adrese IP (tblSet.IpPermise): toate cererile web trec prin acest
+ * fisier (pagini prin i18n.php, endpoint-uri direct sau prin *_common.php), deci
+ * verificarea de aici acopera intreaga aplicatie. Vezi api/ip_guard.php.
+ *
+ * Se executa ultima, dupa ce toate functiile de mai sus sunt definite (guard-ul
+ * foloseste getDBConnection() cand copia locala a listei lipseste).
+ */
+require_once __DIR__ . '/ip_guard.php';
+ipGuardCheck();

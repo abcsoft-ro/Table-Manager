@@ -72,6 +72,10 @@ const HELP_CONTENT = {
         <li><span class="help-field">PlataCombinata</span> - <em>1 = DA</em> (se pot
           combina mai multe forme de plata cu numpad); <em>0 = NU</em> (doar
           butoanele de plata, fara numpad - un click inchide nota integral).</li>
+        <li><span class="help-field">MarcareMobil</span> - permite marcarea de pe
+          tableta/telefon (pagina mobil): <em>DA</em> = modulul mobil este activ;
+          <em>NU</em> (implicit) = pagina mobil afiseaza doar un mesaj de blocare.
+          POS-ul desktop nu este afectat.</li>
         <li><span class="help-field">MeniulZilei</span> - afiseaza butonul Meniul
           Zilei cand exista produse cu MZ = DA.</li>
         <li><span class="help-field">NrBon</span> - contorul bonurilor de sectie
@@ -81,6 +85,16 @@ const HELP_CONTENT = {
           anulare (VD), separate prin punct si virgula (;).</li>
         <li><span class="help-field">SerieFactura</span> / <span class="help-field">TextFactura</span>
           - seria facturii si textul de subsol pentru ecranul Facturare.</li>
+      </ul>
+
+      <h4 class="help-section">Tab General - grupul Securitate</h4>
+      <ul class="help-list">
+        <li><span class="help-field">IpPermise</span> - whitelist-ul de adrese IP /
+          retele CIDR care pot accesa aplicatia. Localhost (127.0.0.1 / ::1)
+          este intotdeauna permis si nu poate fi sters; o lista goala sau doar
+          cu localhost = doar localhost are acces. Adaugati IP-urile tabletelor
+          si ale stațiilor (sau o retea intreaga, ex. 192.168.1.0/24). Salvarea
+          unei liste care nu contine IP-ul de pe care lucrati este refuzata.</li>
       </ul>
 
       <h4 class="help-section">Tab Device-uri - Casa Marcat</h4>
@@ -687,6 +701,10 @@ const HELP_CONTENT_EN = {
         <li><span class="help-field">PlataCombinata</span> - <em>1 = YES</em>
           (several payment forms can be combined with the numpad); <em>0 = NO</em>
           (only payment buttons, no numpad - one click closes the whole receipt).</li>
+        <li><span class="help-field">MarcareMobil</span> - allows marking from a
+          tablet/phone (mobile page): <em>YES</em> = the mobile module is active;
+          <em>NO</em> (default) = the mobile page only shows a blocking message.
+          The desktop POS is not affected.</li>
         <li><span class="help-field">MeniulZilei</span> - shows the Menu of the Day
           button when products with MZ = YES exist.</li>
         <li><span class="help-field">NrBon</span> - the section ticket counter
@@ -696,6 +714,16 @@ const HELP_CONTENT_EN = {
           reasons, separated by semicolon (;).</li>
         <li><span class="help-field">SerieFactura</span> / <span class="help-field">TextFactura</span>
           - the invoice series and footer text for the Invoicing screen.</li>
+      </ul>
+
+      <h4 class="help-section">General tab - Security group</h4>
+      <ul class="help-list">
+        <li><span class="help-field">IpPermise</span> - the whitelist of IP
+          addresses / CIDR networks allowed to access the application. Localhost
+          (127.0.0.1 / ::1) is always allowed and cannot be deleted; an empty
+          list or only localhost = only localhost has access. Add the IPs of the
+          tablets and stations (or a whole network, e.g. 192.168.1.0/24). Saving
+          a list that does not contain the IP you are working from is refused.</li>
       </ul>
 
       <h4 class="help-section">Devices tab - Fiscal Printer</h4>

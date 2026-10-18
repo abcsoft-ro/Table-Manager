@@ -16,6 +16,11 @@ sunt JSON (`JSON_UNESCAPED_UNICODE`).
   Se afișează o singură dată; în baza de date se păstrează doar SHA-256.
 - Opțional, se pot limita IP-urile (`ApiAllowedIps`) și numărul de cereri/minut
   per IP (`ApiRateLimit`).
+- **Whitelist general:** înainte de autentificarea API, orice cerere trece prin
+  whitelist-ul de IP-uri al aplicației (`tblSet.IpPermise`, Setări → General →
+  Securitate). Serverul care consumă API-ul trebuie să fie în acea listă
+  (localhost este mereu permis); altfel primește `403` cu codul
+  `ip_not_allowed`, indiferent de cheia API.
 
 ```bash
 curl -s -H "X-Api-Key: tm_..." http://<statie>/rual/api/v1/version

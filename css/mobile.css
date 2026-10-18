@@ -60,6 +60,56 @@ body {
 }
 
 /* ==========================================================================
+   BLOCARE: marcarea de pe tableta/telefon dezactivata (tblSet.MarcareMobil = 0)
+   Afisata din js/mobile.js; aplicatia (#mv-app) este ascunsa.
+   ========================================================================== */
+#mv-blocked {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 3000;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--mv-bg);
+}
+
+.mv-blocked-card {
+  width: 100%;
+  max-width: 420px;
+  padding: 28px 22px;
+  border: 1px solid var(--mv-border);
+  border-radius: var(--mv-radius);
+  background: var(--mv-card);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .08);
+  text-align: center;
+}
+
+.mv-blocked-icon {
+  margin-bottom: 14px;
+  font-size: 42px;
+  line-height: 1;
+}
+
+.mv-blocked-title {
+  margin-bottom: 10px;
+  font-size: 19px;
+  font-weight: 800;
+}
+
+.mv-blocked-text {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--mv-muted);
+}
+
+.mv-blocked-card .mv-primary-btn {
+  margin-top: 20px;
+}
+
+/* ==========================================================================
    HEADER
    ========================================================================== */
 .mv-header {

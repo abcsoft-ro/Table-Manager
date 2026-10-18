@@ -119,6 +119,16 @@ $ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
   <div class="mv-nota-backdrop" id="mv-nota-backdrop" onclick="closeNota()"></div>
 </div>
 
+<!-- ============== BLOCARE: MARCAREA MOBILA DEZACTIVATA DIN SETARI ============== -->
+<div class="mv-blocked" id="mv-blocked" style="display:none;">
+  <div class="mv-blocked-card">
+    <div class="mv-blocked-icon">&#128274;</div>
+    <div class="mv-blocked-title" data-i18n="mobile.dezactivat.titlu">Marcarea de pe tableta/telefon este dezactivata</div>
+    <div class="mv-blocked-text" data-i18n="mobile.dezactivat.text">Un administrator poate activa optiunea din Setari (General - MarcareMobil).</div>
+    <button class="mv-primary-btn" onclick="mvReloadMarcareMobil()" data-i18n="common.reload">Reincarca</button>
+  </div>
+</div>
+
 <!-- ================= MODAL: NUMPAD ================= -->
 <div class="mv-overlay" id="modal-numpad">
   <div class="mv-sheet mv-sheet-num">

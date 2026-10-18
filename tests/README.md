@@ -1,4 +1,4 @@
-# tests/ — harness de test TableManager 2.1.2
+# tests/ — harness de test TableManager 2.1.3
 
 Scripturi CLI (rulează cu `php.exe`, vezi `AGENTS.md`). **Nu se servesc prin web**
 (`tests/.htaccess` → `Require all denied`).

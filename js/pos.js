@@ -1,5 +1,5 @@
 /**
- * TableManager 2.1.2 - Client Logic conectat direct la MSSQL
+ * TableManager 2.1.3 - Client Logic conectat direct la MSSQL
  * Afisare produse direct pe panoul albastru (Poz, BackColor, FontColor, Bold)
  * Suport pentru BackColor = 0 (fond negru) cu FontColor alb
  */
@@ -2396,7 +2396,7 @@ function applyRollback() {
 // Doar coloana Value este editabila; Setting si Descriere sunt doar afisate.
 // --------------------------------------------------------------------------
 const SETARI_TABS = [
-  { id: "general",    label: "setari.tab.general",   groups: ["General", "Discount"] },
+  { id: "general",    label: "setari.tab.general",   groups: ["General", "Discount", "Securitate"] },
   { id: "device",     label: "setari.tab.device",    groups: ["Casa", "Afiseaj", "Cantar", "PoSbanca"] },
   { id: "integrare",  label: "setari.tab.integrare", groups: ["Integrare"], special: true },
   { id: "servicii",   label: "setari.tab.servicii",  groups: [], special: true },
@@ -2411,6 +2411,9 @@ let setariCanEditNrZecCant = true;
 // Starea cheii API (tabul Integrare): exista cheie + ultima utilizare.
 let setariApiKeySet = false;
 let setariApiLastUsed = null;
+// IP-ul clientului care a deschis Setarile (pentru editorul whitelist-ului).
+let setariClientIp = "";
+let setariClientIpLocal = false;
 // Cheia nou generata, afisata o singura data (nu vine niciodata din server).
 let setariNewApiKey = null;
 
@@ -2524,6 +2527,9 @@ async function loadSetari() {
     // Starea cheii API pentru tabul Integrare.
     setariApiKeySet = (data.apiKeySet === true);
     setariApiLastUsed = data.apiLastUsed || null;
+    // IP-ul clientului curent (afisat in editorul whitelist-ului de IP-uri).
+    setariClientIp = String(data.clientIp || "");
+    setariClientIpLocal = (data.clientIpLocal === true);
     renderSetariTabs();
     renderSetariTab(setariActiveTab);
   } catch (err) {
@@ -2555,12 +2561,13 @@ function renderSetariTabs() {
 // Ordinea explicita a setarilor in cadrul unui grup (dupa tblSet.Setting).
 // Cele care nu apar in lista raman dupa ele, in ordinea primita de la server.
 const SETARI_ORDINE = {
-  "general": ["Limba", "NrLogic", "MagID", "TipVanz", "Server"],
+  "general": ["Limba", "NrLogic", "MagID", "TipVanz", "Server", "MarcareMobil"],
   "discount": ["RED", "TipDiscount", "ProcentDiscountFix", "MotivDiscount"],
   "casa": ["TipCasaMarcat", "AsteaptaRaspunsCasa", "AsteptareCasaSec", "BonFiscalDiscStorno", "CaleFisierComenziECR", "CaleFisierRaspunsECR"],
   "afiseaj": ["AfiseajClient", "PortComAfiseaj", "BaudRateAfisaj", "CaleDriverAfiseajClient", "CaleFisierComenziAfiseajClient"],
   "cantar": ["Cantar", "CaleDriverCantar", "CaleFisierRaspunsCantar", "Delay_cantar"],
-  "posbanca": ["PoSbanca", "CaleDriverPoSbanca", "CaleFisierRaspunsPoSbanca"]
+  "posbanca": ["PoSbanca", "CaleDriverPoSbanca", "CaleFisierRaspunsPoSbanca"],
+  "securitate": ["IpPermise"]
 };
 
 // Etichete prietenoase pentru grupuri (altfel se afiseaza numele brut din tblSet.Grup).
@@ -2570,7 +2577,8 @@ const SETARI_GRUP_LABELS = {
   "posbanca": "setari.grup.posbanca",
   "afiseaj": "setari.grup.afiseaj",
   "cantar": "setari.grup.cantar",
-  "integrare": "setari.grup.integrare"
+  "integrare": "setari.grup.integrare",
+  "securitate": "setari.grup.securitate"
 };
 
 function setariSortRows(grup, rows) {
@@ -2661,6 +2669,14 @@ function setariField(row) {
   // Plata combinata activ/inactiv: lista DA / NU (implicit DA).
   if (row.Setting === "PlataCombinata") {
     return setariDaNuField(row.Setting, row.Value, row.Descriere, false);
+  }
+  // Marcarea de pe tableta/telefon activa/inactiva: lista DA / NU (implicit NU).
+  if (row.Setting === "MarcareMobil") {
+    return setariDaNuField(row.Setting, row.Value, row.Descriere, true);
+  }
+  // Whitelist de IP-uri: editor cu chips-uri, cu localhost blocat.
+  if (row.Setting === "IpPermise") {
+    return setariIpWhitelistField(row);
   }
   // Export/sincronizare cu serverul extern: lista DA / NU (implicit NU).
   if (row.Setting === "Server") {
@@ -3041,6 +3057,184 @@ function setariDaNuField(setting, value, descriere, defaultToNu) {
     const d = document.createElement("div");
     d.className = "setari-desc";
     d.textContent = descriere;
+    div.appendChild(d);
+  }
+
+  return div;
+}
+
+// --------------------------------------------------------------------------
+// Whitelist de IP-uri (tblSet.IpPermise)
+// Localhost (127.0.0.1 / ::1) este mereu prezent si nu poate fi sters; lista
+// goala sau doar localhost = doar localhost are acces (verificat pe server).
+// --------------------------------------------------------------------------
+const IPW_LOCAL = ["127.0.0.1", "::1"];
+
+function ipwIsLocal(entry) {
+  const e = String(entry == null ? "" : entry).trim().toLowerCase();
+  return e === "127.0.0.1" || e === "::1" || e === "::ffff:127.0.0.1";
+}
+
+// Normalizeaza o intrare introdusa de utilizator (localhost -> 127.0.0.1).
+function ipwNormalizeEntry(entry) {
+  const e = String(entry == null ? "" : entry).trim();
+  if (/^localhost$/i.test(e)) return "127.0.0.1";
+  return e;
+}
+
+// Lista afisata: localhost este mereu prezent, duplicatele sunt eliminate.
+function ipwParseList(value) {
+  const out = IPW_LOCAL.slice();
+  String(value == null ? "" : value).split(",").forEach(raw => {
+    const e = ipwNormalizeEntry(raw);
+    if (!e) return;
+    if (out.some(x => x.toLowerCase() === e.toLowerCase())) return;
+    out.push(e);
+  });
+  return out;
+}
+
+// Validare preliminara pe client (serverul valideaza strict, inclusiv IPv6).
+function ipwLooksValid(entry) {
+  const raw = ipwNormalizeEntry(entry);
+  if (!raw) return false;
+  const parts = raw.split("/");
+  if (parts.length > 2) return false;
+  const ip = parts[0];
+  const bits = (parts.length === 2) ? parts[1] : null;
+  if (bits !== null && !/^\d{1,3}$/.test(bits)) return false;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
+    const octetsOk = ip.split(".").every(p => {
+      const n = parseInt(p, 10);
+      return n >= 0 && n <= 255;
+    });
+    if (!octetsOk) return false;
+    return bits === null || parseInt(bits, 10) <= 32;
+  }
+  if (ip.indexOf(":") !== -1 && /^[0-9a-f:.]+$/i.test(ip)) {
+    return bits === null || parseInt(bits, 10) <= 128;
+  }
+  return false;
+}
+
+// Editorul propriu-zis: chips-uri + input pentru adaugare.
+function setariIpWhitelistField(row) {
+  const div = document.createElement("div");
+  div.className = "setari-field";
+
+  const label = document.createElement("label");
+  label.className = "setari-label";
+  label.textContent = row.Setting;
+  div.appendChild(label);
+
+  let entries = ipwParseList(row.Value);
+
+  const chips = document.createElement("div");
+  chips.className = "ipw-chips";
+  div.appendChild(chips);
+
+  const inputRow = document.createElement("div");
+  inputRow.className = "setari-field-row";
+
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "tva-input setari-input";
+  input.id = "setari-inp-" + row.Setting;
+  input.placeholder = tr("setari.ip.placeholder");
+  input.autocomplete = "off";
+  inputRow.appendChild(input);
+
+  const kb = document.createElement("button");
+  kb.className = "act-btn fkb-mini";
+  kb.textContent = "⌨️";
+  kb.onclick = () => openFloatingKeyboardFor(input.id);
+  inputRow.appendChild(kb);
+
+  const add = document.createElement("button");
+  add.className = "act-btn ipw-add";
+  add.textContent = tr("common.adauga");
+  inputRow.appendChild(add);
+  div.appendChild(inputRow);
+
+  const hint = document.createElement("div");
+  hint.className = "setari-desc ipw-only-local";
+  div.appendChild(hint);
+
+  const commit = () => { setariDirty[row.Setting] = entries.join(","); };
+
+  const render = () => {
+    chips.innerHTML = "";
+    entries.forEach(entry => {
+      const local = ipwIsLocal(entry);
+      const chip = document.createElement("span");
+      chip.className = "ipw-chip" + (local ? " ipw-chip-locked" : "");
+
+      const txt = document.createElement("span");
+      txt.textContent = entry;
+      chip.appendChild(txt);
+
+      if (local) {
+        const lock = document.createElement("span");
+        lock.className = "ipw-lock";
+        lock.textContent = "🔒";
+        lock.title = tr("setari.ip.localhost");
+        chip.appendChild(lock);
+      } else {
+        const rm = document.createElement("button");
+        rm.type = "button";
+        rm.className = "ipw-remove";
+        rm.textContent = "✕";
+        rm.title = tr("common.sterge");
+        rm.onclick = () => {
+          entries = entries.filter(x => x !== entry);
+          commit();
+          render();
+        };
+        chip.appendChild(rm);
+      }
+      chips.appendChild(chip);
+    });
+    const onlyLocal = !entries.some(e => !ipwIsLocal(e));
+    hint.textContent = onlyLocal ? tr("setari.ip.only_local") : "";
+    hint.style.display = onlyLocal ? "" : "none";
+  };
+
+  const addEntry = () => {
+    const raw = String(input.value || "").trim();
+    if (!raw) return;
+    if (!ipwLooksValid(raw)) {
+      appAlert(tr("setari.ip.invalid") + " " + raw);
+      return;
+    }
+    const entry = ipwNormalizeEntry(raw);
+    if (!entries.some(x => x.toLowerCase() === entry.toLowerCase())) {
+      entries.push(entry);
+      commit();
+    }
+    input.value = "";
+    render();
+    input.focus();
+  };
+
+  add.onclick = addEntry;
+  input.onkeydown = (ev) => {
+    if (ev.key === "Enter") { ev.preventDefault(); addEntry(); }
+  };
+
+  render();
+
+  if (setariClientIp) {
+    const client = document.createElement("div");
+    client.className = "setari-desc ipw-client";
+    client.textContent = tr("setari.ip.client") + " " + setariClientIp
+      + (setariClientIpLocal ? " (" + tr("setari.ip.localhost") + ")" : "");
+    div.appendChild(client);
+  }
+
+  if (row.Descriere && String(row.Descriere).trim() !== "") {
+    const d = document.createElement("div");
+    d.className = "setari-desc";
+    d.textContent = row.Descriere;
     div.appendChild(d);
   }
 

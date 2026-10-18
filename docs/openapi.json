@@ -2,7 +2,7 @@
   "openapi": "3.0.0",
   "info": {
     "title": "TableManager - API de integrare",
-    "version": "2.1.2",
+    "version": "2.1.3",
     "description": "API public pentru aplicatii terte (servere/backend-uri): export (citire) si import (scriere) de date. Autentificare cu o singura cheie globala in headerul X-Api-Key (sau Authorization: Bearer). Accesul din exterior se face exclusiv prin VPN; aplicatia ruleaza pe HTTP."
   },
   "servers": [
