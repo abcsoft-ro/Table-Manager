@@ -192,4 +192,27 @@ foreach (array_merge(glob("$R/*.php"), glob("$R/api/*.php"), glob("$R/js/*.js"))
 test('niciun cod nu mai refera index.html (redenumit index.php)', substr_count($code, 'index.html') === 0, 'aparitii=' . substr_count($code, 'index.html'));
 info('index.html in AGENTS.md: ' . substr_count((string)@file_get_contents("$R/AGENTS.md"), 'index.html'));
 
+/* --------------------------------- A8 client JS: umbrirea functiei tr() */
+section('A8 - client JS: nu umbri functia globala tr()');
+// Bug real (coada export): in renderSendQueue() randul tabelului era declarat
+// `const tr = document.createElement("tr")`, ceea ce umbrea translatorul global
+// tr() din js/pos.js; apelul tr("trimis: ") arunca "tr is not a function",
+// randurile nu se mai randau si butoanele (Sterge/Retry/Comanda SQL) rămâneau
+// dezactivate. Interzicem orice variabila locala numita `tr`.
+$shadow = [];
+foreach (glob("$R/js/*.js") as $f) {
+    $lines = explode("\n", (string)@file_get_contents($f));
+    foreach ($lines as $i => $ln) {
+        $t = ltrim($ln);
+        if ($t === '' || str_starts_with($t, '//') || str_starts_with($t, '*') || str_starts_with($t, '/*')) continue;
+        if (preg_match('/\b(?:const|let|var)\s+tr\s*=/', $ln)               // declaratie
+            || preg_match('/\btr\s*=>/', $ln)                               // parametru de arrow
+            || preg_match('/function\s*[\w$]*\s*\([^)]*\btr\b[^)]*\)/', $ln) // parametru de functie
+        ) {
+            $shadow[] = basename($f) . ':' . ($i + 1);
+        }
+    }
+}
+test('nicio variabila locala numita tr (umbrarea traducatorului tr())', count($shadow) === 0, implode(', ', $shadow));
+
 exit(summary('Faza A') > 0 ? 1 : 0);

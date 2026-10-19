@@ -7292,11 +7292,11 @@ function positionFloatingKeyboard(targetEl) {
   const stageW = stage.offsetWidth;
   const stageH = stage.offsetHeight;
 
-  const tr = targetEl.getBoundingClientRect();
-  const fx = (tr.left - sr.left) / scale;
-  const fy = (tr.top - sr.top) / scale;
-  const fw = tr.width / scale;
-  const fh = tr.height / scale;
+  const rect = targetEl.getBoundingClientRect();
+  const fx = (rect.left - sr.left) / scale;
+  const fy = (rect.top - sr.top) / scale;
+  const fw = rect.width / scale;
+  const fh = rect.height / scale;
 
   const kw = dlg.offsetWidth;
   const kh = dlg.offsetHeight;
@@ -7351,9 +7351,9 @@ function fkbEnsureFieldVisible(targetEl) {
   const kBottom = kTop + dlg.offsetHeight;
   const margin = 8;
 
-  const tr = targetEl.getBoundingClientRect();
-  const fTop = (tr.top - sr.top) / scale;
-  const fBottom = (tr.bottom - sr.top) / scale;
+  const rect = targetEl.getBoundingClientRect();
+  const fTop = (rect.top - sr.top) / scale;
+  const fBottom = (rect.bottom - sr.top) / scale;
 
   if (kTop >= fBottom) {
     const delta = fBottom - (kTop - margin);
@@ -7902,8 +7902,8 @@ function renderFacturaBonuri() {
 
 function facturaBonSelectRow(docId) {
   facturaBonSel = docId;
-  document.querySelectorAll("#fact-bon-list tr").forEach(tr => {
-    tr.classList.toggle("selected", parseInt(tr.dataset.docid, 10) === docId);
+  document.querySelectorAll("#fact-bon-list tr").forEach(rowEl => {
+    rowEl.classList.toggle("selected", parseInt(rowEl.dataset.docid, 10) === docId);
   });
   updateFacturaBonSelectBtn();
 }
@@ -8070,7 +8070,6 @@ async function refreshPrintStatus() {
 function printJobLabel(r) {
   const tip = (r.Tip || "").toLowerCase();
   if (tip !== "raport") return r.Tip || "";
-  const tr = (typeof window.t === "function") ? window.t : (k) => k;
   const title = (r.Title || "").trim();
   if (!title) return tr("report.label");
   if (/^raport\s+z/i.test(title)) return tr("report.z");
@@ -8090,25 +8089,25 @@ function renderPrintQueue() {
   tbody.innerHTML = "";
 
   if (printQueueRows.length === 0) {
-    const tr = document.createElement("tr");
+    const emptyRow = document.createElement("tr");
     const emptyTxt = (typeof window.t === "function") ? window.t("printq.gol") : "Coada este goala";
-    tr.innerHTML = '<td colspan="7" style="color:#888; font-weight:normal;">' + emptyTxt + '</td>';
-    tbody.appendChild(tr);
+    emptyRow.innerHTML = '<td colspan="7" style="color:#888; font-weight:normal;">' + emptyTxt + '</td>';
+    tbody.appendChild(emptyRow);
     updatePrintQueueBtns();
     return;
   }
 
   printQueueRows.forEach(r => {
-    const tr = document.createElement("tr");
+    const row = document.createElement("tr");
     const isFailed = r.Stare === "failed";
-    if (r.JobID === printQueueSelected) tr.classList.add("selected");
-    if (isFailed) tr.classList.add("inactive");
+    if (r.JobID === printQueueSelected) row.classList.add("selected");
+    if (isFailed) row.classList.add("inactive");
     const stareCls = isFailed ? "kp-off" : (r.Stare === "done" ? "kp-on" : "");
     const stareTitle = (r.Stare === "pending" && r.NextAttempt)
       ? ((typeof window.t === "function") ? window.t("printq.next_attempt", { t: r.NextAttempt }) : ("urmatoarea incercare: " + r.NextAttempt))
       : "";
     const errTitle = r.LastError || stareTitle;
-    tr.innerHTML = `
+    row.innerHTML = `
       <td class="printq-num"><b>${r.JobID}</b></td>
       <td>${escapeHtml(printJobLabel(r))}</td>
       <td>${r.RefDocID ? "doc " + r.RefDocID : "-"}</td>
@@ -8117,12 +8116,12 @@ function renderPrintQueue() {
       <td title="${escapeHtml(r.CreatedAt || '')}">${escapeHtml(r.CreatedAt || "-")}</td>
       <td title="${escapeHtml(errTitle)}">${r.Attempts}${r.LastError ? " - " + escapeHtml(r.LastError) : ""}</td>
     `;
-    tr.onclick = () => {
+    row.onclick = () => {
       printQueueSelected = r.JobID;
       renderPrintQueue();
       updatePrintQueueBtns();
     };
-    tbody.appendChild(tr);
+    tbody.appendChild(row);
   });
 
   updatePrintQueueBtns();
@@ -8261,22 +8260,25 @@ function renderSendQueue() {
   tbody.innerHTML = "";
 
   if (sendQueueRows.length === 0) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = '<td colspan="6" style="color:#888; font-weight:normal;">Coada este goala</td>';
-    tbody.appendChild(tr);
+    const emptyRow = document.createElement("tr");
+    emptyRow.innerHTML = '<td colspan="6" style="color:#888; font-weight:normal;">' + escapeHtml(tr("printq.gol")) + '</td>';
+    tbody.appendChild(emptyRow);
     updateSendQueueBtns();
     return;
   }
 
   sendQueueRows.forEach(r => {
-    const tr = document.createElement("tr");
+    // Atentie: variabila se numeste `row`, nu `tr` - altfel umbreste functia
+    // globala de traducere tr() si apelul tr("trimis: ") arunca
+    // "tr is not a function" (randurile nu se mai randeaza deloc).
+    const row = document.createElement("tr");
     const isFailed = r.Stare === "failed";
     const isDone = r.Preluat === true || r.Stare === "done";
-    if (r.Id === sendQueueSelected) tr.classList.add("selected");
-    if (isFailed) tr.classList.add("inactive");
+    if (r.Id === sendQueueSelected) row.classList.add("selected");
+    if (isFailed) row.classList.add("inactive");
     const stareCls = isFailed ? "kp-off" : (isDone ? "kp-on" : "");
-    const stareTitle = (r.Stare === "sending" && r.NextAttempt) ? ("preluat la: " + r.NextAttempt) : "";
-    tr.innerHTML = `
+    const stareTitle = (r.Stare === "sending" && r.NextAttempt) ? (tr("preluat la: ") + r.NextAttempt) : "";
+    row.innerHTML = `
       <td class="printq-num"><b>${r.Id}</b></td>
       <td>${r.DocID != null ? "doc " + r.DocID : "-"}</td>
       <td class="${stareCls}" title="${escapeHtml(isDone ? (tr("trimis: ") + (r.SentAt || '')) : stareTitle)}">${escapeHtml(r.Stare)}</td>
@@ -8284,12 +8286,12 @@ function renderSendQueue() {
       <td title="${escapeHtml(r.CreatedAt || '')}">${escapeHtml(r.CreatedAt || "-")}</td>
       <td title="${escapeHtml(r.LastError || '')}">${escapeHtml(r.LastError || "-")}</td>
     `;
-    tr.onclick = () => {
+    row.onclick = () => {
       sendQueueSelected = r.Id;
       renderSendQueue();
       updateSendQueueBtns();
     };
-    tbody.appendChild(tr);
+    tbody.appendChild(row);
   });
 
   updateSendQueueBtns();
