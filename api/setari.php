@@ -271,8 +271,11 @@ function ensureSetariMeta($conn) {
         "Asteapta raspunsul casei de marcat la inchiderea notei (FiscalWire sau FiscalNet): 1 = DA (nota se inchide doar dupa confirmarea bonului fiscal), 0 = NU (implicit, tiparire asincrona ca pana acum).", 'Casa');
     ensureSetariValue($conn, 'AsteptareCasaSec', '30',
         "Durata maxima (secunde) cat POS-ul asteapta raspunsul casei de marcat cand AsteaptaRaspunsCasa = 1. Implicit 30.", 'Casa');
-    ensureSetariValue($conn, 'BonFiscalDiscStorno', '0',
-        "Afiseaza discountul si stornarea pe bonul fiscal: 1 = DA, 0 = NU (implicit). La 0 bonul contine doar cantitatile si preturile nete, fara comenzi de discount si fara linii de storno.", 'Casa');
+    // Evidentierea discountului si a stornarii pe bonul fiscal: doua setari
+    // separate (inainte exista una singura, BonFiscalDiscStorno). Migrarea
+    // (valoarea veche DA -> ambele DA, apoi stergerea randului vechi) este
+    // partajata cu order_action.php, ca sa ruleze si fara deschiderea Setarilor.
+    ensureFiscalEvidSettings($conn);
 
     // Afisaj client: activare + driver + folder comenzi.
     // (functia este inca in curs de implementare)

@@ -2563,7 +2563,7 @@ function renderSetariTabs() {
 const SETARI_ORDINE = {
   "general": ["Limba", "NrLogic", "MagID", "TipVanz", "Server", "MarcareMobil"],
   "discount": ["RED", "TipDiscount", "ProcentDiscountFix", "MotivDiscount"],
-  "casa": ["TipCasaMarcat", "AsteaptaRaspunsCasa", "AsteptareCasaSec", "BonFiscalDiscStorno", "CaleFisierComenziECR", "CaleFisierRaspunsECR"],
+  "casa": ["TipCasaMarcat", "AsteaptaRaspunsCasa", "AsteptareCasaSec", "EvidDiscBonFisc", "EvidStornoBonFisc", "CaleFisierComenziECR", "CaleFisierRaspunsECR"],
   "afiseaj": ["AfiseajClient", "PortComAfiseaj", "BaudRateAfisaj", "CaleDriverAfiseajClient", "CaleFisierComenziAfiseajClient"],
   "cantar": ["Cantar", "CaleDriverCantar", "CaleFisierRaspunsCantar", "Delay_cantar"],
   "posbanca": ["PoSbanca", "CaleDriverPoSbanca", "CaleFisierRaspunsPoSbanca"],
@@ -2646,9 +2646,9 @@ function setariField(row) {
   if (row.Setting === "TipCasaMarcat") {
     return setariTipCasaMarcatField(row);
   }
-  // Discount/stornare pe bonul fiscal: lista DA / NU (implicit NU).
-  if (row.Setting === "BonFiscalDiscStorno") {
-    return setariBonFiscalDiscStornoField(row);
+  // Discount / stornare pe bonul fiscal: liste DA / NU (implicit NU).
+  if (row.Setting === "EvidDiscBonFisc" || row.Setting === "EvidStornoBonFisc") {
+    return setariEvidBonFiscField(row);
   }
   // Afisajul client activ/inactiv: lista DA / NU.
   if (row.Setting === "AfiseajClient") {
@@ -2999,9 +2999,9 @@ function setariTipCasaMarcatField(row) {
   return div;
 }
 
-// Combobox pentru tblSet.BonFiscalDiscStorno: 1 = DA (discount/stornare pe bon),
-// 0 = NU (implicit; bonul fiscal doar cu cantitati/preturi nete).
-function setariBonFiscalDiscStornoField(row) {
+// Combobox pentru tblSet.EvidDiscBonFisc / EvidStornoBonFisc: 1 = DA
+// (discount, respectiv stornare, pe bonul fiscal), 0 = NU (implicit).
+function setariEvidBonFiscField(row) {
   return setariDaNuField(row.Setting, row.Value, row.Descriere, true);
 }
 

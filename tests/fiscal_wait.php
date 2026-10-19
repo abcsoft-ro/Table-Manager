@@ -41,7 +41,7 @@ function newestResponse($dir, $ext) {
     return $f[0];
 }
 /** Porneste mock-ul FiscalWire pentru o singura comanda (--once) si intoarce handle-ul. */
-function startMock($mode, $dirComenzi, $dirRaspuns, $stateFile, $delay = 1.0) {
+function startMock($mode, $dirComenzi, $dirRaspuns, $stateFile, $delay = 1.0, $keep = false) {
     $py = ROOT_DIR . '/.venv/Scripts/python.exe';
     $script = ROOT_DIR . '/tools/mock_fiscalwire.py';
     $cmd = escapeshellarg($py) . ' ' . escapeshellarg($script)
@@ -50,12 +50,27 @@ function startMock($mode, $dirComenzi, $dirRaspuns, $stateFile, $delay = 1.0) {
          . ' --comenzi ' . escapeshellarg($dirComenzi)
          . ' --raspuns ' . escapeshellarg($dirRaspuns)
          . ' --state ' . escapeshellarg($stateFile);
+    if ($keep) { $cmd .= ' --keep'; }
     $desc = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
     $p = proc_open($cmd, $desc, $pipes);
     if (!is_resource($p)) { return null; }
     stream_set_blocking($pipes[1], false);
     stream_set_blocking($pipes[2], false);
     return ['proc' => $p, 'pipes' => $pipes];
+}
+/**
+ * Cel mai recent fisier de comenzi FiscalWire pastrat in folder (--keep).
+ * Numele este `pos_tm_<DocID>_<YmdHis>.inp`.
+ */
+function newestComanda($dir, $docId) {
+    $f = glob($dir . '/pos_tm_' . (int)$docId . '_*.inp');
+    if (!$f) { return null; }
+    usort($f, fn($a, $b) => filemtime($b) <=> filemtime($a));
+    return $f[0];
+}
+/** Goleste folderul de comenzi (ca sa nu fie procesat un fisier de la testul anterior). */
+function clearDir($dir) {
+    foreach (glob($dir . '/*') ?: [] as $f) { if (is_file($f)) { @unlink($f); } }
 }
 function stopMock($h) {
     if (!$h) { return; }
@@ -73,6 +88,10 @@ $STATE_FILE = $TEST_DIR . '/state.json';
 $COMENZI_WIN = slashWin($DIR_COMENZI);
 $RASPUNS_WIN = slashWin($DIR_RASPUNS);
 
+// Forteaza ensureSetariMeta() (creeaza/migreaza setarile de evidentiere a
+// discountului/stornarii), ca testele sa aiba pe ce seta valori.
+jget('/api/setari.php');
+
 $orig = [
     'AsteaptaRaspunsCasa' => getS('AsteaptaRaspunsCasa'),
     'AsteptareCasaSec'    => getS('AsteptareCasaSec'),
@@ -81,6 +100,10 @@ $orig = [
     'TipCasaMarcat'       => getS('TipCasaMarcat'),
     'TipVanz'             => getS('TipVanz'),
     'Server'              => getS('Server'),
+    'EvidDiscBonFisc'     => getS('EvidDiscBonFisc'),
+    'EvidStornoBonFisc'   => getS('EvidStornoBonFisc'),
+    'RED'                 => getS('RED'),
+    'NrBon'               => getS('NrBon'),
 ];
 $origCfg = jget('/api/print_config.php?action=config')['json']['config'] ?? null;
 
@@ -248,6 +271,84 @@ try {
     test('F4: a asteptat timeout-ul (>= AsteaptareCasaSec)', $elapsedD >= 8.0, sprintf('%.2fs', $elapsedD));
     $billD = billOf($docD);
     test('F4: nota ramane DESCHISA', $billD && $billD['Stare'] === 'D', $billD ? $billD['Stare'] : 'lipsa');
+
+    // =====================================================================
+    // Separarea discount / stornare pe bonul fiscal (inainte o singura setare,
+    // BonFiscalDiscStorno): EvidDiscBonFisc = discount pe fiecare linie de
+    // produs, EvidStornoBonFisc = liniile de storno separate.
+    setS('RED', '1');
+
+    section('F5 - EvidDiscBonFisc: discount pe fiecare linie, fara storno');
+    setS('EvidDiscBonFisc', '1');
+    setS('EvidStornoBonFisc', '0');
+    clearDir($DIR_COMENZI);
+    @unlink($STATE_FILE);
+
+    $r = act(['action' => 'add_product', 'nrMasa' => $MASA, 'nrOp' => 8, 'prodId' => $P1]);
+    $docE = (int)($r['json']['docId'] ?? 0);
+    $docIds[] = $docE;
+    $ecrE = (int)cell("SELECT TOP 1 ECRID FROM tblNoteD WHERE DocID=? AND ProdID>0 ORDER BY ECRID", [$docE]);
+    $rDisc = act(['action' => 'apply_discount', 'nrMasa' => $MASA, 'nrOp' => 8,
+                  'scope' => 'line', 'mode' => 'percent', 'value' => 10,
+                  'ecrId' => $ecrE, 'motiv' => 'Test bon fiscal']);
+    test('F5: discount pe linie aplicat', $rDisc['code'] === 200, substr($rDisc['body'], 0, 150));
+    $totE = (float)cell("SELECT COALESCE(SUM(Cant*PV),0) FROM tblNoteD WHERE DocID=?", [$docE]);
+
+    $mock = startMock('ok', $DIR_COMENZI, $DIR_RASPUNS, $STATE_FILE, 0.5, true);
+    $resE = act(['action' => 'close_bill', 'docId' => $docE, 'plati' => ['0' => round($totE, 2)]]);
+    stopMock($mock); $mock = null;
+
+    test('F5: bonul s-a inchis', $resE['code'] === 200, substr($resE['body'], 0, 150));
+    $cmdE = newestComanda($DIR_COMENZI, $docE);
+    test('F5: fisierul de comenzi a fost pastrat pentru verificare', $cmdE !== null);
+    $textE = $cmdE ? (string)file_get_contents($cmdE) : '';
+    test('F5: discount valoric pe linie (C ...;3;)', strpos($textE, 'C,1,______,_,__;3;') !== false, substr($textE, 0, 300));
+    test('F5: NU se scrie discount procentual (C ...;1;)', strpos($textE, 'C,1,______,_,__;1;') === false);
+    // S - discount = totalul notei (discountul este exact, nu rotunjit procentual).
+    preg_match_all('/S,1,______,_,__;[^;]*;([\d.]+);([\d.]+);/', $textE, $mS, PREG_SET_ORDER);
+    $sumE = 0.0;
+    foreach ($mS as $x) { $sumE += (float)$x[1] * (float)$x[2]; }
+    preg_match_all('/C,1,______,_,__;3;([\d.]+)/', $textE, $mC);
+    $sumC = array_sum(array_map('floatval', $mC[1] ?: []));
+    test('F5: S - discount = totalul notei', abs($sumE - $sumC - $totE) < 0.02,
+        sprintf('S=%.2f C=%.2f total=%.2f', $sumE, $sumC, $totE));
+
+    section('F6 - EvidStornoBonFisc: doar stornarea apare, discountul nu');
+    setS('EvidDiscBonFisc', '0');
+    setS('EvidStornoBonFisc', '1');
+    clearDir($DIR_COMENZI);
+    @unlink($STATE_FILE);
+
+    $r = act(['action' => 'add_product', 'nrMasa' => $MASA, 'nrOp' => 8, 'prodId' => $P1]);
+    $docF = (int)($r['json']['docId'] ?? 0);
+    $docIds[] = $docF;
+    $ecrF = (int)cell("SELECT TOP 1 ECRID FROM tblNoteD WHERE DocID=? AND ProdID>0 ORDER BY ECRID", [$docF]);
+    $cantF = (float)cell("SELECT Cant FROM tblNoteD WHERE ECRID=? AND DocID=?", [$ecrF, $docF]);
+    act(['action' => 'apply_discount', 'nrMasa' => $MASA, 'nrOp' => 8,
+         'scope' => 'line', 'mode' => 'percent', 'value' => 10,
+         'ecrId' => $ecrF, 'motiv' => 'Test bon fiscal']);
+    // Marcam linia (Preluat = 1), ca anularea sa genereze o linie de storno.
+    $rMark = act(['action' => 'print_kitchen', 'docId' => $docF]);
+    test('F6: linia a fost marcata (Preluat = 1)', (int)cell("SELECT Preluat FROM tblNoteD WHERE ECRID=? AND DocID=?", [$ecrF, $docF]) === 1,
+        substr($rMark['body'], 0, 150));
+    $stornParola = (string)cell("SELECT ParolaStornare FROM tblParola WHERE Id=1");
+    $rVoid = act(['action' => 'void_line', 'nrMasa' => $MASA, 'nrOp' => 8,
+                  'ecrId' => $ecrF, 'cantitate' => $cantF, 'motiv' => 'Test storno', 'parola' => $stornParola]);
+    test('F6: anulare (storno) inregistrata', $rVoid['code'] === 200, substr($rVoid['body'], 0, 150));
+    test('F6: exista o linie de storno pe nota', (int)cell("SELECT COUNT(*) FROM tblNoteD WHERE DocID=? AND Cant<0", [$docF]) > 0);
+    $totF = (float)cell("SELECT COALESCE(SUM(Cant*PV),0) FROM tblNoteD WHERE DocID=?", [$docF]);
+
+    $mock = startMock('ok', $DIR_COMENZI, $DIR_RASPUNS, $STATE_FILE, 0.5, true);
+    $resF = act(['action' => 'close_bill', 'docId' => $docF, 'plati' => ['0' => round($totF, 2)]]);
+    stopMock($mock); $mock = null;
+
+    test('F6: bonul s-a inchis', $resF['code'] === 200, substr($resF['body'], 0, 150));
+    $cmdF = newestComanda($DIR_COMENZI, $docF);
+    test('F6: fisierul de comenzi a fost pastrat pentru verificare', $cmdF !== null);
+    $textF = $cmdF ? (string)file_get_contents($cmdF) : '';
+    test('F6: linia de storno apare pe bon (S cu cantitate negativa)',
+        (bool)preg_match('/S,1,______,_,__;[^;]*;[^;]*;-[\d.]+;/', $textF), substr($textF, 0, 300));
+    test('F6: NU apare comanda de discount', strpos($textF, 'C,1,______,_,__;') === false, substr($textF, 0, 300));
 
 } finally {
     stopMock($mock);

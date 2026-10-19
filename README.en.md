@@ -158,7 +158,7 @@ Selected from **Setări → General** (`TipVanz`). Same database, same menu, sam
 
 - **Apache** with **PHP** and the **`php_sqlsrv`** extension loaded.
 - **Microsoft SQL Server** (database configurable in `api/db.local.php`).
-- **Python 3.12** (Windows) for the Python components (`print-service/`, `sync-service/`, `import_server_grp_prod.py`) — optional, only if you use one of them. All run **from a common virtual environment** `.venv` in the project root, created once with `setup-venv.bat` (dependencies — `pyodbc`, `pywin32`, `pyserial` — are in `requirements.txt`). An **ODBC Driver for SQL Server** is also required. The virtual environment is mandatory: without it, the kiosk and the Python services stop with a message asking to run `setup-venv.bat`.
+- **Python 3.12** (Windows) for the Python components (`print-service/`, `sync-service/`, `import_server_grp_prod.py`) — optional, only if you use one of them. All run **from a common virtual environment** `.venv` in the project root, created once with `setup-venv.bat` (dependencies — `pyodbc`, `pywin32`, `pyserial` — are in `requirements.txt`). An **ODBC Driver for SQL Server** is also required. The virtual environment is mandatory: without it, the kiosk and the Python services stop with a message asking to run `setup-venv.bat`. On stations with **two Windows accounts** (a service account + a POS user account) Python must be installed **for all users** (by default in `C:\Program Files\Python312`), not per-user: `.venv` is shared by all accounts, while a per-user Python is reachable only from the account that installed it — otherwise the services stop with `No Python at 'C:\Users\<account>\...\python.exe'`. `setup-venv.bat` automatically recreates a `.venv` that cannot be used by the current account, provided it finds an all-users installation.
 
 ---
 
@@ -292,7 +292,7 @@ The register type is chosen from **Setări → Casa Marcat** (`tblSet.TipCasaMar
 
 Payment codes are taken directly from `tblFP.FPID` (0 = Cash, 1 = Card, 2 = Cheque, 3 = Voucher, 4 = OP, 5 = Voucher): for FiscalWire `FPID` is written, for FiscalNet `FPID + 1`. The VAT group is resolved from `tblTVA` by the line's rate (`tblNoteD.TVAc` → `tblTVA.Nr_TVA`).
 
-By default, the fiscal receipt does **not** print the discount or the void (only the net quantities and prices). The `tblSet.BonFiscalDiscStorno = 1` setting enables the detailed mode.
+By default, the fiscal receipt does **not** print the discount or the void (only the net quantities and prices). The `tblSet.EvidDiscBonFisc = 1` setting shows the discount on every product line (the product at catalog price, followed by the value discount command), and `tblSet.EvidStornoBonFisc = 1` shows the void lines separately. The two are set independently, in Settings → Casa Marcat.
 
 ### Waiting for the cash register response (FiscalWire / FiscalNet)
 

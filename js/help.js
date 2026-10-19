@@ -107,8 +107,12 @@ const HELP_CONTENT = {
           ca in modul clasic.</li>
         <li><span class="help-field">AsteptareCasaSec</span> - durata maxima
           (secunde) de asteptare a raspunsului casei de marcat.</li>
-        <li><span class="help-field">BonFiscalDiscStorno</span> - afiseaza
-          discountul si liniile de stornare pe bonul fiscal (1 = DA, 0 = NU).</li>
+        <li><span class="help-field">EvidDiscBonFisc</span> - afiseaza discountul
+          pe bonul fiscal, pe fiecare linie de produs (1 = DA, 0 = NU). Se refera
+          numai la discount.</li>
+        <li><span class="help-field">EvidStornoBonFisc</span> - afiseaza liniile
+          de stornare pe bonul fiscal (1 = DA, 0 = NU). Se refera numai la
+          stornare si se seteaza independent de discount.</li>
         <li><span class="help-field">CaleFisierComenziECR</span> /
           <span class="help-field">CaleFisierRaspunsECR</span> - folderele in care
           se scriu comenzile catre casa de marcat, respectiv de unde se citesc
@@ -736,8 +740,12 @@ const HELP_CONTENT_EN = {
           classic mode.</li>
         <li><span class="help-field">AsteptareCasaSec</span> - maximum time
           (seconds) to wait for the fiscal printer response.</li>
-        <li><span class="help-field">BonFiscalDiscStorno</span> - shows the discount
-          and void lines on the fiscal receipt (1 = YES, 0 = NO).</li>
+        <li><span class="help-field">EvidDiscBonFisc</span> - shows the discount
+          on the fiscal receipt, on every product line (1 = YES, 0 = NO). Refers
+          only to the discount.</li>
+        <li><span class="help-field">EvidStornoBonFisc</span> - shows void
+          (storno) lines on the fiscal receipt (1 = YES, 0 = NO). Refers only to
+          void lines and is set independently from the discount.</li>
         <li><span class="help-field">CaleFisierComenziECR</span> /
           <span class="help-field">CaleFisierRaspunsECR</span> - the folders where
           commands to the fiscal printer are written and responses are read.</li>

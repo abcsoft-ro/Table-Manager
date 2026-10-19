@@ -155,6 +155,58 @@ function ensureOrderSchema($conn) {
 }
 
 /**
+ * Descrierile setarilor de evidentiere a discountului/stornarii pe bonul fiscal.
+ * Sunt definite o singura data aici, ca setari.php si order_action.php sa foloseasca
+ * acelasi text (afisat in Setari → Casa Marcat).
+ *
+ * @return array
+ */
+function fiscalEvidSettingDescriptions() {
+    return [
+        'EvidDiscBonFisc' => "Afiseaza discountul pe bonul fiscal, pe fiecare linie de produs (produsul la pret de catalog, urmat de comanda de discount): 1 = DA, 0 = NU (implicit). Se refera numai la discount; stornarea se seteaza separat (EvidStornoBonFisc).",
+        'EvidStornoBonFisc' => "Afiseaza liniile de stornare pe bonul fiscal: 1 = DA, 0 = NU (implicit). Se refera numai la stornare; discountul se seteaza separat (EvidDiscBonFisc)."
+    ];
+}
+
+/**
+ * Migreaza vechea setare unica BonFiscalDiscStorno in cele doua setari separate
+ * (EvidDiscBonFisc = discount pe fiecare linie, EvidStornoBonFisc = linii de
+ * storno). Daca vechea setare era DA, ambele noi pornesc pe DA (comportamentul
+ * de dinainte se pastreaza); apoi randul vechi se sterge. Idempotent, ruleaza o
+ * singura data pe request si nu suprascrie valorile deja setate de utilizator.
+ *
+ * @param resource $conn
+ */
+function ensureFiscalEvidSettings($conn) {
+    static $done = false;
+    if ($done) { return; }
+    $done = true;
+
+    $chk = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'BonFiscalDiscStorno'");
+    $row = $chk ? sqlsrv_fetch_array($chk, SQLSRV_FETCH_ASSOC) : null;
+    $legacy = ($row && (int)trim((string)$row['Value']) === 1) ? '1' : '0';
+
+    foreach (fiscalEvidSettingDescriptions() as $setting => $desc) {
+        $stmt = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = ?", [$setting]);
+        $exists = $stmt ? sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC) : null;
+        if (!$exists) {
+            @sqlsrv_query(
+                $conn,
+                "INSERT INTO tblSet (Setting, Value, Descriere, Grup) VALUES (?, ?, ?, 'Casa')",
+                [$setting, $legacy, $desc]
+            );
+        } else {
+            @sqlsrv_query(
+                $conn,
+                "UPDATE tblSet SET Descriere = ? WHERE Setting = ? AND (Descriere IS NULL OR Descriere <> ?)",
+                [$desc, $setting, $desc]
+            );
+        }
+    }
+    @sqlsrv_query($conn, "DELETE FROM tblSet WHERE Setting = 'BonFiscalDiscStorno'");
+}
+
+/**
  * Adauga coloana tblParola.ParolaUpdate daca lipseste (deploy fara pasi
  * manuali). Parola care protejeaza modulul de actualizare din GitHub.
  *

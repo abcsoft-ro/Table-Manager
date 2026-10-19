@@ -159,7 +159,7 @@ Alegerea se face din **Setări → General** (`TipVanz`). Aceeași bază de date
 
 - **Apache** cu **PHP** și extensia **`php_sqlsrv`** încărcată.
 - **Microsoft SQL Server** (baza de date configurabilă în `api/db.local.php`).
-- **Python 3.12** (Windows) pentru componentele Python (`print-service/`, `sync-service/`, `import_server_grp_prod.py`) — opțional, doar dacă folosiți una dintre ele. Toate rulează **dintr-un mediu virtual comun** `.venv` din rădăcina proiectului, creat o singură dată cu `setup-venv.bat` (dependințele — `pyodbc`, `pywin32`, `pyserial` — sunt în `requirements.txt`). Este nevoie și de un **ODBC Driver for SQL Server** instalat. Mediul virtual este obligatoriu: fără el, pornirea kiosc-ului și a serviciilor Python se oprește cu un mesaj care cere rularea `setup-venv.bat`.
+- **Python 3.12** (Windows) pentru componentele Python (`print-service/`, `sync-service/`, `import_server_grp_prod.py`) — opțional, doar dacă folosiți una dintre ele. Toate rulează **dintr-un mediu virtual comun** `.venv` din rădăcina proiectului, creat o singură dată cu `setup-venv.bat` (dependințele — `pyodbc`, `pywin32`, `pyserial` — sunt în `requirements.txt`). Este nevoie și de un **ODBC Driver for SQL Server** instalat. Mediul virtual este obligatoriu: fără el, pornirea kiosc-ului și a serviciilor Python se oprește cu un mesaj care cere rularea `setup-venv.bat`. Pe stațiile cu **două conturi Windows** (unul de service + unul de utilizator POS) Python trebuie instalat **pentru toți utilizatorii** (implicit în `C:\Program Files\Python312`), nu per-user: `.venv` este comun tuturor conturilor, iar un Python per-user este accesibil doar din contul care l-a instalat — altfel pornirea serviciilor se oprește cu `No Python at 'C:\Users\<cont>\...\python.exe'`. `setup-venv.bat` recreează automat un `.venv` care nu poate fi folosit de contul curent, dacă găsește o instalare pentru toți utilizatorii.
 
 ---
 
@@ -293,7 +293,7 @@ Tipul casei se alege din **Setări → Casa Marcat** (`tblSet.TipCasaMarcat`):
 
 Codurile de plată se iau direct din `tblFP.FPID` (0 = Numerar, 1 = Card, 2 = CEC, 3 = Tichet, 4 = OP, 5 = Voucher): la FiscalWire se scrie `FPID`, la FiscalNet `FPID + 1`. Grupa de TVA se rezolvă din `tblTVA` după cota liniei (`tblNoteD.TVAc` → `tblTVA.Nr_TVA`).
 
-Implicit, bonul fiscal **nu** afișează discountul și nici stornarea (doar cantitățile și prețurile nete). Setarea `tblSet.BonFiscalDiscStorno = 1` activează modul detaliat.
+Implicit, bonul fiscal **nu** afișează discountul și nici stornarea (doar cantitățile și prețurile nete). Setarea `tblSet.EvidDiscBonFisc = 1` afișează discountul pe fiecare linie de produs (produsul la preț de catalog, urmat de comanda de discount valoric), iar `tblSet.EvidStornoBonFisc = 1` afișează separat liniile de storno. Cele două se setează independent, din Setări → Casa Marcat.
 
 ### Așteptarea răspunsului casei de marcat (FiscalWire / FiscalNet)
 

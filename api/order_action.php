@@ -57,18 +57,38 @@ function getTipCasaMarcat($conn) {
 }
 
 /**
- * Afisarea discountului/stornarii pe bonul fiscal (tblSet.BonFiscalDiscStorno):
- * 1 = DA (se scriu comenzile de discount/majorare si liniile de storno),
- * 0 = NU (implicit; bonul contine doar cantitatile si preturile nete, fara
- * discount si fara stornare). Se aplica fisierului casei de marcat.
+ * Evidentierea discountului pe bonul fiscal (tblSet.EvidDiscBonFisc):
+ * 1 = DA (produsele se scriu la pret de catalog, urmate de comanda de discount),
+ * 0 = NU (implicit; discountul este inclus in pretul net, fara comanda separata).
+ * Se refera numai la discount.
  *
  * @param resource $conn
  */
-function getBonFiscalDiscStorno($conn) {
+function getEvidDiscBonFisc($conn) {
     static $cache = null;
     if ($cache !== null) { return $cache; }
     $cache = 0;
-    $stmt = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'BonFiscalDiscStorno'");
+    $stmt = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'EvidDiscBonFisc'");
+    if ($stmt) {
+        $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+        if ($row && (int)trim((string)$row['Value']) === 1) { $cache = 1; }
+    }
+    return $cache;
+}
+
+/**
+ * Evidentierea stornarii pe bonul fiscal (tblSet.EvidStornoBonFisc):
+ * 1 = DA (liniile de storno apar pe bon ca pozitii separate), 0 = NU (implicit;
+ * storno este scazut din cantitatea neta a produsului). Se refera numai la
+ * stornare.
+ *
+ * @param resource $conn
+ */
+function getEvidStornoBonFisc($conn) {
+    static $cache = null;
+    if ($cache !== null) { return $cache; }
+    $cache = 0;
+    $stmt = @sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'EvidStornoBonFisc'");
     if ($stmt) {
         $row = sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
         if ($row && (int)trim((string)$row['Value']) === 1) { $cache = 1; }
@@ -684,7 +704,7 @@ function closeBillLocked($conn, $docId, $plati = [], $cui = '', $opts = []) {
         if ($data === false) {
             return ["status" => "error", "message" => "Eroare construire date bon fiscal", "http" => 500];
         }
-        $fiscalItems = getBonFiscalDiscStorno($conn) ? $data['fiscalItems'] : $data['fiscalItemsNet'];
+        $fiscalItems = selectFiscalItems($conn, $data);
         $fiscalLines = buildFiscalText($fiscalItems, $data['plati'], $tipCasa, getTvaNrMap($conn), $cui);
         $wait = fiscalSendAndWait($conn, $docId, $bon, $tipCasa, $fiscalLines);
         if (!$wait['ok']) {
@@ -836,6 +856,7 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title, $isProforma = f
     $items = [];
     $itemsByKey = [];
     $fiscalItems = [];
+    $fiscalDiscByKey = [];
     $subtotal = 0.0;  // valoare de catalog (PVC), inainte de discount
     $total = 0.0;     // valoare neta (PV, dupa discount)
     $tvaByCota = [];
@@ -899,6 +920,24 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title, $isProforma = f
             "cota" => $cota,
             "discountLinie" => $discountLinie
         ];
+
+        // Varianta pentru "discount pe bon, fara stornare": cumulam pe produs
+        // SI pe pretul de catalog (PVC), ca discountul valoric sa fie exact.
+        $discKey = (($prodId > 0) ? ('p' . $prodId) : ('n' . mb_strtolower($den)))
+                 . '|' . number_format($pvc, 2, '.', '');
+        if (!isset($fiscalDiscByKey[$discKey])) {
+            $fiscalDiscByKey[$discKey] = [
+                "cant" => 0.0,
+                "denumire" => $den,
+                "pvc" => $pvc,
+                "cota" => $cota,
+                "valoare" => 0.0,        // net (PV)
+                "valoareOriginala" => 0.0 // catalog (PVC)
+            ];
+        }
+        $fiscalDiscByKey[$discKey]["cant"] += $cant;
+        $fiscalDiscByKey[$discKey]["valoare"] += $val;
+        $fiscalDiscByKey[$discKey]["valoareOriginala"] += $valOrig;
     }
 
     // Liniile cumulate (sarim peste produsele anulate integral -> cantitate 0).
@@ -922,6 +961,37 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title, $isProforma = f
             "cota" => $it["tva"],
             "discountLinie" => false
         ];
+    }
+
+    // Varianta "discount pe bon, fara stornare": o linie per produs (cantitatea
+    // neta, storno deja scazut) la pret de catalog, plus discountul valoric
+    // exact pe linie. Casa de marcat il scrie dupa articol (FiscalWire C tip 3,
+    // FiscalNet DV), deci discountul apare pe fiecare linie de produs.
+    $fiscalItemsDisc = [];
+    foreach ($fiscalDiscByKey as $it) {
+        $cant = round($it["cant"], 3);
+        if (abs($cant) < 0.0001) { continue; }
+        $discountVal = round($it["valoareOriginala"] - $it["valoare"], 2);
+        if ($discountVal < 0) { $discountVal = 0.0; }
+        $fiscalItemsDisc[] = [
+            "cant" => $cant,
+            "denumire" => $it["denumire"],
+            "pret" => $it["pvc"],
+            "pvc" => $it["pvc"],
+            "cota" => $it["cota"],
+            "discountVal" => $discountVal,
+            "discountLinie" => false
+        ];
+    }
+
+    // Varianta "stornare pe bon, fara discount": liniile raman separate (inclusiv
+    // cele de storno), dar fiecare se scrie la pretul net (PVC = PV), deci nu se
+    // genereaza nicio comanda de discount. Totalul ramane corect: linia de
+    // storno are oricum PV = PVC.
+    $fiscalItemsStorno = [];
+    foreach ($fiscalItems as $it) {
+        $it["pvc"] = $it["pret"];
+        $fiscalItemsStorno[] = $it;
     }
 
     // 3. Formele de plata (FPID -> denumire)
@@ -980,8 +1050,31 @@ function buildBillPrintData($conn, $docId, $bon, $plati, $title, $isProforma = f
         "nota" => $notaPayload,
         "fiscalItems" => $fiscalItems,
         "fiscalItemsNet" => $fiscalItemsNet,
+        "fiscalItemsDisc" => $fiscalItemsDisc,
+        "fiscalItemsStorno" => $fiscalItemsStorno,
         "plati" => $platiArr
     ];
+}
+
+/**
+ * Alege liniile pentru fisierul casei de marcat in functie de cele doua setari
+ * de evidentiere:
+ *   EvidDiscBonFisc + EvidStornoBonFisc = DA  -> liniile detaliate (ca inainte)
+ *   doar EvidDiscBonFisc = DA                 -> produse la catalog + discount
+ *   doar EvidStornoBonFisc = DA               -> linii separate, fara discount
+ *   ambele NU (implicit)                      -> cantitati/preturi nete
+ *
+ * @param resource $conn
+ * @param array $data Rezultatul lui buildBillPrintData().
+ * @return array
+ */
+function selectFiscalItems($conn, $data) {
+    $disc = getEvidDiscBonFisc($conn);
+    $storno = getEvidStornoBonFisc($conn);
+    if ($disc && $storno) { return $data['fiscalItems']; }
+    if ($disc) { return $data['fiscalItemsDisc']; }
+    if ($storno) { return $data['fiscalItemsStorno']; }
+    return $data['fiscalItemsNet'];
 }
 
 /**
@@ -1013,11 +1106,11 @@ function enqueueBillPrintJobs($conn, $docId, $bon, $plati, $cui = '', $skipFisca
         return ["nota" => $notaJob, "fiscal" => null];
     }
 
-    // Implicit bonul fiscal nu arata discountul si nici stornarea: se folosesc
-    // cantitatile/preturile nete (fara comenzi de discount, fara linii de
-    // storno). Setarea tblSet.BonFiscalDiscStorno = 1 reactiveaza modul detaliat.
+    // Liniile bonului fiscal depind de cele doua setari de evidentiere:
+    // EvidDiscBonFisc (discount pe fiecare linie) si EvidStornoBonFisc (linii
+    // de storno separate). Implicit ambele sunt NU: cantitati/preturi nete.
     $tipCasa = getTipCasaMarcat($conn);
-    $fiscalItems = getBonFiscalDiscStorno($conn) ? $data['fiscalItems'] : $data['fiscalItemsNet'];
+    $fiscalItems = selectFiscalItems($conn, $data);
     $fiscalLines = buildFiscalText($fiscalItems, $data['plati'], $tipCasa, getTvaNrMap($conn), $cui);
     // FiscalWire (si Fisco/fprwin, inca neimplementate) folosesc fisiere .inp, FiscalNet .txt.
     $fiscalExt = ($tipCasa === 'fiscalnet') ? '.txt' : '.inp';
@@ -1191,9 +1284,17 @@ function buildFiscalTextDatecs($items, $platiArr, $tvaMap = [], $cui = '') {
         $lines[] = "S,1,______,_,__;{$den};{$pret};{$q};1;1;{$nrTva};0;0;";
 
         // Discount pe linie. In modul implicit pretul e deja net (PVC = PV),
-        // deci nu se scrie nicio comanda C. In modul detaliat se scrie procentul
-        // simplu (ex. 5.00 = 5%), conform manualului FiscalWire.
-        if ($pvc > 0.0001) {
+        // deci nu se scrie nicio comanda C. Cand linia are discountul valoric
+        // calculat (EvidDiscBonFisc = DA), se scrie tipul 3 = discount valoric,
+        // exact la ban (manualul FiscalWire, pg. 22). Altfel (modul detaliat
+        // vechi) se scrie procentul simplu (ex. 5.00 = 5%).
+        if (array_key_exists('discountVal', $it)) {
+            $discVal = (float)$it['discountVal'];
+            if ($discVal > 0.0001) {
+                $val = number_format($discVal, 2, '.', '');
+                $lines[] = "C,1,______,_,__;3;{$val};;;;";
+            }
+        } elseif ($pvc > 0.0001) {
             $ratio = round(round($pvc - $pv, 2) / $pvc, 4);
             $prRed = 100 * $ratio;
             if ($prRed > 0.0001) {
@@ -1760,10 +1861,18 @@ function buildFiscalTextFiscalNet($items, $platiArr, $tvaMap = [], $cui = '') {
         $lines[] = "S^{$den}^{$pretStr}^{$cantStr}^buc^{$grupa}^1";
 
         // Discount/majorare pe linie, imediat sub articol (obligatoriu).
-        $diff = $pvc - $pv;
-        if (abs($diff) >= 0.0001) {
-            $valStr = fiscalNetAmount(abs($diff) * abs($cant), 2);
-            $lines[] = ($diff > 0 ? "DV^{$valStr}" : "MV^{$valStr}");
+        if (array_key_exists('discountVal', $it)) {
+            $discVal = (float)$it['discountVal'];
+            if ($discVal > 0.0001) {
+                $valStr = fiscalNetAmount($discVal, 2);
+                $lines[] = "DV^{$valStr}";
+            }
+        } else {
+            $diff = $pvc - $pv;
+            if (abs($diff) >= 0.0001) {
+                $valStr = fiscalNetAmount(abs($diff) * abs($cant), 2);
+                $lines[] = ($diff > 0 ? "DV^{$valStr}" : "MV^{$valStr}");
+            }
         }
     }
 
@@ -1838,6 +1947,10 @@ if ($conn === null) {
     exit;
 }
 ensureOrderSchema($conn);
+// Migrarea vechii setari BonFiscalDiscStorno in EvidDiscBonFisc/EvidStornoBonFisc
+// (ruleaza o singura data, idempotent), ca bonul fiscal sa fie corect si inainte
+// ca cineva sa deschida ecranul Setari dupa un update.
+ensureFiscalEvidSettings($conn);
 $raw = file_get_contents('php://input');
 $input = json_decode($raw, true);
 if (!$input || !is_array($input)) {
