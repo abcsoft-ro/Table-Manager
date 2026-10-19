@@ -53,6 +53,7 @@ return [
     'setari.tab.altele'    => 'Altele',
     'setari.tab.integrare' => 'Integrare',
     'setari.grup.discount' => 'Discount',
+    'setari.grup.fonturi'  => 'Fonturi',
     'setari.grup.casa'     => 'Casa Marcat',
     'setari.grup.posbanca' => 'POS Banca',
     'setari.grup.afiseaj'  => 'Afisaj',
@@ -81,6 +82,8 @@ return [
     'setari.desc.TextFactura' => 'Text liber afisat in subsolul facturii (ecranul Facturare). Pentru mai multe randuri, separati-le prin punct si virgula (;).',
     'setari.desc.PlataCombinata' => 'Plata combinata: 1 = DA (se pot combina mai multe forme de plata, cu introducerea sumelor din numpad); 0 = NU (in ecranul de inchidere apar doar formele de plata, fara numpad, iar la click pe o forma nota se inchide integral cu acea forma).',
     'setari.desc.MarcareMobil' => 'Marcarea de pe tableta/telefon (modulul mobil): 1 = DA, 0 = NU (implicit). Cand e NU, pagina mobil afiseaza un mesaj si nu permite marcarea; POS-ul desktop nu este afectat.',
+    'setari.desc.Font' => 'Fontul implicit pentru panoul din dreapta (grupe/produse). Se foloseste doar cand grupa sau produsul nu are un font setat.',
+    'setari.desc.Size' => 'Marimea fontului in panoul din dreapta (grupe/produse), in pixeli (6-72). Se foloseste doar cand grupa sau produsul nu are FontSize setat.',
     'setari.desc.IpPermise' => 'Lista de adrese IP / retele CIDR care pot accesa aplicatia (whitelist), separate prin virgula (ex. 192.168.1.20,192.168.1.0/24). Lista goala sau doar localhost = doar 127.0.0.1 / ::1 au acces. Localhost este intotdeauna permis si nu poate fi sters.',
     'setari.ip.placeholder' => '192.168.1.20 sau 192.168.1.0/24',
     'setari.ip.client' => 'IP-ul dvs.:',
@@ -115,6 +118,11 @@ return [
     'setari.desc.Mod_logare' => 'Modul de logare a ospatarilor: 1 = ospatarul ramane logat pe toata durata sesiunii; 0 = delogare automata la iesirea de pe masa (reautentificare obligatorie).',
     'setari.desc.DistrRand1' => 'Linia 1 de contact (dupa sigla) in footer-ul ecranului Mese.',
     'setari.desc.DistrRand2' => 'Linia 2 de contact (dupa sigla) in footer-ul ecranului Mese.',
+
+    // ---------------------------------------------- Fonturi implicite (panou)
+    'Revino la implicit' => 'Revino la implicit',
+    'Readuce Font si Size la valorile implicite (Arial / 12). Apasati Salveaza pentru a aplica.' => 'Readuce Font si Size la valorile implicite (Arial / 12). Apasati Salveaza pentru a aplica.',
+    'Valori implicite incarcate. Apasati Salveaza.' => 'Valori implicite incarcate. Apasati Salveaza.',
 
     // ------------------------------------------------------------- Marcari
     'marcare.nota_de_plata' => 'NOTA DE PLATA',

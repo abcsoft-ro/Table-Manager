@@ -214,6 +214,14 @@ function ensureSetariMeta($conn) {
     ensureSetariValue($conn, 'MarcareMobil', '0',
         "Marcarea de pe tableta/telefon (modulul mobil): 1 = DA, 0 = NU (implicit). Cand e NU, pagina mobil afiseaza un mesaj si nu permite marcarea.", 'General');
 
+    // Fontul si marimea implicita pentru butoanele din panoul din dreapta
+    // (grupe/produse). Se folosesc DOAR cand grupa sau produsul nu are
+    // FontType/FontSize setat; valorile per element au prioritate.
+    ensureSetariValue($conn, 'Font', 'Arial',
+        "Fontul implicit pentru panoul din dreapta (grupe/produse). Se foloseste doar cand grupa sau produsul nu are un font setat.", 'Fonturi');
+    ensureSetariValue($conn, 'Size', '12',
+        "Marimea fontului in panoul din dreapta (grupe/produse), in pixeli (6-72). Se foloseste doar cand grupa sau produsul nu are FontSize setat.", 'Fonturi');
+
     // Whitelist de adrese IP (grup 'Securitate'): doar adresele din lista pot
     // accesa aplicatia. Localhost (127.0.0.1 / ::1) este intotdeauna permis si
     // nu poate fi scos din lista; lista goala sau doar localhost = doar
@@ -437,6 +445,25 @@ if ($action === 'update') {
             "status" => "error",
             "message" => "Numarul de zecimale poate fi modificat doar cand toate mesele sunt inchise."
         ], 400);
+    }
+
+    // Fontul si marimea implicita a panoului din dreapta: normalizare si
+    // limite, ca o valoare gresita sa nu strice afisarea butoanelor.
+    if (array_key_exists('Size', $values)) {
+        $sizeRaw = trim((string)$values['Size']);
+        $sizeVal = (int)$sizeRaw;
+        if (!preg_match('/^\d{1,3}$/', $sizeRaw) || $sizeVal < 6 || $sizeVal > 72) {
+            sendJsonResponse([
+                "status" => "error",
+                "message" => "Marimea fontului trebuie sa fie un numar intreg intre 6 si 72."
+            ], 400);
+        }
+        $values['Size'] = (string)$sizeVal;
+    }
+    if (array_key_exists('Font', $values)) {
+        $fontVal = trim((string)$values['Font']);
+        if ($fontVal === '') { $fontVal = 'Arial'; }
+        $values['Font'] = substr($fontVal, 0, 100);
     }
 
     // Whitelist de IP-uri (tblSet.IpPermise): validare + normalizare. Localhost

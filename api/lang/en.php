@@ -51,6 +51,7 @@ return [
     'setari.tab.altele'    => 'Other',
     'setari.tab.integrare' => 'Integration',
     'setari.grup.discount' => 'Discount',
+    'setari.grup.fonturi'  => 'Fonts',
     'setari.grup.casa'     => 'Fiscal Printer',
     'setari.grup.posbanca' => 'Bank POS',
     'setari.grup.afiseaj'  => 'Customer display',
@@ -79,6 +80,8 @@ return [
     'setari.desc.TextFactura' => 'Free text shown at the bottom of the invoice (Invoicing screen). For multiple lines, separate them with a semicolon (;).',
     'setari.desc.PlataCombinata' => 'Split payment: 1 = YES (several payment forms can be combined, entering amounts from the numpad); 0 = NO (the payment screen shows only the payment forms, no numpad, and clicking a form closes the whole receipt with that form).',
     'setari.desc.MarcareMobil' => 'Marking from tablet/phone (mobile module): 1 = YES, 0 = NO (default). When NO, the mobile page shows a message and marking is not allowed; the desktop POS is not affected.',
+    'setari.desc.Font' => 'Default font for the right panel (groups/products). Used only when the group or the product has no font set.',
+    'setari.desc.Size' => 'Default font size for the right panel (groups/products), in pixels (6-72). Used only when the group or the product has no FontSize set.',
     'setari.desc.IpPermise' => 'List of IP addresses / CIDR networks allowed to access the application (whitelist), separated by comma (e.g. 192.168.1.20,192.168.1.0/24). An empty list or only localhost = only 127.0.0.1 / ::1 have access. Localhost is always allowed and cannot be deleted.',
     'setari.ip.placeholder' => '192.168.1.20 or 192.168.1.0/24',
     'setari.ip.client' => 'Your IP:',
@@ -113,6 +116,11 @@ return [
     'setari.desc.Mod_logare' => 'Waiter login mode: 1 = the waiter stays logged in for the whole session; 0 = automatic logout when leaving a table (re-authentication required).',
     'setari.desc.DistrRand1' => 'Contact line 1 (after the logo) in the footer of the Tables screen.',
     'setari.desc.DistrRand2' => 'Contact line 2 (after the logo) in the footer of the Tables screen.',
+
+    // ------------------------------------------- Default fonts (right panel)
+    'Revino la implicit' => 'Reset to defaults',
+    'Readuce Font si Size la valorile implicite (Arial / 12). Apasati Salveaza pentru a aplica.' => 'Brings Font and Size back to the defaults (Arial / 12). Press Save to apply.',
+    'Valori implicite incarcate. Apasati Salveaza.' => 'Default values loaded. Press Save.',
 
     // ------------------------------------------------------------- Ordering
     'marcare.nota_de_plata' => 'ORDER',

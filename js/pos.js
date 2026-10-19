@@ -27,6 +27,10 @@ const POS_STATE = {
   cantMax: 1000,
   // Numarul de zecimale pentru cantitate (tblSet.NrZecCant: 0, 1 sau 2).
   nrZecCant: 1,
+  // Fontul si marimea implicita pentru panoul din dreapta (tblSet.Font/Size):
+  // se folosesc atunci cand grupa/produsul nu au FontType/FontSize setate.
+  fontPanel: "Arial",
+  sizePanel: 12,
   // Discountul permis/interzis (tblSet.RED: 1 = DA, 0 = NU).
   red: 1,
   // Tipul discountului (tblSet.TipDiscount): 0 = complet, 1 = doar procent la
@@ -252,6 +256,10 @@ async function loadMenu() {
   POS_STATE.cantMax = (Number(data.cantMax) > 0) ? Number(data.cantMax) : 1000;
   const nz = parseInt(data.nrZecCant, 10);
   POS_STATE.nrZecCant = (nz >= 0 && nz <= 2) ? nz : 1;
+  // Fontul/marimea implicita a panoului din dreapta (fallback pentru grupe/produse).
+  POS_STATE.fontPanel = String(data.fontPanel || "Arial").trim() || "Arial";
+  const sp = parseInt(data.sizePanel, 10);
+  POS_STATE.sizePanel = (sp >= 6 && sp <= 72) ? sp : 12;
   POS_STATE.red = (data.red === 0 || data.red === "0") ? 0 : 1;
   const td = parseInt(data.tipDiscount, 10);
   POS_STATE.tipDiscount = (td >= 0 && td <= 2) ? td : 0;
@@ -357,6 +365,24 @@ function updateTablesFooter(line1, line2) {
 }
 
 /**
+ * Fontul si marimea efectiva pentru un buton din panoul din dreapta.
+ * Prioritate: valoarea proprie a grupei/produsului (tblGrp/tblProd), apoi
+ * setarea implicita din Setari (tblSet.Font / tblSet.Size), apoi CSS-ul.
+ */
+function effectiveFontSize(item) {
+  const own = parseInt(item && item.FontSize, 10);
+  if (own > 0) return own;
+  const def = parseInt(POS_STATE.sizePanel, 10);
+  return (def >= 6 && def <= 72) ? def : 0;
+}
+
+function effectiveFontType(item) {
+  const own = item && item.FontType ? String(item.FontType).trim() : "";
+  if (own !== "") return own;
+  return POS_STATE.fontPanel ? String(POS_STATE.fontPanel).trim() : "";
+}
+
+/**
  * Randare GRUPE pe panoul albastru (Grila 5x10, Pozitii 1..50 din tblGrp)
  */
 function renderMenuGrid() {
@@ -395,11 +421,13 @@ function renderMenuGrid() {
       if (grp.Bold) {
         btn.style.fontWeight = "bold";
       }
-      if (grp.FontSize) {
-        btn.style.fontSize = grp.FontSize + "px";
+      const menuFontSize = effectiveFontSize(grp);
+      if (menuFontSize) {
+        btn.style.fontSize = menuFontSize + "px";
       }
-      if (grp.FontType) {
-        btn.style.fontFamily = grp.FontType;
+      const menuFontType = effectiveFontType(grp);
+      if (menuFontType) {
+        btn.style.fontFamily = menuFontType;
       }
 
       // Butoane speciale cyan (WR1, WR2, WR3)
@@ -524,11 +552,13 @@ function renderProductGrid(produse, ignorePoz) {
       if (p.Bold) {
         btn.style.fontWeight = "bold";
       }
-      if (p.FontSize) {
-        btn.style.fontSize = p.FontSize + "px";
+      const prodFontSize = effectiveFontSize(p);
+      if (prodFontSize) {
+        btn.style.fontSize = prodFontSize + "px";
       }
-      if (p.FontType) {
-        btn.style.fontFamily = p.FontType;
+      const prodFontType = effectiveFontType(p);
+      if (prodFontType) {
+        btn.style.fontFamily = prodFontType;
       }
 
       btn.innerHTML = escapeHtml(capitalizeName(p.Denumire));
@@ -541,6 +571,27 @@ function renderProductGrid(produse, ignorePoz) {
       emptyDiv.className = "grid-pos-btn empty";
       gridContainer.appendChild(emptyDiv);
     }
+  }
+}
+
+// Re-randeaza panoul din dreapta pastrand nivelul curent (grupe / grupa
+// deschisa / Meniul Zilei), ca setarile de font sa se aplice imediat dupa
+// Salveaza, fara sa fie nevoie de repornirea aplicatiei.
+function refreshMenuPanel() {
+  const mode = POS_STATE.currentPanelMode;
+  const grp = POS_STATE.activeGroup;
+  if (mode === "products" && grp) {
+    openCategory(grp.nrGrp, grp.groupName);
+  } else if (mode === "meniu") {
+    const produse = getMeniulZileiProducts();
+    if (produse.length > 0) {
+      showMenuHeader("MENIUL ZILEI");
+      renderProductGrid(produse, true);
+    } else {
+      renderMenuGrid();
+    }
+  } else {
+    renderMenuGrid();
   }
 }
 
@@ -1998,6 +2049,10 @@ function makeProductGridBtn(p) {
     if (p.FontColor) btn.style.color = p.FontColor;
   }
   if (p.Bold) btn.style.fontWeight = "bold";
+  const searchFontSize = effectiveFontSize(p);
+  if (searchFontSize) btn.style.fontSize = searchFontSize + "px";
+  const searchFontType = effectiveFontType(p);
+  if (searchFontType) btn.style.fontFamily = searchFontType;
 
   btn.innerHTML = escapeHtml(p.Denumire);
   btn.onclick = () => addProduct(p.ProdID);
@@ -2396,7 +2451,7 @@ function applyRollback() {
 // Doar coloana Value este editabila; Setting si Descriere sunt doar afisate.
 // --------------------------------------------------------------------------
 const SETARI_TABS = [
-  { id: "general",    label: "setari.tab.general",   groups: ["General", "Discount", "Securitate"] },
+  { id: "general",    label: "setari.tab.general",   groups: ["General", "Fonturi", "Discount", "Securitate"] },
   { id: "device",     label: "setari.tab.device",    groups: ["Casa", "Afiseaj", "Cantar", "PoSbanca"] },
   { id: "integrare",  label: "setari.tab.integrare", groups: ["Integrare"], special: true },
   { id: "servicii",   label: "setari.tab.servicii",  groups: [], special: true },
@@ -2558,10 +2613,30 @@ function renderSetariTabs() {
   });
 }
 
+// Fonturile oferite in combobox-ul din Setari > General > Fonturi. Lista este
+// fixa (fonturi sigure, prezente pe orice statie Windows) ca sa nu difere de la
+// o masina la alta; daca in baza de date exista o alta valoare, aceasta este
+// adaugata in lista ca optiune suplimentara.
+const SETARI_FONTS = [
+  "Arial",
+  "Segoe UI",
+  "Tahoma",
+  "Verdana",
+  "Calibri",
+  "Georgia",
+  "Times New Roman",
+  "Trebuchet MS",
+  "Courier New",
+  "Comic Sans MS",
+  "Impact",
+  "Lucida Console"
+];
+
 // Ordinea explicita a setarilor in cadrul unui grup (dupa tblSet.Setting).
 // Cele care nu apar in lista raman dupa ele, in ordinea primita de la server.
 const SETARI_ORDINE = {
   "general": ["Limba", "NrLogic", "MagID", "TipVanz", "Server", "MarcareMobil"],
+  "fonturi": ["Font", "Size"],
   "discount": ["RED", "TipDiscount", "ProcentDiscountFix", "MotivDiscount"],
   "casa": ["TipCasaMarcat", "AsteaptaRaspunsCasa", "AsteptareCasaSec", "EvidDiscBonFisc", "EvidStornoBonFisc", "CaleFisierComenziECR", "CaleFisierRaspunsECR"],
   "afiseaj": ["AfiseajClient", "PortComAfiseaj", "BaudRateAfisaj", "CaleDriverAfiseajClient", "CaleFisierComenziAfiseajClient"],
@@ -2573,6 +2648,7 @@ const SETARI_ORDINE = {
 // Etichete prietenoase pentru grupuri (altfel se afiseaza numele brut din tblSet.Grup).
 const SETARI_GRUP_LABELS = {
   "discount": "setari.grup.discount",
+  "fonturi": "setari.grup.fonturi",
   "casa": "setari.grup.casa",
   "posbanca": "setari.grup.posbanca",
   "afiseaj": "setari.grup.afiseaj",
@@ -2617,6 +2693,10 @@ function setariField(row) {
   // Limba interfetei: lista Romana / Engleza.
   if (row.Setting === "Limba") {
     return setariLimbaField(row);
+  }
+  // Fontul implicit al panoului din dreapta: combobox cu fonturi sigure.
+  if (row.Setting === "Font") {
+    return setariFontField(row);
   }
   // Tipul de vanzare se editeaza ca lista (Restaurant / FastFood), nu ca text.
   if (row.Setting === "TipVanz") {
@@ -2753,6 +2833,45 @@ function setariLimbaField(row) {
     opt.value = pair[0];
     opt.textContent = tr(pair[1]);
     if (pair[0] === cur) opt.selected = true;
+    select.appendChild(opt);
+  });
+  select.onchange = () => { setariDirty[row.Setting] = select.value; };
+  div.appendChild(select);
+
+  if (row.Descriere && String(row.Descriere).trim() !== "") {
+    const d = document.createElement("div");
+    d.className = "setari-desc";
+    d.textContent = row.Descriere;
+    div.appendChild(d);
+  }
+
+  return div;
+}
+
+// Combobox pentru tblSet.Font: fontul implicit al panoului din dreapta
+// (grupe/produse). O valoare existenta care nu e in lista este pastrata ca
+// optiune suplimentara, ca sa nu se piarda la salvare.
+function setariFontField(row) {
+  const div = document.createElement("div");
+  div.className = "setari-field";
+
+  const label = document.createElement("label");
+  label.className = "setari-label";
+  label.textContent = row.Setting;
+  div.appendChild(label);
+
+  const select = document.createElement("select");
+  select.className = "tva-input setari-input";
+  select.id = "setari-inp-" + row.Setting;
+
+  const cur = String(row.Value === null || row.Value === undefined ? "" : row.Value).trim() || "Arial";
+  const fonts = SETARI_FONTS.slice();
+  if (fonts.indexOf(cur) === -1) fonts.unshift(cur);
+  fonts.forEach(f => {
+    const opt = document.createElement("option");
+    opt.value = f;
+    opt.textContent = f;
+    if (f === cur) opt.selected = true;
     select.appendChild(opt);
   });
   select.onchange = () => { setariDirty[row.Setting] = select.value; };
@@ -3260,6 +3379,42 @@ function applyRedFieldsUI() {
   });
 }
 
+// Butonul "Revino la implicit" din grupul Fonturi: readuce in formular
+// Font = Arial si Size = 12 (fara sa scrie in baza de date; se aplica la
+// apasarea butonului Salveaza, ca restul setarilor).
+function makeFontResetRow() {
+  const div = document.createElement("div");
+  div.className = "setari-field";
+
+  const btn = document.createElement("button");
+  btn.className = "act-btn";
+  btn.id = "setari-font-reset";
+  btn.textContent = tr("Revino la implicit");
+  btn.onclick = resetFontDefaults;
+  div.appendChild(btn);
+
+  const d = document.createElement("div");
+  d.className = "setari-desc";
+  d.textContent = tr("Readuce Font si Size la valorile implicite (Arial / 12). Apasati Salveaza pentru a aplica.");
+  div.appendChild(d);
+
+  return div;
+}
+
+function resetFontDefaults() {
+  const fontSel = document.getElementById("setari-inp-Font");
+  const sizeInp = document.getElementById("setari-inp-Size");
+  if (fontSel) {
+    fontSel.value = "Arial";
+    setariDirty["Font"] = "Arial";
+  }
+  if (sizeInp) {
+    sizeInp.value = "12";
+    setariDirty["Size"] = "12";
+  }
+  showToast("Valori implicite incarcate. Apasati Salveaza.");
+}
+
 function renderSetariTab(tabId) {
   const wrap = document.getElementById("setari-content");
   if (!wrap) return;
@@ -3295,6 +3450,10 @@ function renderSetariTab(tabId) {
       wrap.appendChild(h);
     }
     grp.rows.forEach(r => wrap.appendChild(setariField(r)));
+    // Grupul Fonturi primeste si butonul de revenire la valorile implicite.
+    if (grp.rows.length > 0 && setariNorm(grp.rows[0].Grup) === "fonturi") {
+      wrap.appendChild(makeFontResetRow());
+    }
   });
 
   // Campurile de discount depind de RED (le activeaza/dezactiveaza).
@@ -3630,6 +3789,18 @@ async function saveSetari() {
       const nz = parseInt(setariDirty["NrZecCant"], 10);
       POS_STATE.nrZecCant = (nz >= 0 && nz <= 2) ? nz : 1;
       renderOrderItems();
+    }
+
+    // Fontul/marimea implicita a panoului din dreapta se aplica imediat.
+    if (keys.indexOf("Font") !== -1 || keys.indexOf("Size") !== -1) {
+      if (keys.indexOf("Font") !== -1) {
+        POS_STATE.fontPanel = String(setariDirty["Font"] || "Arial").trim() || "Arial";
+      }
+      if (keys.indexOf("Size") !== -1) {
+        const sps = parseInt(setariDirty["Size"], 10);
+        POS_STATE.sizePanel = (sps >= 6 && sps <= 72) ? sps : 12;
+      }
+      refreshMenuPanel();
     }
 
     // Discountul permis/interzis se aplica imediat (ascunde butoanele).

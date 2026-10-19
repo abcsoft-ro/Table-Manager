@@ -47,6 +47,18 @@ const HELP_CONTENT = {
           in fereastra de discount, separate prin punct si virgula (;).</li>
       </ul>
 
+      <h4 class="help-section">Tab General - grupul Fonturi</h4>
+      <ul class="help-list">
+        <li><span class="help-field">Font</span> - fontul implicit al butoanelor
+          din panoul din dreapta (grupe si produse), ales din lista.</li>
+        <li><span class="help-field">Size</span> - marimea fontului in pixeli
+          (6-72) pentru acelasi panou.</li>
+        <li>Ambele se folosesc <strong>doar</strong> cand grupa sau produsul nu
+          are FontType/FontSize setat in programare; valoarea proprie a fiecarui
+          element are prioritate. Butonul <strong>Revino la implicit</strong>
+          readuce campurile la Arial / 12 (apoi apasati Salveaza).</li>
+      </ul>
+
       <h4 class="help-section">Tab General - grupul General</h4>
       <ul class="help-list">
         <li><span class="help-field">NrLogic</span> - numarul logic al statiei /
@@ -680,6 +692,18 @@ const HELP_CONTENT_EN = {
           used when TipDiscount = 2.</li>
         <li><span class="help-field">MotivDiscount</span> - the list of reasons
           offered in the discount window, separated by semicolon (;).</li>
+      </ul>
+
+      <h4 class="help-section">General tab - Fonts group</h4>
+      <ul class="help-list">
+        <li><span class="help-field">Font</span> - the default font of the buttons
+          in the right panel (groups and products), chosen from the list.</li>
+        <li><span class="help-field">Size</span> - the font size in pixels
+          (6-72) for the same panel.</li>
+        <li>Both are used <strong>only</strong> when the group or product has no
+          FontType/FontSize set in programming; each item's own value wins. The
+          <strong>Reset to defaults</strong> button brings the fields back to
+          Arial / 12 (then press Save).</li>
       </ul>
 
       <h4 class="help-section">General tab - General group</h4>

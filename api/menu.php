@@ -338,6 +338,25 @@ if ($stmtMM) {
     if ($mm && trim((string)$mm['Value']) === '1') { $marcareMobil = 1; }
 }
 
+// 4f6. Fontul si marimea implicita pentru panoul din dreapta (grupe/produse):
+//      tblSet.Font / tblSet.Size. Clientul le foloseste doar cand grupa sau
+//      produsul nu are FontType/FontSize setat (fallback in js/pos.js).
+$fontPanel = 'Arial';
+$sizePanel = 12;
+$stmtFD = sqlsrv_query($conn, "SELECT Setting, Value FROM tblSet WHERE Setting IN ('Font','Size')");
+if ($stmtFD) {
+    while ($fd = sqlsrv_fetch_array($stmtFD, SQLSRV_FETCH_ASSOC)) {
+        $fdKey = strtolower(trim((string)$fd['Setting']));
+        $fdVal = trim((string)($fd['Value'] ?? ''));
+        if ($fdKey === 'font' && $fdVal !== '') {
+            $fontPanel = substr($fdVal, 0, 100);
+        } elseif ($fdKey === 'size' && $fdVal !== '') {
+            $fdSize = (int)$fdVal;
+            if ($fdSize >= 6 && $fdSize <= 72) { $sizePanel = $fdSize; }
+        }
+    }
+}
+
 // 4g. Parola de discount (tblParola.ParolaDiscount): 1 daca este setata (deci
 //     discountul cere parola), 0 daca nu. Valoarea parolei NU se trimite.
 $parolaDiscount = 0;
@@ -425,6 +444,8 @@ sendJsonResponse([
     "parolaStornare" => $parolaStornare,
     "motivDiscount" => $motivDiscount,
     "motivStornare" => $motivStornare,
+    "fontPanel" => $fontPanel,
+    "sizePanel" => $sizePanel,
     "distrRand1" => $distrRand1,
     "distrRand2" => $distrRand2,
     "lang" => appLang($conn)
