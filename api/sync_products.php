@@ -4,6 +4,7 @@
  * Sursa (server/instanta/user/parola) se citeste din tblConectare (ID=1).
  */
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/import_common.php';
 
 $conn = getDBConnection();
 
@@ -28,7 +29,7 @@ if ($areNote) {
 }
 
 // Configuratia sursei de date (aceeasi folosita de ImportProd)
-$stmtCfg = sqlsrv_query($conn, "SELECT TOP 1 ServerIP, ServerName, UserName, Password FROM tblConectare WHERE ID = 1");
+$stmtCfg = sqlsrv_query($conn, "SELECT TOP 1 ServerIP, ServerName, UserName, Password, TC FROM tblConectare WHERE ID = 1");
 $cfg = $stmtCfg ? sqlsrv_fetch_array($stmtCfg, SQLSRV_FETCH_ASSOC) : null;
 if (!$cfg) {
     sendJsonResponse(["status" => "error", "message" => "Nu exista configurarea de conectare (tblConectare ID=1)"], 500);
@@ -39,13 +40,23 @@ $instance = trim($cfg['ServerName'] ?? '');
 $ip = ($instance !== '' && strcasecmp($instance, $server) !== 0) ? $server . '\\' . $instance : $server;
 $user = trim($cfg['UserName'] ?? 'sa');
 $pass = (string)($cfg['Password'] ?? '');
+$windowsAuth = ((int)($cfg['TC'] ?? 0) === 1) ? 1 : 0;
 
 if ($ip === '') {
     sendJsonResponse(["status" => "error", "message" => "ServerIP lipsa in tblConectare"], 500);
 }
 
+// Aplicam procedura din api/sql/import_prod_procedure.sql (CREATE OR ALTER), ca
+// o instalatie veche sa primeasca versiunea cu parametri corecti si linked
+// server mapping explicit, fara pasi manuali.
+$errProc = ensureImportProdProcedure($conn);
+if ($errProc !== null) {
+    sendJsonResponse(["status" => "error", "message" => $errProc], 500);
+}
+
 // Rulam procedura. Orice eroare este propagata (THROW in CATCH) si ajunge aici.
-$stmt = sqlsrv_query($conn, "EXEC dbo.ImportProd @IP = ?, @user = ?, @PassWord = ?", [$ip, $user, $pass]);
+$stmt = sqlsrv_query($conn, "EXEC dbo.ImportProd @IP = ?, @user = ?, @PassWord = ?, @windowsAuth = ?",
+    [$ip, $user, $pass, $windowsAuth]);
 if ($stmt === false) {
     $err = sqlsrv_errors();
     sendJsonResponse([

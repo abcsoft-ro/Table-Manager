@@ -126,6 +126,23 @@ def consume(cur):
             break
 
 
+def apply_import_procedure(cn):
+    """Aplica procedura ImportProd din api/sql/import_prod_procedure.sql.
+
+    Fisierul SQL este sursa unica a procedurii; CREATE OR ALTER face ca o
+    statie cu o versiune veche sa primeasca automat varianta corecta
+    (parametri netrunchiati, mapping explicit pe linked server, XACT_ABORT).
+    """
+    path = os.path.join(BASE_DIR, "api", "sql", "import_prod_procedure.sql")
+    if not os.path.isfile(path):
+        log("ATENTIE: lipseste %s (procedura ImportProd nu a fost actualizata)." % path)
+        return
+    with open(path, "r", encoding="utf-8-sig") as fh:
+        sql = fh.read()
+    cn.cursor().execute(sql)
+    log("Procedura dbo.ImportProd actualizata din api/sql/import_prod_procedure.sql.")
+
+
 def main(note_mode="run"):
     cfg = read_db_config()
     if not cfg:
@@ -158,7 +175,7 @@ def main(note_mode="run"):
             log("tblNoteD are %d linii -> importul continua (--if-notes=run)." % note)
 
         cur.execute(
-            "SELECT TOP 1 ServerIP, ServerName, UserName, Password FROM tblConectare WHERE ID = 1"
+            "SELECT TOP 1 ServerIP, ServerName, UserName, Password, TC FROM tblConectare WHERE ID = 1"
         )
         row = cur.fetchone()
         if not row:
@@ -168,13 +185,17 @@ def main(note_mode="run"):
         instance = (row[1] or "").strip()
         user = (row[2] or "sa").strip()
         password = row[3] or ""
+        windows_auth = 1 if (len(row) > 4 and row[4]) else 0
         ip = server if (not instance or instance.lower() == server.lower()) else server + "\\" + instance
         if not ip:
             log("EROARE: ServerIP lipsa in tblConectare.")
             return 3
 
         log("Import produse/grupe de pe %s ..." % ip)
-        cur.execute("EXEC dbo.ImportProd @IP = ?, @user = ?, @PassWord = ?", ip, user, password)
+        apply_import_procedure(cn)
+        cur.execute(
+            "EXEC dbo.ImportProd @IP = ?, @user = ?, @PassWord = ?, @windowsAuth = ?",
+            ip, user, password, windows_auth)
         consume(cur)
         log("Import finalizat cu succes (server %s)." % ip)
         return 0

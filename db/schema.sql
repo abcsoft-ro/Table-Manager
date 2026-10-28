@@ -763,17 +763,38 @@ GO
 -- Version: Import din una sau mai multe magazii (tblSet.MagID = '1,2'); la suprapuneri castiga primul MagID din lista
 
 -- =============================================
+/*
+ * Procedura stocata ImportProd (import produse/grupe de pe serverul extern).
+ *
+ * SURSA UNICA: fisierul acesta este aplicat automat (CREATE OR ALTER) de
+ * aplicatie inainte de fiecare import - vezi ensureImportProdProcedure() din
+ * api/import_common.php si import_server_grp_prod.py. Poate fi rulat si manual
+ * in SSMS, ca un singur batch.
+ *
+ * Fata de versiunea veche:
+ *   - @user / @PassWord sunt nvarchar(128): parola nu mai este trunchiata la 10
+ *     caractere de catre parametrul procedurii (linked server login esuat);
+ *   - linked server-ul primeste mapping EXPLICIT (user/parola, sau Windows auth
+ *     cand @windowsAuth = 1) si "data access" = true - altfel conexiunea e
+ *     anonima si tabelele din baza remote nu sunt vizibile (eroare 7314);
+ *   - SET XACT_ABORT ON + CATCH fara usp_GetErrorInfo, ca eroarea reala sa fie
+ *     raportata (nu 3930 de la COMMIT / de la INSERT-ul in ERRORLOG).
+ */
 CREATE OR ALTER PROCEDURE [dbo].[ImportProd] 
 	-- Add the parameters for the stored procedure here
-	@IP nvarchar(50) = 'localhost', 
-	@user nvarchar(10)='sa',
-	@PassWord nvarchar(10)
+	@IP nvarchar(128) = 'localhost',
+	@user nvarchar(128) = 'sa',
+	@PassWord nvarchar(128) = N'',
+	@windowsAuth bit = 0
 	
 AS
 BEGIN
 	-- SET NOCOUNT ON added to prevent extra result sets from
 	-- interfering with SELECT statements.
 	SET NOCOUNT ON;
+	-- O eroare anuleaza tranzactia (nu o lasa in stare "doomed", care la COMMIT
+	-- iese ca eroare 3930 in loc de cauza reala).
+	SET XACT_ABORT ON;
 
 	-- Tabele de mapare server -> local (create daca lipsesc). Sunt folosite in
 	-- SQL-ul dinamic de mai jos pentru a traduce tblProd.KP si tblProd.Sectie
@@ -822,16 +843,19 @@ BEGIN
 	EXEC sp_addlinkedserver @server=@IP
 	EXEC sp_addlinkedsrvlogin @IP, 'false', NULL, @user, @PassWord
 	*/
-	IF NOT EXISTS (SELECT 1 FROM sys.servers WHERE name = @IP)
-	BEGIN
-		EXEC sp_addlinkedserver @server=@IP
-		EXEC sp_addlinkedsrvlogin @IP, 'false', NULL, @user, @PassWord
-	END
+	IF NOT EXISTS (SELECT 1 FROM sys.servers WHERE server_id <> 0 AND name = @IP)
+		EXEC master.dbo.sp_addlinkedserver @server = @IP, @srvproduct = N'SQL Server';
+
+	-- Mapping explicit: fara el SQL Server foloseste contextul contului serviciului
+	-- (login anonim pe serverul remote), iar tabelele nu sunt vizibile si
+	-- interogarile esueaza cu 7314 ("does not contain the table ...").
+	IF @windowsAuth = 1
+		EXEC master.dbo.sp_addlinkedsrvlogin @rmtsrvname = @IP, @useself = 'TRUE', @locallogin = NULL;
 	ELSE
-	BEGIN
-		-- Optionally refresh login mapping if needed
-		EXEC sp_addlinkedsrvlogin @IP, 'false', NULL, @user, @PassWord
-	END
+		EXEC master.dbo.sp_addlinkedsrvlogin @rmtsrvname = @IP, @useself = 'FALSE', @locallogin = NULL,
+			@rmtuser = @user, @rmtpassword = @PassWord;
+
+	EXEC master.dbo.sp_serveroption @server = @IP, @optname = 'data access', @optvalue = 'true';
 	BEGIN TRY
 		BEGIN TRANSACTION
 		/*
@@ -947,7 +971,8 @@ BEGIN
 	END TRY
 	BEGIN CATCH
 		-- Eroare: anulam intotdeauna tranzactia, ca sa nu comitem stergeri partiale
-		EXECUTE usp_GetErrorInfo;
+		-- (fara EXECUTE usp_GetErrorInfo: INSERT-ul lui in ERRORLOG ar pica
+		--  primul cu 3930 intr-o tranzactie "doomed" si ar ascunde cauza)
 		IF (XACT_STATE()) <> 0
 			ROLLBACK TRANSACTION;
 	THROW;
