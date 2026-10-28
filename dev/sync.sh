@@ -61,12 +61,17 @@ done
 git add -A
 
 if git diff --cached --quiet; then
-  echo "Nicio modificare de sincronizat ($(date '+%Y-%m-%d %H:%M:%S'))."
+  echo "Nicio modificare noua in arbore ($(date '+%Y-%m-%d %H:%M:%S'))."
 else
   git commit -q -m "Sync $(date '+%Y-%m-%d %H:%M:%S')"
-  git push -q "https://x-access-token:${TOKEN}@github.com/abcsoft-ro/Table-Manager.git" main
-  echo "Sincronizat: $(git rev-parse --short HEAD) ($(date '+%Y-%m-%d %H:%M:%S'))"
 fi
+
+# Push necondiționat: dacă commit-ul a fost făcut manual inainte de sync.sh,
+# diff-ul este gol, dar commit-ul tot trebuie publicat - altfel
+# payload/app-version.json arata un SHA care nu exista pe GitHub si instalarea
+# din snapshot esueaza. Push-ul este no-op cand nu e nimic de trimis.
+git push -q "https://x-access-token:${TOKEN}@github.com/abcsoft-ro/Table-Manager.git" main
+echo "Sincronizat: $(git rev-parse --short HEAD) ($(date '+%Y-%m-%d %H:%M:%S'))"
 
 # ------------------------------------------------------- variabile versiune
 SHA="$(git rev-parse HEAD)"
