@@ -5,6 +5,42 @@
  * POST -> actiune: update
  */
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/app_events.php';
+
+/**
+ * Numele complet al serverului SQL, construit ca ServerIP + '\' + instanta
+ * (aceeasi regula ca getConectareDb() din send_common.php si ca serviciul de
+ * sincronizare). ServerName este DOAR numele instantei, nu al calculatorului.
+ */
+function conectareTarget($server, $instance) {
+    $server = trim((string)$server);
+    $instance = trim((string)$instance);
+    return ($instance !== '' && strcasecmp($instance, $server) !== 0)
+        ? $server . '\\' . $instance
+        : $server;
+}
+
+/**
+ * Identitatea bazei de date pe care lucreaza aplicatia local (server + baza).
+ * Ecranul o afiseaza, ca sa fie clar unde se salveaza tblConectare: altfel se
+ * confunda cu baza de pe serverul extern (DataRON), care are propriul rand
+ * tblConectare si poate avea alta valoare.
+ */
+function conectareLocalIdentity($conn) {
+    $out = ["server" => "", "database" => "", "instance" => ""];
+    $stmt = @sqlsrv_query(
+        $conn,
+        "SELECT @@SERVERNAME AS srv, DB_NAME() AS db,
+                CAST(SERVERPROPERTY('InstanceName') AS nvarchar(128)) AS inst"
+    );
+    $r = $stmt ? sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC) : null;
+    if ($r) {
+        $out['server'] = trim((string)($r['srv'] ?? ''));
+        $out['database'] = trim((string)($r['db'] ?? ''));
+        $out['instance'] = trim((string)($r['inst'] ?? ''));
+    }
+    return $out;
+}
 
 /**
  * Creeaza tabelele de mapare server->local daca lipsesc (deploy fara pasi
@@ -102,7 +138,7 @@ function readRemoteOptions($conn) {
 
     $server = trim((string)$c['ServerIP']);
     $instance = trim((string)$c['ServerName']);
-    $srv = ($instance !== '' && strcasecmp($instance, $server) !== 0) ? $server . '\\' . $instance : $server;
+    $srv = conectareTarget($server, $instance);
     if ($srv === '') { $out['error'] = "ServerIP lipsa."; return $out; }
 
     // Timeout-ul de conectare vine din tblSet.ODBC_TimeOut (aceeasi setare ca la
@@ -180,6 +216,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     sendJsonResponse([
         "status"    => "success",
         "row"       => $row,
+        "local"     => conectareLocalIdentity($conn),
         "mapKP"     => readMapping($conn, 'tblMapKP', 'KPServer', 'KPLocal'),
         "mapSectii" => readMapping($conn, 'tblMapSectii', 'SectieServer', 'SectieLocal')
     ]);
@@ -205,6 +242,12 @@ switch ($action) {
         }
         $tc = (int)($input['TC'] ?? 0) ? 1 : 0;
         $hasMaps = array_key_exists('mapKP', $input) || array_key_exists('mapSectii', $input);
+
+        // Valoarea veche, pentru jurnalul de evenimente (ce s-a schimbat si unde).
+        $oldRow = null;
+        $stmtOld = @sqlsrv_query($conn,
+            "SELECT ServerIP, ServerName, DataBaseName FROM tblConectare WHERE ID = ?", [$ID]);
+        if ($stmtOld) { $oldRow = sqlsrv_fetch_array($stmtOld, SQLSRV_FETCH_ASSOC); }
 
         // Conexiunea si maparile se salveaza impreuna (totul sau nimic).
         sqlsrv_begin_transaction($conn);
@@ -235,7 +278,29 @@ switch ($action) {
         }
 
         sqlsrv_commit($conn);
-        sendJsonResponse(["status" => "success", "message" => "Conectare server actualizata"]);
+
+        // Jurnal: exact ce s-a scris si in ce baza locala (ajuta la confuzia
+        // dintre tblConectare local si cel de pe serverul extern).
+        $nouLabel = conectareTarget($values['ServerIP'], $values['ServerName']);
+        $local = conectareLocalIdentity($conn);
+        appEventLog('conectare', [
+            'local' => $local['server'] . ' / ' . $local['database'],
+            'nou' => $nouLabel . ' / ' . $values['DataBaseName'],
+            'vechi' => $oldRow
+                ? conectareTarget($oldRow['ServerIP'], $oldRow['ServerName'])
+                    . ' / ' . trim((string)($oldRow['DataBaseName'] ?? ''))
+                : '(lipsea)',
+            'tc' => $tc,
+            'user' => $tc ? '' : $values['UserName'],
+            'ip' => (string)($_SERVER['REMOTE_ADDR'] ?? ''),
+        ]);
+
+        sendJsonResponse([
+            "status"  => "success",
+            "message" => "Conectare server actualizata (" . $nouLabel
+                . ($values['DataBaseName'] !== '' ? ' / ' . $values['DataBaseName'] : '')
+                . ")"
+        ]);
         break;
 
     case 'test':
@@ -248,13 +313,20 @@ switch ($action) {
         $pass     = (string)($input['Password'] ?? '');
         $tc       = (int)($input['TC'] ?? 0) ? true : false;
 
-        $srv = ($instance !== '' && strcasecmp($instance, $server) !== 0)
-            ? $server . '\\' . $instance
-            : $server;
+        $srv = conectareTarget($server, $instance);
 
         if ($srv === '') {
             sendJsonResponse(["status" => "error", "message" => "ServerIP este obligatoriu"], 400);
         }
+
+        // "Testeaza conexiunea" NU salveaza nimic; jurnalizam insa incercarea,
+        // ca sa se vada exact ce tinta a fost testata (util cand in formular
+        // apar valori nesalvate).
+        $logCtx = [
+            'tinta' => $srv,
+            'baza' => $database,
+            'ip' => (string)($_SERVER['REMOTE_ADDR'] ?? ''),
+        ];
 
         $ci = [
             "CharacterSet" => "UTF-8",
@@ -272,12 +344,14 @@ switch ($action) {
         $testConn = sqlsrv_connect($srv, $ci);
         if ($testConn) {
             sqlsrv_close($testConn);
+            appEventLog('conectare_test', $logCtx + ['rezultat' => 'ok']);
             $target = $srv . ($database !== '' ? ' / ' . $database : '');
             sendJsonResponse(["status" => "success", "message" => "Conexiune reusita la " . $target]);
         }
 
         $err = sqlsrv_errors();
         $errMsg = $err ? $err[0]['message'] : 'eroare necunoscuta';
+        appEventLog('conectare_test', $logCtx + ['rezultat' => 'eroare', 'mesaj' => $errMsg]);
         sendJsonResponse(["status" => "error", "message" => "Conexiune esuata la " . $srv . ": " . $errMsg], 500);
         break;
 

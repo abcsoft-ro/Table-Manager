@@ -876,6 +876,31 @@ body {
   padding: 4px 6px 12px 6px;
 }
 
+/* Indicator de modificari nesalvate (ecranul Conectare server). */
+.con-dirty {
+  align-self: center;
+  background: #b00000;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  padding: 3px 10px;
+  border-radius: 10px;
+}
+
+/* Identitatea bazei locale (unde se salveaza tblConectare). */
+.con-local-info {
+  font-size: 13px;
+  color: #333333;
+  background: #eef3ff;
+  border-left: 4px solid #2952a3;
+  padding: 6px 10px;
+  margin-bottom: 12px;
+}
+.con-local-info:empty {
+  display: none;
+}
+
 .prog-grid {
   flex: 1;
   min-height: 0;

@@ -271,19 +271,29 @@ const HELP_CONTENT = {
       </p>
       <h4 class="help-section">Date de conectare</h4>
       <ul class="help-list">
-        <li><span class="help-field">ServerIP / ServerName</span> - adresa / numele
-          serverului SQL.</li>
+        <li><span class="help-field">ServerIP</span> - host-ul serverului SQL:
+          un IP (ex. <em>192.168.1.50</em>) sau numele calculatorului (ex.
+          <em>POS1</em>). Aici se pune <strong>doar</strong> host-ul, fara
+          instanta.</li>
+        <li><span class="help-field">ServerName</span> - <strong>doar numele
+          instantei SQL</strong> (ex. <em>SQLEXPRESS</em>); lasati gol daca
+          serverul foloseste instanta implicita. Aplicatia construieste
+          <em>ServerIP\\ServerName</em>, deci un nume de calculator sau un nume
+          complet pus aici da eroarea &bdquo;Error Locating Server/Instance
+          Specified&rdquo;.</li>
         <li><span class="help-field">DataBaseName</span> - numele bazei de date.</li>
         <li><span class="help-field">UserName / Password</span> - utilizatorul si
           parola (nu se folosesc cand TC = Da).</li>
         <li><span class="help-field">TC (Trusted Connection)</span> - DA = aute
           Windows, NU = user/parola.</li>
         <li><span class="help-field">ODBC_connect_string</span> - sirul ODBC
-          complet, daca este folosit direct.</li>
+          complet, doar informativ: conexiunea se face din campurile de mai sus.</li>
       </ul>
       <p class="help-tip">
         Butonul <strong>Testeaza conexiunea</strong> incearca conectarea cu
-        valorile de pe ecran, fara sa salveze.
+        valorile de pe ecran, fara sa salveze, si arata in mesaj tinta exacta
+        (<em>ServerIP\\ServerName / baza</em>) folosita de serviciul de
+        sincronizare.
       </p>
       <h4 class="help-section">Mapari server &#8594; local</h4>
       <ul class="help-list">
@@ -909,19 +919,28 @@ const HELP_CONTENT_EN = {
       </p>
       <h4 class="help-section">Connection details</h4>
       <ul class="help-list">
-        <li><span class="help-field">ServerIP / ServerName</span> - address / name
-          of the SQL server.</li>
+        <li><span class="help-field">ServerIP</span> - the SQL Server host: an IP
+          (e.g. <em>192.168.1.50</em>) or the machine name (e.g. <em>POS1</em>).
+          Only the host goes here, without the instance.</li>
+        <li><span class="help-field">ServerName</span> - <strong>only the SQL
+          instance name</strong> (e.g. <em>SQLEXPRESS</em>); leave it empty when
+          the server uses the default instance. The app builds
+          <em>ServerIP\\ServerName</em>, so a machine name or a full server name
+          entered here produces &ldquo;Error Locating Server/Instance
+          Specified&rdquo;.</li>
         <li><span class="help-field">DataBaseName</span> - the database name.</li>
         <li><span class="help-field">UserName / Password</span> - user and password
           (not used when TC = YES).</li>
         <li><span class="help-field">TC (Trusted Connection)</span> - YES = Windows
           auth, NO = user/password.</li>
         <li><span class="help-field">ODBC_connect_string</span> - the full ODBC
-          string, if used directly.</li>
+          string, informational only: the connection is built from the fields
+          above.</li>
       </ul>
       <p class="help-tip">
         The <strong>Test connection</strong> button tries to connect with the
-        on-screen values, without saving.
+        on-screen values, without saving, and reports the exact target
+        (<em>ServerIP\\ServerName / database</em>) used by the sync service.
       </p>
       <h4 class="help-section">Server &#8594; local mappings</h4>
       <ul class="help-list">

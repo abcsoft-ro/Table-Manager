@@ -13,7 +13,7 @@ import traceback
 import urllib.error
 import urllib.request
 
-from db import DbError, execute_statements
+from db import DbError, describe_target, execute_statements
 
 
 def log(msg, cfg=None):
@@ -124,10 +124,12 @@ def process_once(cfg):
 
     try:
         message, result = execute_statements(info, [job.get("str_sql")], cfg)
-        log("Rand %s (DocID %s) OK: %s%s" % (job_id, job.get("DocID"), message, casa_txt), cfg)
+        log("Rand %s (DocID %s) OK [%s]: %s%s" % (job_id, job.get("DocID"),
+                                                  describe_target(info), message, casa_txt), cfg)
         _report_success(cfg, job, result)
     except (DbError, Exception) as exc:  # noqa: BLE001 - raportam orice esec
-        log("Rand %s (DocID %s) esuat: %s%s" % (job_id, job.get("DocID"), exc, casa_txt), cfg)
+        log("Rand %s (DocID %s) esuat [%s]: %s%s" % (job_id, job.get("DocID"),
+                                                     describe_target(info), exc, casa_txt), cfg)
         log(traceback.format_exc(), cfg)
         _report_failure(cfg, job, exc)
     return True

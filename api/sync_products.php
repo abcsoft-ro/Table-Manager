@@ -50,7 +50,7 @@ if ($stmt === false) {
     $err = sqlsrv_errors();
     sendJsonResponse([
         "status" => "error",
-        "message" => "Eroare sincronizare: " . ($err ? $err[0]['message'] : 'necunoscuta')
+        "message" => "Eroare sincronizare (" . $ip . "): " . ($err ? $err[0]['message'] : 'necunoscuta')
     ], 500);
 }
 

@@ -28,7 +28,7 @@ $ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TableManager 2.2.0 - Modern Web POS</title>
+  <title>TableManager 2.2.1 - Modern Web POS</title>
   <?= i18nJs($LANG) ?>
   <script src="js/i18n.js?v=<?= $ASSET_V ?>"></script>
   <link rel="stylesheet" href="css/pos.css?v=<?= $ASSET_V ?>">
@@ -514,6 +514,7 @@ $ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
       <div class="prog-header">
         <span data-i18n="prog.conectare">CONECTARE SERVER</span>
         <div style="display:flex; gap:8px;">
+          <span id="con-dirty" class="con-dirty" style="display:none;" data-i18n="Modificari nesalvate">Modificari nesalvate</span>
           <button class="help-btn" title="Ajutor" data-i18n-title="Ajutor" aria-label="Ajutor" onclick="openHelp('conectare')">?</button>
           <button class="act-btn" onclick="testConectare()" data-i18n="Testeaza conexiunea">Testeaza conexiunea</button>
           <button class="act-btn" onclick="saveConectare()" style="background:#ffff00;" data-i18n="Salveaza">Salveaza</button>
@@ -521,45 +522,46 @@ $ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
         </div>
       </div>
       <div class="setari-content">
+        <div id="con-local-info" class="con-local-info"></div>
         <div class="antet-grid">
           <div class="tva-field">
             <label data-i18n="ServerIP">ServerIP</label>
             <div class="tva-field-row">
-              <input type="text" id="con-serverip" class="tva-input" maxlength="50">
+              <input type="text" id="con-serverip" class="tva-input" maxlength="50" oninput="markConectareDirty()">
               <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('con-serverip')">⌨️</button>
             </div>
           </div>
           <div class="tva-field">
             <label data-i18n="ServerName">ServerName</label>
             <div class="tva-field-row">
-              <input type="text" id="con-servername" class="tva-input" maxlength="50">
+              <input type="text" id="con-servername" class="tva-input" maxlength="50" oninput="markConectareDirty()">
               <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('con-servername')">⌨️</button>
             </div>
           </div>
           <div class="tva-field">
             <label data-i18n="DataBaseName">DataBaseName</label>
             <div class="tva-field-row">
-              <input type="text" id="con-dbname" class="tva-input" maxlength="50">
+              <input type="text" id="con-dbname" class="tva-input" maxlength="50" oninput="markConectareDirty()">
               <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('con-dbname')">⌨️</button>
             </div>
           </div>
           <div class="tva-field">
             <label data-i18n="UserName">UserName</label>
             <div class="tva-field-row">
-              <input type="text" id="con-user" class="tva-input" maxlength="50">
+              <input type="text" id="con-user" class="tva-input" maxlength="50" oninput="markConectareDirty()">
               <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('con-user')">⌨️</button>
             </div>
           </div>
           <div class="tva-field">
             <label data-i18n="Password">Password</label>
             <div class="tva-field-row">
-              <input type="text" id="con-pass" class="tva-input" maxlength="50">
+              <input type="text" id="con-pass" class="tva-input" maxlength="50" oninput="markConectareDirty()">
               <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('con-pass')">⌨️</button>
             </div>
           </div>
           <div class="tva-field">
             <label data-i18n="TC (Trusted Connection)">TC (Trusted Connection)</label>
-            <select id="con-tc" class="tva-input">
+            <select id="con-tc" class="tva-input" onchange="markConectareDirty()">
               <option value="0" data-i18n="common.nu">Nu</option>
               <option value="1" data-i18n="common.da">Da</option>
             </select>
@@ -567,7 +569,7 @@ $ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
           <div class="tva-field" style="grid-column: 1 / -1;">
             <label data-i18n="ODBC_connect_string">ODBC_connect_string</label>
             <div class="tva-field-row">
-              <input type="text" id="con-odbc" class="tva-input" maxlength="255">
+              <input type="text" id="con-odbc" class="tva-input" maxlength="255" oninput="markConectareDirty()">
               <button class="act-btn fkb-mini" onclick="openFloatingKeyboardFor('con-odbc')">⌨️</button>
             </div>
           </div>

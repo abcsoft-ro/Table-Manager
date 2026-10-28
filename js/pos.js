@@ -5487,6 +5487,33 @@ async function loadMapOptions() {
   renderMapSectiiList();
 }
 
+// Ecranul Conectare server: evidentiaza ca valorile din formular nu sunt
+// salvate pana la apasarea butonului Salveaza ("Testeaza conexiunea" foloseste
+// doar ce este pe ecran, fara sa scrie in tblConectare).
+function markConectareDirty() {
+  const el = document.getElementById("con-dirty");
+  if (el) el.style.display = "inline-block";
+}
+
+function clearConectareDirty() {
+  const el = document.getElementById("con-dirty");
+  if (el) el.style.display = "none";
+}
+
+// Identitatea bazei locale (server + baza) pe care lucreaza aplicatia: arata
+// unde se salveaza de fapt tblConectare, ca sa nu fie confundata cu baza de pe
+// serverul extern (ex. DataRON), care are propriul rand tblConectare.
+function renderConectareLocal(local) {
+  const el = document.getElementById("con-local-info");
+  if (!el) return;
+  const parts = [];
+  if (local && local.server) parts.push(local.server);
+  if (local && local.database) parts.push(local.database);
+  el.textContent = parts.length
+    ? tr("Baza locala (unde se salveaza aceste date)") + ": " + parts.join(" / ")
+    : "";
+}
+
 function openProgConectare() {
   navigateToScreen("screen-prog-conectare");
   loadConectare();
@@ -5515,6 +5542,8 @@ async function loadConectare() {
     mapSectiiRows = Array.isArray(data.mapSectii)
       ? data.mapSectii.map(m => ({ server: m.server, local: m.local }))
       : [];
+    renderConectareLocal(data.local);
+    clearConectareDirty();
     await loadMapOptions();
   } catch (err) {
     appAlert("Eroare conectare server: " + err.message);
@@ -5540,6 +5569,7 @@ async function saveConectare() {
     });
     const res = await resp.json();
     if (res.status !== "success") throw new Error(res.message);
+    clearConectareDirty();
     showToast(res.message);
   } catch (err) {
     appAlert("Eroare salvare conectare server: " + err.message);

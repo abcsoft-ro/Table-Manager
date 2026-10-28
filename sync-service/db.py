@@ -42,6 +42,23 @@ def build_connection_string(info, cfg):
     return ";".join(parts) + ";"
 
 
+def describe_target(info):
+    """Descriere lizibila a tintei conexiunii, fara parola.
+
+    Folosita in mesajele de eroare: altfel, in temp_Send_Sql.LastError apare doar
+    textul driverului ODBC („Error Locating Server/Instance Specified"), fara sa
+    se vada ce server/baza a incercat serviciul. Nu include niciodata parola.
+    """
+    server = (info.get("server") or "").strip() or "(server lipsa)"
+    database = (info.get("database") or "").strip()
+    if info.get("tc"):
+        auth = "Windows auth"
+    else:
+        auth = "user %s" % ((info.get("user") or "").strip() or "(gol)")
+    target = server + (" / " + database if database else "")
+    return "%s, %s" % (target, auth)
+
+
 def execute_statements(info, statements, cfg):
     """Executa comenzile SQL primite pe serverul extern.
 
@@ -72,7 +89,10 @@ def execute_statements(info, statements, cfg):
             autocommit=True,
         )
     except pyodbc.Error as exc:
-        raise DbError("Conexiunea la server a esuat: %s" % exc)
+        # Tinta este pusa inaintea textului driverului: LastError din
+        # temp_Send_Sql este trunchiat la 500 de caractere (worker._report_failure),
+        # iar inceputul mesajului ODBC (cauza) ramane astfel vizibil.
+        raise DbError("Conexiunea la server a esuat [%s]: %s" % (describe_target(info), exc))
 
     result = None
     try:

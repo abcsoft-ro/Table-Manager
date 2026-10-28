@@ -632,6 +632,8 @@ return [
     'Cale Date logo'           => 'Logo path',
     'SizeModeLogo'             => 'Logo size mode',
     'Testeaza conexiunea'      => 'Test connection',
+    'Modificari nesalvate'     => 'Unsaved changes',
+    'Baza locala (unde se salveaza aceste date)' => 'Local database (where these values are saved)',
     'Parola programare'        => 'Programming password',
     'Parola rapoarte'          => 'Reports password',
     'Parola stornare'          => 'Void password',
