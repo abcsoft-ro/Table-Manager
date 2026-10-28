@@ -780,6 +780,44 @@ GO
  *   - SET XACT_ABORT ON + CATCH fara usp_GetErrorInfo, ca eroarea reala sa fie
  *     raportata (nu 3930 de la COMMIT / de la INSERT-ul in ERRORLOG).
  */
+/*
+ * Procedura stocata ImportProd (import produse/grupe de pe serverul extern).
+ *
+ * SURSA UNICA: fisierul acesta este aplicat automat (CREATE OR ALTER) de
+ * aplicatie inainte de fiecare import - vezi ensureImportProdProcedure() din
+ * api/import_common.php si import_server_grp_prod.py. Poate fi rulat si manual
+ * in SSMS, ca un singur batch.
+ *
+ * Fata de versiunea veche:
+ *   - @user / @PassWord sunt nvarchar(128): parola nu mai este trunchiata la 10
+ *     caractere de catre parametrul procedurii (linked server login esuat);
+ *   - linked server-ul primeste mapping EXPLICIT (user/parola, sau Windows auth
+ *     cand @windowsAuth = 1) si "data access" = true - altfel conexiunea e
+ *     anonima si tabelele din baza remote nu sunt vizibile (eroare 7314);
+ *   - SET XACT_ABORT ON + CATCH fara usp_GetErrorInfo, ca eroarea reala sa fie
+ *     raportata (nu 3930 de la COMMIT / de la INSERT-ul in ERRORLOG).
+ */
+/*
+ * Procedura stocata ImportProd (import produse/grupe de pe serverul extern).
+ *
+ * SURSA UNICA: fisierul acesta este aplicat automat (CREATE OR ALTER) de
+ * aplicatie inainte de fiecare import - vezi ensureImportProdProcedure() din
+ * api/import_common.php si import_server_grp_prod.py. Poate fi rulat si manual
+ * in SSMS, ca un singur batch.
+ *
+ * Fata de versiunea veche:
+ *   - @user / @PassWord sunt nvarchar(128): parola nu mai este trunchiata la 10
+ *     caractere de catre parametrul procedurii (linked server login esuat);
+ *   - linked server-ul primeste mapping EXPLICIT (user/parola, sau Windows auth
+ *     cand @windowsAuth = 1) si "data access" = true - altfel conexiunea e
+ *     anonima si tabelele din baza remote nu sunt vizibile (eroare 7314);
+ *   - SET XACT_ABORT ON + CATCH fara usp_GetErrorInfo, ca eroarea reala sa fie
+ *     raportata (nu 3930 de la COMMIT / de la INSERT-ul in ERRORLOG);
+ *   - daca @IP este chiar instanta locala (ex. statia POS1, care gazduieste
+ *     DataRON), NU se creeaza linked server - SQL Server refuza un linked
+ *     server cu numele serverului local (eroarea 15028) - si se citeste
+ *     direct din [<DataBaseName>].dbo.*.
+ */
 CREATE OR ALTER PROCEDURE [dbo].[ImportProd] 
 	-- Add the parameters for the stored procedure here
 	@IP nvarchar(128) = 'localhost',
@@ -838,24 +876,46 @@ BEGIN
     Select @StatieID = CAST(Value AS int) From tblSet Where Setting = 'NrLogic'
     
 	Select @Database = DataBaseName FROM tblConectare WHERE ID=1
-	IF  EXISTS (SELECT srv.name FROM sys.servers srv WHERE srv.server_id != 0 AND srv.name =@IP) EXEC master.dbo.sp_dropserver @server=@IP, @droplogins='droplogins'
-	/*
-	EXEC sp_addlinkedserver @server=@IP
-	EXEC sp_addlinkedsrvlogin @IP, 'false', NULL, @user, @PassWord
-	*/
-	IF NOT EXISTS (SELECT 1 FROM sys.servers WHERE server_id <> 0 AND name = @IP)
-		EXEC master.dbo.sp_addlinkedserver @server = @IP, @srvproduct = N'SQL Server';
 
-	-- Mapping explicit: fara el SQL Server foloseste contextul contului serviciului
-	-- (login anonim pe serverul remote), iar tabelele nu sunt vizibile si
-	-- interogarile esueaza cu 7314 ("does not contain the table ...").
-	IF @windowsAuth = 1
-		EXEC master.dbo.sp_addlinkedsrvlogin @rmtsrvname = @IP, @useself = 'TRUE', @locallogin = NULL;
+	-- Sursa poate fi chiar instanta locala (pe statia care gazduieste baza
+	-- importata, ex. POS1 cu DataRON). Atunci NU se creeaza linked server:
+	-- SQL Server refuza un linked server cu numele serverului local (eroarea
+	-- 15028 "The server ... already exists"), iar citirea se face direct din
+	-- [<DataBaseName>].dbo.*.
+	Set @IP = LTRIM(RTRIM(@IP))
+	Declare @isLocal bit = 0
+	Declare @Prefix nvarchar(300)
+	Declare @localName nvarchar(128) = CAST(SERVERPROPERTY('ServerName') AS nvarchar(128))
+	Declare @localMachine nvarchar(128) = CAST(SERVERPROPERTY('MachineName') AS nvarchar(128))
+	Declare @localInstance nvarchar(128) = CAST(SERVERPROPERTY('InstanceName') AS nvarchar(128))
+	IF @IP = @localName
+	   OR @IP = @localMachine
+	   OR @IP IN ('localhost', '.', '(local)')
+	   OR (@localInstance IS NOT NULL AND @IP = @localMachine + N'\' + @localInstance)
+		Set @isLocal = 1
+
+	IF @isLocal = 1
+		Set @Prefix = QUOTENAME(@Database) + '.'
 	ELSE
-		EXEC master.dbo.sp_addlinkedsrvlogin @rmtsrvname = @IP, @useself = 'FALSE', @locallogin = NULL,
-			@rmtuser = @user, @rmtpassword = @PassWord;
+	BEGIN
+		IF EXISTS (SELECT 1 FROM sys.servers WHERE server_id <> 0 AND name = @IP)
+			EXEC master.dbo.sp_dropserver @server=@IP, @droplogins='droplogins'
 
-	EXEC master.dbo.sp_serveroption @server = @IP, @optname = 'data access', @optvalue = 'true';
+		IF NOT EXISTS (SELECT 1 FROM sys.servers WHERE server_id <> 0 AND name = @IP)
+			EXEC master.dbo.sp_addlinkedserver @server = @IP, @srvproduct = N'SQL Server';
+
+		-- Mapping explicit: fara el SQL Server foloseste contextul contului serviciului
+		-- (login anonim pe serverul remote), iar tabelele nu sunt vizibile si
+		-- interogarile esueaza cu 7314 ("does not contain the table ...").
+		IF @windowsAuth = 1
+			EXEC master.dbo.sp_addlinkedsrvlogin @rmtsrvname = @IP, @useself = 'TRUE', @locallogin = NULL;
+		ELSE
+			EXEC master.dbo.sp_addlinkedsrvlogin @rmtsrvname = @IP, @useself = 'FALSE', @locallogin = NULL,
+				@rmtuser = @user, @rmtpassword = @PassWord;
+
+		EXEC master.dbo.sp_serveroption @server = @IP, @optname = 'data access', @optvalue = 'true';
+		Set @Prefix = QUOTENAME(@IP) + '.' + QUOTENAME(@Database) + '.'
+	END
 	BEGIN TRY
 		BEGIN TRANSACTION
 		/*
@@ -863,7 +923,7 @@ BEGIN
 		
 		EXECUTE('INSERT INTO tblFP
 		( FPID, Denumire, Status, Poz) SELECT CAST(tblTIB.TIB AS int), tblTIB.Denumire, 1, CAST(tblTIB.TIB AS int) + 1 
-		FROM ['+@IP+'].'+ @Database + '.dbo.tblTIB')
+		FROM ' + @Prefix + 'dbo.tblTIB')
 		*/
 
 		delete from tblGrp
@@ -883,18 +943,18 @@ BEGIN
 			CASE WHEN g.Poz Between 1 And 50 THEN g.FontType ELSE pg.FontType END,
 			CASE WHEN g.Poz Between 1 And 50 THEN g.Poz ELSE pg.Poz END,
 			CASE WHEN g.Poz Between 1 And 50 THEN ISNULL(g.Tint,1) ELSE ISNULL(pg.Tint,1) END
-		FROM ['+@IP+'].'+ @Database + '.dbo.tblGrp g
+		FROM ' + @Prefix + 'dbo.tblGrp g
 			-- tblPozGrupe NU se filtreaza dupa MagID: se ia cate un rand per grupa
 			-- (cel cu MagID cel mai mic), ca layout-ul de grupe sa fie disponibil
 			-- indiferent de magazia aleasa.
 			LEFT JOIN (
 				SELECT pg0.*, ROW_NUMBER() OVER (PARTITION BY pg0.NrGrp ORDER BY pg0.MagID) AS rn
-				FROM ['+@IP+'].'+ @Database + '.dbo.tblPozGrupe pg0
+				FROM ' + @Prefix + 'dbo.tblPozGrupe pg0
 			) pg ON g.NrGrp = pg.NrGrp AND pg.rn = 1
-			INNER JOIN ['+@IP+'].' + @Database + '.dbo.tblProd p ON g.NrGrp = p.NrGrp
+			INNER JOIN ' + @Prefix + 'dbo.tblProd p ON g.NrGrp = p.NrGrp
 			INNER JOIN (
 				SELECT pv0.*, ROW_NUMBER() OVER (PARTITION BY pv0.ProdID ORDER BY ' + @OrderPv + ') AS rn
-				FROM ['+@IP+'].' + @Database + '.dbo.tblPV pv0
+				FROM ' + @Prefix + 'dbo.tblPV pv0
 				WHERE pv0.MagID IN ' + @MagFilter + '
 			) pv ON p.ProdID = pv.ProdID AND pv.rn = 1
 					WHERE p.ProdID > 9 AND p.KP > 0 AND pv.Poz Between 1 And 50
@@ -905,7 +965,7 @@ BEGIN
 		EXECUTE('INSERT INTO tblOsp
 		( Parola, Nume, Blocat, Expl, NrOsp )
 		SELECT UserID, Nume, Blocat, Functia, UtilizatorId
-		FROM ['+@IP+'].' + @Database + '.dbo.tblUtilizatori')
+		FROM ' + @Prefix + 'dbo.tblUtilizatori')
 		*/
 		--Start Meniul Zilei
 		
@@ -916,10 +976,10 @@ BEGIN
 		SELECT p.ProdID, p.BarCod, p.Denumire, p.UM, p.IRP, TRY_CAST(p.IIVCN AS int), p.DataUM, p.NrGrp, COALESCE(mk.KPLocal, p.KP),
 		pv.BackColor, pv.FontColor, p.FontSize, pv.Bold, pv.Poz, p.FontType, pv.PV,
 		CASE p.TVA WHEN 21 THEN 1 WHEN 11 THEN 2 ELSE 3 END, pv.Flag, pv.MagID, COALESCE(ms.SectieLocal, p.Sectie)
-		FROM ['+@IP+'].' + @Database + '.dbo.tblProd p
+		FROM ' + @Prefix + 'dbo.tblProd p
 		INNER JOIN (
 			SELECT pv0.*, ROW_NUMBER() OVER (PARTITION BY pv0.ProdID ORDER BY ' + @OrderPv + ') AS rn
-			FROM ['+@IP+'].' + @Database + '.dbo.tblPV pv0
+			FROM ' + @Prefix + 'dbo.tblPV pv0
 			WHERE pv0.MagID IN ' + @MagFilter + '
 		) pv ON p.ProdID = pv.ProdID AND pv.rn = 1
 		LEFT JOIN dbo.tblMapKP mk ON mk.KPServer = p.KP
@@ -931,10 +991,10 @@ BEGIN
 		SELECT p.ProdID, p.BarCod1, p.Denumire, p.UM, p.IRP, TRY_CAST(p.IIVCN AS int), p.DataUM, p.NrGrp, COALESCE(mk.KPLocal, p.KP),
 		pv.BackColor, pv.FontColor, p.FontSize, pv.Bold, pv.Poz, p.FontType, pv.PV,
 		CASE p.TVA WHEN 21 THEN 1 WHEN 11 THEN 2 ELSE 3 END, pv.MagID, COALESCE(ms.SectieLocal, p.Sectie)
-		FROM ['+@IP+'].' + @Database + '.dbo.tblProd p
+		FROM ' + @Prefix + 'dbo.tblProd p
 		INNER JOIN (
 			SELECT pv0.*, ROW_NUMBER() OVER (PARTITION BY pv0.ProdID ORDER BY ' + @OrderPv + ') AS rn
-			FROM ['+@IP+'].' + @Database + '.dbo.tblPV pv0
+			FROM ' + @Prefix + 'dbo.tblPV pv0
 			WHERE pv0.MagID IN ' + @MagFilter + '
 		) pv ON p.ProdID = pv.ProdID AND pv.rn = 1
 		LEFT JOIN dbo.tblMapKP mk ON mk.KPServer = p.KP
@@ -951,19 +1011,19 @@ BEGIN
 			SELECT [RepID],[Denumire] ,[Tip] ,[Codf] ,[Localit] ,[Tel1],[Tel2],
       [Denumire2],[Judetul] ,[Contul],[Banca],[PersContact] ,[ValTarif]  ,[DelegatID] ,[DataFiscalizare],[Contract],[SoldI] ,[DataSI] ,[DataScd] ,[NrGrp] ,[NumePrenume] ,[Seria] ,[Nr] ,[Eliberat],
 		[Transport] ,[NrAuto] ,[CNP] ,[CodFiscal] ,[email] ,[password] ,[zile_scadenta] ,[CodSaga] ,[UserID] ,[DataAdaugare] ,[Status] ,[Tip_juridic]  
-		FROM ['+@IP+'].' + @Database + '.dbo.tblRep WHERE tblRep.Tip=''c''')
+		FROM ' + @Prefix + 'dbo.tblRep WHERE tblRep.Tip=''c''')
 
 		DELETE FROM trelRepProd
 
 		EXECUTE('INSERT INTO trelRepProd([Id],[RepID] ,[ProdID] ,[PVNet] ,[PV] )
 		SELECT [Id],[RepID] ,[ProdID] ,[PVNet] ,[PV]
-		FROM ['+@IP+'].' + @Database + '.dbo.trelRepProd')
+		FROM ' + @Prefix + 'dbo.trelRepProd')
 		
 		TRUNCATE TABLE  trelRepCarduri
 
 		EXECUTE('INSERT INTO trelRepCarduri([Id],[RepID] ,[CodCard] )
 		SELECT [Id],[RepID] ,[CodCard] 
-		FROM ['+@IP+'].' + @Database + '.dbo.trelRepCarduri')
+		FROM ' + @Prefix + 'dbo.trelRepCarduri')
 		*/
 
 		SELECT	'Return_Value' = @return_value
