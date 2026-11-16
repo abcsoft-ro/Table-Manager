@@ -65,11 +65,18 @@ if ($stmt === false) {
     ], 500);
 }
 
-// Consumam toate seturile de rezultate returnate de procedura
-while (sqlsrv_next_result($stmt)) { /* no-op */ }
+// Consumam toate seturile de rezultate returnate de procedura. Primul contine
+// varianta de linked server folosita (ls_provider / ls_provstr), util la
+// diagnoza pe o statie (ex. cand conexiunea catre serverul extern eșueaza).
+$meta = null;
+do {
+    $row = @sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC);
+    if ($row && $meta === null) { $meta = $row; }
+} while (sqlsrv_next_result($stmt));
 
 sendJsonResponse([
     "status" => "success",
     "message" => "Sincronizarea produselor s-a finalizat",
-    "server" => $ip
+    "server" => $ip,
+    "provider" => isset($meta['ls_provider']) ? $meta['ls_provider'] : null
 ]);

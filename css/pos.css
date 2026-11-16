@@ -370,6 +370,31 @@ body {
   font-weight: 900;
 }
 
+/* Plata partiala pe card: sumele aprobate pe terminal (durabile, din audit) */
+.card-paid-box {
+  border-top: 1px dashed #666;
+  margin-top: 4px;
+  padding-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.card-paid-box .card-paid-line .sum-val {
+  color: #0b6b2f;
+}
+
+.card-paid-box .card-rest-line {
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.card-paid-box .card-rest-line .sum-val {
+  color: #b00020;
+}
+
 /* Mod FastFood: detaliile de plata afisate in locul liniei Total */
 .fastfood-receipt {
   display: flex;
@@ -412,6 +437,23 @@ body {
 
 .ff-receipt-line.ff-receipt-rest {
   color: #b00000;
+}
+
+/* Retiparirea chitantei de card, dupa inchiderea notei in FastFood */
+.ff-receipt-reprint {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid #004080;
+  border-radius: 6px;
+  background: #eaf2ff;
+  color: #004080;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.ff-receipt-reprint:active {
+  background: #cfe0ff;
 }
 
 /* Coloana centrala cu butoane Scroll */
@@ -558,6 +600,11 @@ body {
 
 .act-btn:active {
   background: #ddd;
+}
+
+.act-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .act-btn.red-text {
@@ -1598,6 +1645,187 @@ body {
   width: 360px;
 }
 
+/* TRX_ID pentru suport tehnic: discret, in coltul dialogului POS bancar. */
+.pos-banca-trx {
+  margin-top: 6px;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 9px;
+  line-height: 1.2;
+  color: #8a8a8a;
+  text-align: right;
+  word-break: break-all;
+}
+
+/* Suma de plata in modalul de solutionare manuala: elementul pe care operatorul
+   il coreleaza cu chitanta fizica, deci scris mare si bold. */
+.pos-banca-man-suma {
+  font-size: 26px;
+  font-weight: bold;
+  line-height: 1.25;
+  color: #111;
+}
+
+.pos-banca-man-op {
+  font-size: 14px;
+  color: #444;
+  margin-top: 4px;
+}
+
+.pos-banca-man-note {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #8a6d3b;
+  margin-top: 8px;
+}
+
+/* Aprobarea e blocata pana la AUTHCODE-ul de pe chitanta (6 caractere). */
+#pos-banca-manual-aprobat:disabled {
+  background: #d1d5db !important;
+  color: #6b7280 !important;
+  opacity: 1;
+}
+
+/* AUTHCODE-ul din modalul de solutionare manuala (6 caractere A-Z/0-9). */
+.pos-banca-cod-row {
+  margin: 0 0 14px;
+}
+
+.pos-banca-cod-row label {
+  display: block;
+  font-size: 13px;
+  line-height: 1.35;
+  color: #444;
+  margin: 0 0 6px;
+}
+
+.pos-banca-cod {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 22px;
+  letter-spacing: 8px;
+  text-align: center;
+  color: #111;
+  background: #ffffff;
+  border: 2px solid #cfd8e3;
+  border-radius: 8px;
+  cursor: pointer;
+  outline: none;
+}
+
+.pos-banca-cod.err {
+  border-color: #b00020;
+  background: #fff5f5;
+}
+
+.pos-banca-cod-hint {
+  font-size: 11px;
+  color: #7a869a;
+  margin-top: 4px;
+}
+
+.pos-banca-cod-err {
+  font-size: 12px;
+  font-weight: bold;
+  color: #b00020;
+  min-height: 16px;
+  margin-top: 4px;
+}
+
+/* Lock bancar: nota cu plata pe card incerta este doar citire pana la
+   clarificarea platii (banner pus de applyBankPosLockUI din js/pos.js). */
+.bank-lock-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #b00020;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: bold;
+  line-height: 1.25;
+  padding: 5px 10px;
+  border-radius: 6px;
+  margin: 0 0 6px;
+}
+
+.bank-lock-banner::before {
+  content: "⚠";
+  font-size: 15px;
+  line-height: 1;
+}
+
+.bank-lock-body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* TRX_ID-ul incercarii, pe randul lui: monospace, ca sa poata fi comparat
+   litera cu litera cu jurnalul terminalului bancar. */
+.bank-lock-trx {
+  display: block;
+  margin-top: 3px;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #ffe4e6;
+}
+
+.bank-lock-trx:empty {
+  display: none;
+}
+
+/* Nota blocata: butoanele care modifica nota se ASCUND (nu doar dezactiveaza -
+   un buton gri care nu face nimic polueaza bara), iar in locul lor apar
+   actiunile de clarificare a platii pe card (Verifica / Alta forma de plata /
+   Am chitanta). Marcare rămâne vizibila: trimite la bucatarie ce s-a adaugat
+   inainte de incident. */
+#screen-marcare.bank-locked #btn-nota,
+#screen-marcare.bank-locked #btn-mod-preparare,
+#screen-marcare.bank-locked #btn-discount,
+#screen-marcare.bank-locked #btn-vd,
+#screen-marcare.bank-locked #btn-qty,
+#screen-marcare.bank-locked #btn-transfer,
+#screen-marcare.bank-locked #btn-proforma,
+#screen-marcare.bank-locked #btn-meniul-zilei {
+  display: none !important;
+}
+
+/* Butoanele de clarificare: ascunse in modul normal, vizibile doar cu nota
+   blocata. Fara !important, ca JS sa poata ascunde Verifica pe protocoalele
+   fara jurnal (inline display:none). */
+.bank-resolve {
+  display: none;
+}
+
+#screen-marcare.bank-locked .bank-resolve {
+  display: flex;
+}
+
+/* Nota goala si blocata: singura iesire este inchiderea pe zero din NOTA,
+   deci butonul rămâne la vedere (banner-ul il si mentioneaza). */
+#screen-marcare.bank-locked.bank-locked-empty #btn-nota {
+  display: flex !important;
+}
+
+/* Nota blocata cu plata de card CONFIRMATA (bani aprobati, inca neaplicati pe
+   nota): singura ieșire corecta este continuarea platii din NOTA, deci butonul
+   rămâne la vedere; restul modificarilor rămân blocate. */
+#screen-marcare.bank-locked.bank-locked-payable #btn-nota {
+  display: flex !important;
+}
+
+/* Grid-ul de produse nu mai reactioneaza la tap cat timp nota este blocata. */
+#screen-marcare.bank-locked .menu-5x-grid {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+#screen-marcare.bank-locked .act-btn:disabled,
+#screen-marcare.bank-locked .vd-btn:disabled {
+  opacity: 0.45;
+}
+
 /* Badge afisat in popup-ul de cantitate cand cantarul electronic nu raspunde. */
 .qty-cantar-badge {
   align-self: center;
@@ -1885,6 +2113,14 @@ body {
   justify-content: center;
   gap: 10px;
   margin-top: 4px;
+}
+
+#modal-pos-banca .tva-actions {
+  flex-wrap: wrap;
+}
+
+#pos-banca-manual-info b {
+  color: #111;
 }
 
 .tva-field {

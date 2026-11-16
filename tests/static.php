@@ -66,6 +66,16 @@ foreach ($srcs as $f) {
 test('fiecare literal t()/tr()/trText() de cod are traducere in en', count($miss) === 0, implode(' | ', array_map(fn($k) => "\"$k\"(" . implode(',', array_unique($miss[$k])) . ')', array_slice(array_keys($miss), 0, 12))));
 if ($miss) { info('total literali netradusi: ' . count($miss) . ' (multe in js/mobile.js: ' . substr_count(implode(',', array_map(fn($v) => implode(',', $v), $miss)), 'mobile.js') . ')'); }
 
+// A4d: tr() din PHP trebuie sa completeze placeholderele si cand textul NU are
+// intrare in catalog (in romana textele-sursa lipsesc intentionat din ro.php).
+// Bug real: mesajul de la Marcare aparea ca "Comanda (bon {bon}) a fost
+// trimisa la bucatarie ({nr} bon(uri))" - exact ca bug-ul reparat in
+// js/i18n.js, dar pe partea de server.
+require_once "$R/api/i18n.php";
+$trNr = tr('Comanda (bon {bon}) a fost trimisa la bucatarie ({nr} bon(uri))', ['bon' => 7, 'nr' => 2]);
+test('tr() PHP completeaza placeholderele si fara intrare in catalog',
+    !str_contains($trNr, '{') && str_contains($trNr, '7') && str_contains($trNr, '2'), $trNr);
+
 // A4c: mesajele POS bancar (dialogul Cancel/Retry/Ignore) vin din textul
 // dinamic al driverului / din api/pos_banca.php, deci nu apar ca literali tr()
 // in cod. Verificam explicit ca textele canonice au traducere in en, altfel
@@ -105,6 +115,18 @@ foreach ($mt[2] as $i => $txt) {
     if (isset($enF[$txt]) && $enF[$txt] !== $txt) { $hard[$txt] = ($hard[$txt] ?? 0) + 1; }
 }
 test('text static translatabil fara data-i18n', count($hard) === 0, json_encode($hard));
+
+// A4d: modalul de solutionare manuala are doar Aprobat / Inapoi, iar codul
+// cerut este AUTHCODE (6 caractere), nu RRN (12 cifre).
+test('modalul bancar are doar "Aprobat" / "Înapoi" (fara "Chitanță Respinsă")',
+    str_contains($htmlAll, 'data-i18n="Aprobat"')
+        && str_contains($htmlAll, 'data-i18n="Înapoi"')
+        && !str_contains($htmlAll, 'id="pos-banca-manual-neaprobat"'),
+    'etichete/butoane gresite in #modal-pos-banca-manual');
+test('modalul bancar cere AUTHCODE (6 caractere), nu RRN',
+    str_contains($htmlAll, 'data-i18n="AUTHCODE de pe chitanța terminalului (exact 6 caractere):"')
+        && !str_contains($htmlAll, 'data-i18n="RRN de pe chitanța terminalului (exact 12 cifre):"'),
+    'eticheta campului de cod este gresita');
 
 /* -------------------------------------------------------- A5 contract DOM */
 section('A5 - contract DOM (id-uri + handler-e inline)');
@@ -214,5 +236,43 @@ foreach (glob("$R/js/*.js") as $f) {
     }
 }
 test('nicio variabila locala numita tr (umbrarea traducatorului tr())', count($shadow) === 0, implode(', ', $shadow));
+
+/* ------------------------------------- A9 POS bancar: ledger-ul de card */
+section('A9 - POS bancar: ledger unic pentru banii de pe card');
+// Banii de pe card au o singura sursa de adevar (cardLedger). `payments[1]`
+// nu mai este scris nicaieri, iar flagurile-paralele au fost eliminate: un cod
+// care le-ar reintroduce ar putea taxa din nou cardul la inchidere.
+$posJs = stripComments((string)@file_get_contents("$R/js/pos.js"));
+preg_match_all('/payments\s*\[\s*[\'"]?1[\'"]?\s*\]\s*=[^=]/', $posJs, $mPay1);
+test('js/pos.js nu scrie payments[1] (linia de card e derivata)', count($mPay1[0]) === 0,
+    'aparitii=' . count($mPay1[0]));
+foreach (['bankPosApprovedAmount', 'bankPosApprovedDocId', 'bankPosPartial'] as $flag) {
+    test("js/pos.js nu mai foloseste $flag", substr_count($posJs, $flag) === 0,
+        'aparitii=' . substr_count($posJs, $flag));
+}
+// Singurul loc care aduna bani pe card.
+test('cardLedgerAdd este definit si scrie intr-un singur loc', preg_match('/function\s+cardLedgerAdd\s*\(/', $posJs) === 1
+    && substr_count($posJs, 'swipes.push(') === 1, 'swipes.push=' . substr_count($posJs, 'swipes.push('));
+// Idempotenta: cheia de deduplicare este trxId (fallback logId).
+test('cardLedgerAdd deduplica pe trxId', preg_match('/swipe\.trxId\s*\|\|\s*swipe\.logId/', $posJs) === 1, '');
+// Funnel-ul binar nu atinge nota.
+test('bankPosChargeCard nu scrie in payments', preg_match('/async function bankPosChargeCard[\s\S]*?\n}\n/', $posJs, $mFn) === 1
+    && !str_contains($mFn[0], 'payments'), '');
+
+// Serverul: suma aprobata din auditul durabil + reconcilierea de la inchidere.
+$stateSrc = (string)@file_get_contents("$R/api/pos_banca_state.php");
+$closeSrc = (string)@file_get_contents("$R/api/order_action.php");
+test('posBancaApprovedTotal exista in pos_banca_state.php', str_contains($stateSrc, 'function posBancaApprovedTotal('), '');
+test('status expune approvedTotal/approvedEntries', str_contains((string)@file_get_contents("$R/api/pos_banca.php"), '"approvedEntries"'), '');
+test('close_bill refuza cardul neaprobat (card_not_approved)', str_contains($closeSrc, 'card_not_approved'), '');
+test('close_bill consemneaza MISMATCH pentru cardul din afara terminalului', str_contains($closeSrc, "'MISMATCH'"), '');
+test('MISMATCH nu devine "ultima incercare" bancara', str_contains($stateSrc, "'CLOSED', 'MISMATCH'"), '');
+
+// "Totul sau nimic": ieșirea din ecranul de plata anuleaza (void) cardul.
+test('ieșirea din ecranul de plata trece prin leavePaymentScreen', preg_match('/function\s+navigateToScreen\s*\([^)]*\)\s*\{[\s\S]{0,700}?leavePaymentScreen\(/', $posJs) === 1, '');
+test('clientul anuleaza cardul prin api void_doc', preg_match('/async function bankPosVoidAll[\s\S]{0,600}?action:\s*"void_doc"/', $posJs) === 1, '');
+test('void_doc este tratat de server (si limitat la protocoalele cu void)',
+    str_contains((string)@file_get_contents("$R/api/pos_banca.php"), "'void_doc'")
+    && str_contains((string)@file_get_contents("$R/api/pos_banca_smartpay.php"), "action === 'void_doc'"), '');
 
 exit(summary('Faza A') > 0 ? 1 : 0);

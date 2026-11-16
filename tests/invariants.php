@@ -23,8 +23,15 @@ test('bon viu: TotalB = suma liniilor', count($bad) === 0, json_encode(array_sli
 section('B2 - conventia linii produs vs modificator');
 $m1 = rows("SELECT ECRID,DocID,Cant,PV,PVC FROM tblNoteD WHERE ProdID=0 AND (Cant>0 OR ISNULL(PV,0)<>0 OR ISNULL(PVC,0)<>0)");
 test('modificator: ProdID=0 => Cant<=0 si PV=PVC=0', count($m1) === 0, json_encode(array_slice($m1, 0, 5)));
-$m2 = rows("SELECT ECRID,DocID,ProdID,Cant FROM tblNoteD WHERE ProdID>0 AND Cant<=0");
-test('produs: ProdID>0 => Cant>0', count($m2) === 0, json_encode(array_slice($m2, 0, 5)));
+// O linie de produs este fie vanzare (Cant>0, fara StornoRef), fie storno
+// (Cant<0 cu StornoRef catre linia originala). Cant=0 ar fi confundata cu un
+// modificator, iar un storno pozitiv sau fara referinta ar strica TotalB.
+$m2 = rows("SELECT ECRID,DocID,ProdID,Cant,StornoRef FROM tblNoteD
+            WHERE ProdID>0 AND (
+                Cant = 0
+                OR (Cant < 0 AND StornoRef IS NULL)
+                OR (Cant > 0 AND StornoRef IS NOT NULL))");
+test('produs: Cant>0 sau linie de storno (Cant<0 cu StornoRef)', count($m2) === 0, json_encode(array_slice($m2, 0, 5)));
 
 section('B3 - storno');
 $ov = rows("SELECT s.StornoRef, SUM(-s.Cant) AS stornat, MAX(o.Cant) AS original

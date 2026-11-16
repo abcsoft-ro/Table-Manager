@@ -143,4 +143,4 @@ foreach ($LANGS as $lang) {
 foreach (glob($TMP . '/*') ?: [] as $f) { @unlink($f); }
 @rmdir($TMP);
 
-exit(summary('Faza JS') > 0 ? 1 : 0);
+exit(summary('Faza JS1 - i18n') > 0 ? 1 : 0);

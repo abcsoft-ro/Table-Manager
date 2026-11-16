@@ -194,6 +194,57 @@ def build_nota(payload, cfg):
     return b.bytes()
 
 
+def build_banca(payload, cfg):
+    """Duplicatul chitantei de card.
+
+    Terminalul bancar nu are o comanda ECR de retiparire (SmartPay ECR Link
+    v1.8.3 / Viva ECR), deci POS-ul tipareste o copie din datele din audit.
+    Documentul este marcat explicit DUPLICAT si nu tine locul chitantei
+    originale a terminalului.
+    """
+    b = EscposBuilder(cfg["receipt_width"], cfg.get("charset", "ascii"))
+
+    for extra in payload.get("headerLines", []) or []:
+        styled_line(b, extra, "center")
+
+    b.align("center").size(1, 2).bold(True).line(
+        payload.get("title") or "DUPLICAT CHITANTA CARD")
+    b.size(1, 1).bold(False).align("center").line("*** DUPLICAT ***")
+    b.align("left").sep()
+
+    data_ora = payload.get("dataOra") or ""
+    if data_ora:
+        b.lr("Data:", data_ora)
+    b.bold(True).size(1, 2).lr("SUMA:", money(payload.get("suma"))).size(1, 1).bold(False)
+    b.sep()
+
+    card = str(payload.get("card") or "").strip()
+    pan = str(payload.get("pan") or "").strip()
+    if pan or card:
+        b.line("Card: %s" % " ".join(x for x in (card, pan) if x))
+    if payload.get("stan"):
+        b.lr("STAN:", payload.get("stan"))
+    if payload.get("rrn"):
+        b.lr("RRN:", payload.get("rrn"))
+    if payload.get("auth"):
+        b.lr("AUT:", payload.get("auth"))
+    if payload.get("terminal"):
+        b.lr("Terminal:", payload.get("terminal"))
+    if payload.get("merchant"):
+        b.lr("Comerciant:", payload.get("merchant"))
+    if payload.get("nrDoc") not in (None, ""):
+        b.lr("Nota:", payload.get("nrDoc"))
+    if payload.get("trxId"):
+        b.line("TRX: %s" % payload.get("trxId"))
+
+    b.sep()
+    b.align("center").line(
+        payload.get("note") or
+        "Copie emisa de POS. Originalul este chitanta terminalului.")
+    b.feed(1).line("* * *").feed(2).cut()
+    return b.bytes()
+
+
 def build_raport(payload, cfg):
     b = EscposBuilder(cfg["receipt_width"], cfg.get("charset", "ascii"))
 
@@ -364,6 +415,12 @@ def process_job(cfg, job):
     if tip == "factura":
         data = build_factura(payload, cfg)
         # Factura se tipareste intotdeauna pe imprimanta de note.
+        target = cfg.get("nota_target") or {"target": "preview"}
+        return deliver(target, data, cfg, job.get("JobID"))
+
+    if tip == "banca":
+        # Duplicatul chitantei de card merge pe imprimanta de note.
+        data = build_banca(payload, cfg)
         target = cfg.get("nota_target") or {"target": "preview"}
         return deliver(target, data, cfg, job.get("JobID"))
 

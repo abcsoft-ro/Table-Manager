@@ -14,10 +14,13 @@ phase() {
 }
 
 phase "LINT" php.exe tests/lint.php
-phase "FAZA JS - client (i18n)" php.exe tests/js.php
+phase "FAZA JS1 - client (i18n)" php.exe tests/js.php
+phase "FAZA JS2 - POS bancar (flux client)" php.exe tests/js_bankpos.php
 phase "FAZA A - static" php.exe tests/static.php
 phase "FAZA B - invariante DB" php.exe tests/invariants.php
 phase "FAZA C - API / securitate" php.exe tests/api.php
+phase "FAZA C2 - POS bancar (status / manual / resync / protocol)" php.exe tests/pos_banca.php
+phase "FAZA C3 - Viva ECR (driver: framing / vanzare / anulare)" php.exe tests/viva_ecr.php
 phase "FAZA G - inchidere aplicatie fara baza de date" php.exe tests/parola_local.php
 phase "FAZA E - servicii" php.exe tests/services.php
 phase "FAZA D - fluxuri (scrie in DB!)" php.exe tests/flows.php

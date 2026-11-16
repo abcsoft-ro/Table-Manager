@@ -89,6 +89,18 @@ $ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
             <div class="cashier-badge" id="current-cashier-label">CASIER 1</div>
           </div>
 
+          <!-- Lock bancar: nota cu plata pe card incerta este doar citire pana
+               la clarificarea platii (Verifica / Manual din ecranul de plata).
+               Textul este pus de applyBankPosLockUI() din js/pos.js. -->
+          <div id="bank-lock-banner" class="bank-lock-banner" style="display:none;">
+            <div class="bank-lock-body">
+              <span class="bank-lock-text"></span>
+              <!-- TRX_ID-ul incercarii: acelasi identificator apare in jurnalul
+                   terminalului bancar, deci ajuta la gasirea ei acolo. -->
+              <span class="bank-lock-trx" id="bank-lock-trx"></span>
+            </div>
+          </div>
+
           <!-- Tabelul de articole -->
           <div class="order-items-wrapper">
             <div class="order-grid-header">
@@ -124,6 +136,19 @@ $ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
             <!-- Mod FastFood: detaliile de plata apar aici dupa inchiderea notei,
                  in locul liniei Total, pana la inceperea unui nou bon. -->
             <div class="fastfood-receipt" id="fastfood-receipt" style="display:none;"></div>
+            <!-- Plata partiala pe card: sumele aprobate pe terminal rămân la
+                 vedere dupa un reload (vin din audit, nu doar din memorie), ca
+                 operatorul sa stie cat s-a incasat si cat mai are de plata. -->
+            <div class="card-paid-box" id="order-card-paid-box" style="display:none;">
+              <div class="summary-line card-paid-line">
+                <span class="sum-lbl" data-i18n="marcare.achitat_card">Achitat CARD :</span>
+                <span class="sum-val" id="val-card-paid">0.00</span>
+              </div>
+              <div class="summary-line card-rest-line">
+                <span class="sum-lbl" data-i18n="marcare.rest_plata">Rest de plata :</span>
+                <span class="sum-val" id="val-card-rest">0.00</span>
+              </div>
+            </div>
           </div>
 
         </div>
@@ -157,11 +182,16 @@ $ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
       <!-- Bara inferioara de actiuni -->
       <div class="bottom-actions-bar">
         <button class="act-btn" id="btn-marcare" onclick="actionMarcare()" data-i18n="marcare.marcare">Marcare</button>
-        <button class="act-btn red-text" onclick="actionNota()" data-i18n="marcare.nota">NOTA</button>
+        <button class="act-btn red-text" id="btn-nota" onclick="actionNota()" data-i18n="marcare.nota">NOTA</button>
+        <!-- Nota blocata (plata pe card incerta): in locul butoanelor care
+             modifica nota apar actiunile de clarificare a platii. -->
+        <button class="act-btn bank-resolve" id="btn-bank-verify" onclick="actionBankPosCheck()" data-i18n="Verifica">Verifica</button>
+        <button class="act-btn bank-resolve" id="btn-bank-return" onclick="actionBankPosReturnToPay()" data-i18n="Altă formă de plată / Anulează">Altă formă de plată / Anulează</button>
+        <button class="act-btn bank-resolve" id="btn-bank-manual" onclick="actionBankPosManual()" data-i18n="Am chitanța (Manual)">Am chitanța (Manual)</button>
         <button class="act-btn" id="btn-mod-preparare" onclick="actionModPreparare()" data-i18n-html="marcare.mod_preparare_html">Mod<br>Preparare</button>
-        <button class="act-btn js-discount-btn" onclick="actionDiscount()" data-i18n="marcare.discount">Discount</button>
-        <button class="act-btn vd-btn" onclick="actionVoid()" data-i18n="marcare.vd">VD</button>
-        <button class="act-btn" onclick="actionQty()" data-i18n="marcare.qty">QTY</button>
+        <button class="act-btn js-discount-btn" id="btn-discount" onclick="actionDiscount()" data-i18n="marcare.discount">Discount</button>
+        <button class="act-btn vd-btn" id="btn-vd" onclick="actionVoid()" data-i18n="marcare.vd">VD</button>
+        <button class="act-btn" id="btn-qty" onclick="actionQty()" data-i18n="marcare.qty">QTY</button>
         
         <div class="act-spacer"></div>
 
@@ -271,7 +301,10 @@ $ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
       <div class="bottom-actions-bar">
         <button class="act-btn" id="btn-transfer" onclick="actionTransfer()" data-i18n="plata.transfer">Transfer</button>
         <button class="act-btn js-discount-btn" onclick="actionDiscount()" data-i18n="marcare.discount">Discount</button>
-        <button class="act-btn" id="btn-cui" onclick="openCuiModal()">CUI</button>
+        <button class="act-btn" id="btn-cui" onclick="openCuiModal()" title="Cod fiscal pe bon" data-i18n-title="Cod fiscal pe bon">CUI</button>
+        <button class="act-btn" id="btn-banca-reprint" onclick="actionBankPosReprint()" data-i18n="Chitanță card" data-i18n-title="Retipareste chitanta terminalului bancar (duplicat)" style="display:none;" title="Retipareste chitanta terminalului bancar (duplicat)">Chitanță card</button>
+        <button class="act-btn" id="btn-pos-banca-check" onclick="actionBankPosCheck()" data-i18n="Verifica" style="display:none;" title="Verifica ultima plata pe terminal">Verifica</button>
+        <button class="act-btn" id="btn-pos-banca-manual" onclick="actionBankPosManual()" data-i18n="Da, am chitanța (Manual)" style="display:none;" title="Verificați dacă terminalul a tipărit chitanța cu APROBAT">Da, am chitanța (Manual)</button>
         <button class="act-btn" id="btn-proforma" onclick="actionProforma()" data-i18n-html="plata.nota_proforma_html">Nota<br>Proforma</button>
         <div class="act-spacer"></div>
         <button class="act-btn" onclick="navigateToScreen('screen-marcare')" data-i18n="common.inapoi">Inapoi</button>
@@ -1865,18 +1898,44 @@ $ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
     </div>
   </div>
 
-  <!-- Modal POS BANCAR (tranzactie refuzata): Cancel / Retry / Ignore -->
+  <!-- Modal POS BANCAR (plata refuzata / neprocesata): Reincearca / Alta metoda -->
   <div class="modal-keyboard-overlay" id="modal-pos-banca">
     <div class="transfer-dialog" style="max-width: 480px;">
       <div class="keyboard-dialog-header">
-        <span data-i18n="TRANZACTIE REFUZATA!">TRANZACTIE REFUZATA!</span>
+        <span id="pos-banca-title" data-i18n="PLATA REFUZATA">PLATA REFUZATA</span>
       </div>
       <div class="transfer-body">
-        <div id="pos-banca-message" style="font-size:15px; color:#222; margin:8px 0 18px 0; line-height:1.4; white-space: pre-line;"></div>
-        <div class="tva-actions">
-          <button class="act-btn" id="pos-banca-cancel">Cancel</button>
-          <button class="act-btn" id="pos-banca-retry" style="background:#ffff00;">Retry</button>
-          <button class="act-btn" id="pos-banca-ignore">Ignore</button>
+        <div id="pos-banca-message" style="font-size:16px; color:#222; margin:8px 0 16px 0; line-height:1.45; white-space: pre-line;"></div>
+        <div class="tva-actions" style="flex-wrap: wrap;">
+          <button class="act-btn" id="pos-banca-cancel" data-i18n="Alta metoda / Anuleaza">Altă metodă / Anulează</button>
+          <button class="act-btn" id="pos-banca-manual" style="background:#fde68a; display:none;" data-i18n="Da, am chitanța (Manual)">Da, am chitanța (Manual)</button>
+          <button class="act-btn" id="pos-banca-retry" style="background:#ffff00; font-weight:bold;" data-i18n="Reincearca plata">Reîncearcă plata</button>
+        </div>
+        <!-- TRX_ID doar pentru suport tehnic: mic, gri, in colt. -->
+        <div id="pos-banca-trx" class="pos-banca-trx"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal SOLUTIONARE MANUALA POS BANCAR (AUTHCODE de pe chitanta, cu audit) -->
+  <div class="modal-keyboard-overlay" id="modal-pos-banca-manual" style="z-index: 1200;">
+    <div class="transfer-dialog" style="max-width: 540px;">
+      <div class="keyboard-dialog-header">
+        <span data-i18n="SOLUȚIONARE MANUALĂ">SOLUȚIONARE MANUALĂ</span>
+      </div>
+      <div class="transfer-body">
+        <div id="pos-banca-manual-info" style="font-size:14px; color:#222; margin:8px 0 14px 0; line-height:1.5; white-space: pre-line;"></div>
+        <div class="pos-banca-cod-row">
+          <label for="pos-banca-manual-cod" data-i18n="AUTHCODE de pe chitanța terminalului (exact 6 caractere):">AUTHCODE de pe chitanța terminalului (exact 6 caractere):</label>
+          <input id="pos-banca-manual-cod" class="pos-banca-cod" type="text" readonly inputmode="text"
+                 maxlength="6" autocomplete="off" spellcheck="false" autocapitalize="characters"
+                 onclick="bankPosManualCaptureCode()">
+          <div class="pos-banca-cod-hint" data-i18n="exact 6 caractere (litere și cifre)">exact 6 caractere (litere și cifre)</div>
+          <div id="pos-banca-manual-err" class="pos-banca-cod-err"></div>
+        </div>
+        <div class="tva-actions" style="flex-wrap: wrap;">
+          <button class="act-btn" id="pos-banca-manual-aprobat" style="background:#bbf7d0; font-weight:bold;" data-i18n="Aprobat">Aprobat</button>
+          <button class="act-btn" id="pos-banca-manual-cancel" data-i18n="Înapoi">Înapoi</button>
         </div>
       </div>
     </div>
@@ -1890,7 +1949,7 @@ $ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
       </div>
       <div class="transfer-body">
         <div style="font-size:16px; color:#222; padding:16px 0; text-align:center;">
-          <span data-i18n="Se asteapta terminalul bancar...">Se asteapta terminalul bancar...</span>
+          <span id="pos-banca-wait-text" data-i18n="Se asteapta terminalul bancar...">Se asteapta terminalul bancar...</span>
         </div>
       </div>
     </div>

@@ -10,8 +10,12 @@ echo ################ LINT ################
 php tests\lint.php
 if errorlevel 1 set FAIL=1
 
-echo ################ FAZA JS - client (i18n) ################
+echo ################ FAZA JS1 - client (i18n) ################
 php tests\js.php
+if errorlevel 1 set FAIL=1
+
+echo ################ FAZA JS2 - POS bancar (flux client) ################
+php tests\js_bankpos.php
 if errorlevel 1 set FAIL=1
 
 echo ################ FAZA A - static ################
@@ -24,6 +28,14 @@ if errorlevel 1 set FAIL=1
 
 echo ################ FAZA C - API / securitate ################
 php tests\api.php
+if errorlevel 1 set FAIL=1
+
+echo ################ FAZA C2 - POS bancar (status / manual / resync / protocol) ################
+php tests\pos_banca.php
+if errorlevel 1 set FAIL=1
+
+echo ################ FAZA C3 - Viva ECR (driver: framing / vanzare / anulare) ################
+php tests\viva_ecr.php
 if errorlevel 1 set FAIL=1
 
 echo ################ FAZA G - inchidere aplicatie fara baza de date ################

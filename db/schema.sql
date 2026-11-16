@@ -560,9 +560,23 @@ GO
 ------------------------------------------------------------ tblPosBancaLog
 -- Audit al comunicatiei cu POS-ul bancar (terminalul de card): fiecare apelare
 -- a driverului din tblSet.CaleDriverPoSbanca la inchiderea unei note scrie un
--- rand aici (suma, TrxId, STATUS, MESAJ, EMITE_BON). Actiune = decizia finala a
--- utilizatorului la refuz: 'aprobat' / 'ignorat' / 'anulat' (NULL cat timp nu s-a
--- decis); 'config' marcheaza o eroare de configurare a driverului.
+-- rand aici (suma, TrxId, STATUS, MESAJ, EMITE_BON). Status: OK/APPROVED,
+-- REFUSED/ERROR, UNKNOWN/TIMEOUT (terminalul a acceptat comanda dar nu a
+-- confirmat rezultatul), RESYNC / VOID / MANUAL (rezolvari auxiliare),
+-- CANCELED_MANUAL (operatorul a declarat ca terminalul nu a tiparit chitanta:
+-- incercarea este abandonata si nota se deblocheaza), CLOSED (nota s-a
+-- inchis) si REPRINT (duplicatul chitantei de card tiparit pe imprimanta POS).
+-- Actiune = decizia finala a utilizatorului: 'aprobat' / 'ignorat' /
+-- 'anulat' / 'neaprobat' (NULL cat timp nu s-a decis); 'config' marcheaza o
+-- eroare de configurare a driverului, 'reincercat' o reluare prin Retry,
+-- 'retiparit' o retiparire a chitantei de card.
+-- Rrn = RRN-ul de pe chitanta terminalului (ISO 8583 DE37: exact 12 cifre,
+-- STOCAT CA TEXT - poate incepe cu 0, iar o coloana numerica ar pierde
+-- zerourile din fata si ar rupe reconcilierea cu extrasul de cont). Ramane
+-- rezervat RRN-ului primit de la driver (coloana indexata).
+-- AuthCode = codul de autorizare (AUTHCODE): primit de la driver/terminal sau
+-- tastat manual la solutionarea unei plati incerte (exact 6 caractere
+-- alfanumerice, normalizat la majuscule).
 IF OBJECT_ID(N'dbo.tblPosBancaLog', N'U') IS NULL
 BEGIN
 CREATE TABLE dbo.[tblPosBancaLog] (
@@ -575,6 +589,12 @@ CREATE TABLE dbo.[tblPosBancaLog] (
     [Mesaj] nvarchar(255) NULL,
     [EmiteBon] bit NULL,
     [Actiune] nvarchar(20) NULL,
+    [Detalii] nvarchar(max) NULL,
+    [Rrn] nvarchar(32) NULL,
+    [Stan] nvarchar(16) NULL,
+    [AuthCode] nvarchar(32) NULL,
+    [CardPan] nvarchar(24) NULL,
+    [Raw] nvarchar(max) NULL,
     [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_tblPosBancaLog_Created] DEFAULT (sysdatetime()),
     [ResolvedAt] datetime2(7) NULL
 );
@@ -585,6 +605,11 @@ ALTER TABLE dbo.[tblPosBancaLog] ADD CONSTRAINT [PK_tblPosBancaLog] PRIMARY KEY 
 GO
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_tblPosBancaLog_DocID' AND object_id = OBJECT_ID(N'dbo.tblPosBancaLog'))
 CREATE NONCLUSTERED INDEX [IX_tblPosBancaLog_DocID] ON dbo.[tblPosBancaLog] ([DocID],[CreatedAt]);
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_tblPosBancaLog_Rrn' AND object_id = OBJECT_ID(N'dbo.tblPosBancaLog'))
+CREATE NONCLUSTERED INDEX [IX_tblPosBancaLog_Rrn] ON dbo.[tblPosBancaLog] ([Rrn]);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_tblPosBancaLog_AuthCode' AND object_id = OBJECT_ID(N'dbo.tblPosBancaLog'))
+CREATE NONCLUSTERED INDEX [IX_tblPosBancaLog_AuthCode] ON dbo.[tblPosBancaLog] ([AuthCode]);
 GO
 
 ------------------------------------------------------------ tblConectare
@@ -811,6 +836,13 @@ GO
  *   - linked server-ul primeste mapping EXPLICIT (user/parola, sau Windows auth
  *     cand @windowsAuth = 1) si "data access" = true - altfel conexiunea e
  *     anonima si tabelele din baza remote nu sunt vizibile (eroare 7314);
+ *   - linked server-ul se creeaza incercand providerii moderni (MSOLEDBSQL19,
+ *     apoi MSOLEDBSQL) cu provider string-ul
+ *     Encrypt=no;TrustServerCertificate=Yes, verificati printr-o interogare de
+ *     proba; acestia valideaza implicit certificatul serverului remote, care
+ *     este self-signed -> 7412 "Client unable to establish connection" /
+ *     "certificate chain was issued by an authority that is not trusted".
+ *     Daca niciun driver modern nu e disponibil se foloseste forma clasica;
  *   - SET XACT_ABORT ON + CATCH fara usp_GetErrorInfo, ca eroarea reala sa fie
  *     raportata (nu 3930 de la COMMIT / de la INSERT-ul in ERRORLOG);
  *   - daca @IP este chiar instanta locala (ex. statia POS1, care gazduieste
@@ -901,19 +933,95 @@ BEGIN
 		IF EXISTS (SELECT 1 FROM sys.servers WHERE server_id <> 0 AND name = @IP)
 			EXEC master.dbo.sp_dropserver @server=@IP, @droplogins='droplogins'
 
-		IF NOT EXISTS (SELECT 1 FROM sys.servers WHERE server_id <> 0 AND name = @IP)
-			EXEC master.dbo.sp_addlinkedserver @server = @IP, @srvproduct = N'SQL Server';
+		-- Linked server-ul se creeaza incercand, in ordine, providerii moderni
+		-- (OLE DB Driver 19, apoi 18) si, in final, forma clasica (providerul
+		-- implicit al instantei, ex. SQLNCLI/SQLOLEDB). La providerii moderni
+		-- trimitem si un provider string: acestia au Encrypt=Mandatory implicit
+		-- si valideaza certificatul serverului remote, care este self-signed ->
+		-- 7412 "Client unable to establish connection" / SSL Provider "The
+		-- certificate chain was issued by an authority that is not trusted".
+		-- Provider string-ul se poate trimite DOAR in forma generica: cu
+		-- @srvproduct = 'SQL Server' SQL Server raspunde 15428 "You cannot specify
+		-- a provider or any properties for product 'SQL Server'". Optiunile sunt
+		-- aceleasi ca la restul aplicatiei (import_server_grp_prod.py,
+		-- sync-service): certificat nevalidat, criptare doar daca serverul o cere.
+		-- Se foloseste Encrypt=no (nu Encrypt=Optional): driverul 18 accepta doar
+		-- no/yes, iar driverul 19 mapeaza no -> Optional, deci comportamentul
+		-- dorit (Optional) este acelasi pe ambele generatii.
+		-- Fiecare varianta este verificata printr-o interogare de proba; daca
+		-- providerul nu este instalat/incarcabil (7399/7403/7302/7303) se trece
+		-- mai departe, altfel varianta este pastrata (eventuala eroare reala -
+		-- login, retea - apare la import, cu mesajul ei). Ultima varianta este
+		-- forma clasica, adica exact comportamentul de dinainte, folosita si cand
+		-- niciun driver modern nu este disponibil (acolo nu exista problema
+		-- certificatului). Providerul folosit se intoarce in rezultat (ls_provider)
+		-- si ajunge in logul importului.
+		Declare @lsForms table (Id int identity(1,1) primary key, Provider nvarchar(128) NULL)
+		Insert Into @lsForms (Provider) Values (N'MSOLEDBSQL19'), (N'MSOLEDBSQL'), (NULL)
 
-		-- Mapping explicit: fara el SQL Server foloseste contextul contului serviciului
-		-- (login anonim pe serverul remote), iar tabelele nu sunt vizibile si
-		-- interogarile esueaza cu 7314 ("does not contain the table ...").
-		IF @windowsAuth = 1
-			EXEC master.dbo.sp_addlinkedsrvlogin @rmtsrvname = @IP, @useself = 'TRUE', @locallogin = NULL;
-		ELSE
-			EXEC master.dbo.sp_addlinkedsrvlogin @rmtsrvname = @IP, @useself = 'FALSE', @locallogin = NULL,
-				@rmtuser = @user, @rmtpassword = @PassWord;
+		Declare @lsIdx int = 0
+		Declare @lsTry nvarchar(128) = NULL
+		Declare @probeSql nvarchar(600)
+		Declare @probeErr int
+		Declare @probeMsg nvarchar(4000)
 
-		EXEC master.dbo.sp_serveroption @server = @IP, @optname = 'data access', @optvalue = 'true';
+		While 1 = 1
+		Begin
+			Set @lsIdx = @lsIdx + 1
+			Select @lsTry = Provider From @lsForms Where Id = @lsIdx
+			If @@ROWCOUNT = 0 Break
+
+			If EXISTS (SELECT 1 FROM sys.servers WHERE server_id <> 0 And name = @IP)
+				EXEC master.dbo.sp_dropserver @server=@IP, @droplogins='droplogins'
+
+			If @lsTry Is NULL
+				EXEC master.dbo.sp_addlinkedserver @server = @IP, @srvproduct = N'SQL Server';
+			Else
+				EXEC master.dbo.sp_addlinkedserver @server = @IP, @srvproduct = N'',
+					@provider = @lsTry, @datasrc = @IP,
+					@provstr = N'Encrypt=no;TrustServerCertificate=Yes';
+
+			-- Mapping explicit: fara el SQL Server foloseste contextul contului
+			-- serviciului (login anonim pe serverul remote), iar tabelele nu sunt
+			-- vizibile si interogarile esueaza cu 7314 ("does not contain the
+			-- table ...").
+			If @windowsAuth = 1
+				EXEC master.dbo.sp_addlinkedsrvlogin @rmtsrvname = @IP, @useself = 'TRUE', @locallogin = NULL;
+			Else
+				EXEC master.dbo.sp_addlinkedsrvlogin @rmtsrvname = @IP, @useself = 'FALSE', @locallogin = NULL,
+					@rmtuser = @user, @rmtpassword = @PassWord;
+
+			-- "data access" trebuie activat inainte de proba (OPENQUERY e o
+			-- interogare distribuita).
+			EXEC master.dbo.sp_serveroption @server = @IP, @optname = 'data access', @optvalue = 'true';
+
+			Set @probeErr = NULL
+			Set @probeMsg = NULL
+			Begin Try
+				Set @probeSql = N'SELECT 1 AS ok FROM OPENQUERY(' + QUOTENAME(@IP) + N', ''SELECT 1 AS ok'')';
+				Exec (@probeSql);
+			End Try
+			Begin Catch
+				Set @probeErr = ERROR_NUMBER()
+				Set @probeMsg = ERROR_MESSAGE()
+			End Catch
+
+			-- Providerul nu poate fi incarcat sau nu accepta provider string-ul:
+			-- trecem la varianta urmatoare (ultima este forma clasica).
+			If (@probeErr Is Not Null And @probeErr In (7399, 7403, 7302, 7303))
+			   Or @probeMsg Like '%Invalid value specified for connection string attribute%'
+				Continue
+
+			Set @lsProvider = @lsTry
+			If @lsTry Is Not Null
+				Set @lsProvstr = N'Encrypt=no;TrustServerCertificate=Yes'
+			Break
+		End
+
+		-- Niciun driver modern acceptat: linked server-ul a ramas in forma
+		-- clasica (providerul implicit al instantei).
+		If @lsProvider Is Null Set @lsProvider = N'(provider implicit)'
+
 		Set @Prefix = QUOTENAME(@IP) + '.' + QUOTENAME(@Database) + '.'
 	END
 	BEGIN TRY

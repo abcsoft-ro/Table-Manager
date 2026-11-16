@@ -9,6 +9,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/print_common.php';
 require_once __DIR__ . '/api_common.php';
 require_once __DIR__ . '/i18n.php';
+require_once __DIR__ . '/pos_banca_protocol.php';
 
 /**
  * Tipul de vanzare din tblSet.TipVanz: "fastfood" cand Value = 1, altfel "restaurant".
@@ -309,11 +310,29 @@ function ensureSetariMeta($conn) {
     ensureSetariValue($conn, 'BaudRateAfisaj', '9600',
         "Viteza portului serial al afisajului client. In curs de implementare.", 'Afiseaj');
 
-    // POS bancar: activare + driver + folder raspuns.
+    // POS bancar: activare + protocol + driver + folder raspuns.
     ensureSetariValue($conn, 'PoSbanca', '0',
         "POS bancar activ: 1 = DA, 0 = NU.", 'PoSbanca');
+    // Retiparirea ultimei chitante a terminalului bancar: duplicatul tiparit de
+    // POS (terminalul nu are o comanda ECR de reprint). Implicit NU, ca sa nu
+    // apara butonul pe statiile care nu folosesc functia.
+    ensureSetariValue($conn, 'RetiparireChitantaPoSbanca', '0',
+        "Retiparirea ultimei chitante a terminalului bancar (duplicat pe imprimanta POS): 1 = DA, 0 = NU. Terminalul bancar nu are comanda ECR de retiparire; duplicatul este tiparit de aplicatie.", 'PoSbanca');
+    ensureSetariValue($conn, 'ProtocolPoSbanca', posBancaProtocolDefault(),
+        "Protocolul terminalului bancar (driverul cu identitate clara folosit la plata pe card). Drivere suportate: SmartPayECR (SmartPay ECR Link) si VivaECR (Viva.com Terminal, ECR Protocol TCP/IP). Ambele citesc conexiunea din .env.", 'PoSbanca');
+    // Vechiul driver "Generic" a fost eliminat. O valoare rămasă pe o
+    // instalatie veche este adusa la protocolul implicit, ca sa nu rămână fara
+    // capabilitati (jurnal/void) din cauza unei setari care nu mai exista.
+    $posBancaProtocolKnown = array_keys(posBancaProtocols());
+    $posBancaProtocolIn = implode(',', array_fill(0, count($posBancaProtocolKnown), '?'));
+    @sqlsrv_query(
+        $conn,
+        "UPDATE tblSet SET Value = ? WHERE Setting = 'ProtocolPoSbanca'
+           AND (Value IS NULL OR LTRIM(RTRIM(Value)) = '' OR Value NOT IN ($posBancaProtocolIn))",
+        array_merge([posBancaProtocolDefault()], $posBancaProtocolKnown)
+    );
     ensureSetariValue($conn, 'CaleDriverPoSbanca', '',
-        "Calea catre driverul/executabilul POS-ului bancar.", 'PoSbanca');
+        "Calea catre driverul/executabilul POS-ului bancar: folderul cu vanzare.bat, scriptul Python si .env (SmartPay: smartpay_client.py + env_config.py; Viva: viva_client.py + env_config.py).", 'PoSbanca');
 
     // Redenumire fara pasi manuali: CaleFisierComenziPoSbanca ->
     // CaleFisierRaspunsPoSbanca, pastrand valoarea de pe instalatiile existente.
@@ -409,6 +428,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     // IP-ul clientului care a deschis Setarile (afisat in editorul whitelist-ului,
     // ca administratorul sa stie ce adresa trebuie sa adauge).
     $setariClientIp = ipGuardClientIp();
+    // Lista de protocoale POS bancar suportate (pentru combobox-ul din Setari).
+    $posBancaProtocolOptions = [];
+    foreach (posBancaProtocols() as $protocolCode => $protocolInfo) {
+        $caps = $protocolInfo['caps'] ?? [];
+        $posBancaProtocolOptions[] = [
+            "value" => $protocolCode,
+            "label" => $protocolInfo['label'],
+            "canResync" => !empty($caps['journal']),
+            "canVoid" => !empty($caps['void']),
+            "envConnection" => !empty($caps['envConnection'])
+        ];
+    }
     sendJsonResponse([
         "status" => "success",
         "rows" => $rows,
@@ -418,7 +449,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         "clientIp" => $setariClientIp,
         "clientIpLocal" => ipGuardIsLocal($setariClientIp),
         "apiKeySet" => $apiKeySet,
-        "apiLastUsed" => $apiLastUsed
+        "apiLastUsed" => $apiLastUsed,
+        "posBancaProtocols" => $posBancaProtocolOptions
     ]);
 }
 
@@ -434,6 +466,19 @@ if ($action === 'update') {
     $values = $input['values'] ?? [];
     if (!is_array($values)) {
         sendJsonResponse(["status" => "error", "message" => "Date invalide"], 400);
+    }
+
+    // Protocolul POS bancar este o lista inchisa; o valoare necunoscuta nu are
+    // capabilitati definite si ar putea activa din greseala un driver greșit.
+    if (array_key_exists('ProtocolPoSbanca', $values)) {
+        $protocolValue = trim((string)$values['ProtocolPoSbanca']);
+        if (!posBancaProtocolIsValid($protocolValue)) {
+            sendJsonResponse([
+                "status" => "error",
+                "message" => "Protocol POS bancar invalid."
+            ], 400);
+        }
+        $values['ProtocolPoSbanca'] = $protocolValue;
     }
 
     // In modul Restaurant, zecimalele cantitatii se pot modifica doar daca

@@ -116,14 +116,24 @@ def build_local_connection_string(cfg):
 
 
 def consume(cur):
-    """Consuma toate seturile de rezultate ale procedurii."""
+    """Consuma toate seturile de rezultate ale procedurii.
+
+    Intoarce primul set de randuri (ca lista de dict-uri), din care se citeste
+    providerul linked server-ului folosit (ls_provider / ls_provstr) - util in
+    log cand importul eșueaza pe conexiunea catre serverul extern.
+    """
+    first = []
     while True:
         try:
-            cur.fetchall()
+            rows = cur.fetchall()
+            if not first and rows and cur.description:
+                cols = [d[0] for d in cur.description]
+                first = [dict(zip(cols, [row[i] for i in range(len(cols))])) for row in rows]
         except pyodbc.ProgrammingError:
             pass
         if not cur.nextset():
             break
+    return first
 
 
 def apply_import_procedure(cn):
@@ -196,8 +206,16 @@ def main(note_mode="run"):
         cur.execute(
             "EXEC dbo.ImportProd @IP = ?, @user = ?, @PassWord = ?, @windowsAuth = ?",
             ip, user, password, windows_auth)
-        consume(cur)
-        log("Import finalizat cu succes (server %s)." % ip)
+        meta = consume(cur)
+        provider = ""
+        if meta and isinstance(meta[0], dict):
+            provider = (meta[0].get("ls_provider") or "").strip()
+        extra = ""
+        if provider:
+            extra = ", linked server: %s" % provider
+            if meta[0].get("ls_provstr"):
+                extra += " (%s)" % meta[0]["ls_provstr"]
+        log("Import finalizat cu succes (server %s%s)." % (ip, extra))
         return 0
     except pyodbc.Error as exc:
         log("EROARE la import: %s" % exc)

@@ -7,6 +7,12 @@
  * are o versiune veche sa primeasca automat varianta corecta:
  *   - @user / @PassWord nvarchar(128)  -> parola nu mai e trunchiata la 10;
  *   - mapping explicit pe linked server (nu anonim) si "data access" = true;
+ *   - linked server creat incercand providerii moderni (MSOLEDBSQL19, apoi
+ *     MSOLEDBSQL) cu provider string-ul Encrypt=no;TrustServerCertificate=Yes,
+ *     verificati printr-o interogare de proba: acestia valideaza implicit
+ *     certificatul serverului remote, care este self-signed (eroarea 7412 / SSL
+ *     Provider "certificate chain ... not trusted"). Daca niciun driver modern
+ *     nu e disponibil se foloseste forma clasica (providerul implicit);
  *   - SET XACT_ABORT ON + CATCH fara usp_GetErrorInfo (nu mai masca eroarea cu
  *     3930).
  *

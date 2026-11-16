@@ -51,6 +51,57 @@ const POS_STATE = {
   // POS bancar activ (tblSet.PoSbanca): cand e 1, la inchiderea unei note cu
   // plata pe card se apeleaza terminalul bancar prin api/pos_banca.php.
   posBanca: 0,
+  // Retiparirea ultimei chitante a terminalului bancar
+  // (tblSet.RetiparireChitantaPoSbanca): 1 = DA (butonul "Chitanță card"
+  // apare dupa o aprobare pe card), 0 = NU (implicit).
+  retiparireChitantaPoSbanca: 0,
+  // Registrul incasarilor pe card ale notei curente (swipe-uri aprobate de
+  // terminal: {approved, requested, source, trxId, logId, at}). Este SINGURA
+  // sursa de adevar pentru banii de pe card: `payments` nu contine niciodata
+  // cheia 1, linia de card se deriveaza in paymentsForClose(). Asa, un cod care
+  // ar scrie accidental payments[1] nu poate taxa nimic (cheia nu e citita).
+  // Se reseteaza implicit cand se schimba DocID-ul notei (vezi cardLedgerForDoc).
+  cardLedger: { docId: null, swipes: [] },
+  // Plata pe card fara terminal (PosBanca = 0) sau cu PlataCombinata = 0 (click
+  // pe CARD inchide nota): suma declarata, netaxata inca. La inchidere se
+  // taxeaza o singura data, ca inainte.
+  cardDeclared: 0,
+  // Garda anti-dublu-tap cat timp terminalul este taxat (un al doilea OK/click
+  // pe o forma de plata in acest interval este ignorat).
+  cardPaying: false,
+  // Conexiunea terminalului citita din .env-ul driverului SmartPay (transport +
+  // port), folosita in mesajul "terminalul nu raspunde" fara a hardcoda un port.
+  // Ramane null pentru un driver fara conexiune in .env.
+  bankPosConnection: null,
+  // Protocolul POS bancar si capabilitatile raportate de server. Verifica/void
+  // se afiseaza doar cand protocolul le suporta; Manual ramane disponibil.
+  bankPosProtocol: "",
+  bankPosCanResync: false,
+  bankPosCanVoid: false,
+  // Nota are o plata pe card cu stare incerta (UNKNOWN/TIMEOUT): este blocata
+  // pana la clarificare (Verifica / Manual din ecranul de plata). Serverul
+  // refuza oricum modificarile cu 423 bank_pos_uncertain; flagul doar blocheaza
+  // ecranul de marcare inainte de a trimite cererea.
+  bankPosLocked: false,
+  bankPosLockAmount: "",
+  bankPosUid: "",
+  // Nota are bani aprobati pe terminal dar inca neaplicati pe nota (ex. dupa
+  // un reload in timpul platii). Ramane nemodificabila, dar plata poate fi
+  // continuata din NOTA (banner-ul o spune, iar butonul NOTA rămâne vizibil).
+  bankPosApproved: false,
+  bankPosApprovedTotal: 0,
+  // Incertitudine nerezolvata / deja lamurita (jurnal sau decizie manuala):
+  // doar prima justifica butoanele Verifica si Am chitanța (Manual).
+  bankPosUncertain: false,
+  bankPosResolved: false,
+  // Comanda trimisa terminalului, fara raspuns inca (randul PENDING din audit):
+  // nota este blocata, dar inca nu are sens sa verificam jurnalul.
+  bankPosPending: false,
+  // Ultima nota inchisa cu plata pe card: {docId}. Retiparirea chitantei de
+  // card rămâne disponibila si dupa close_bill (nota nu mai exista in memorie,
+  // dar randurile din tblPosBancaLog dau datele duplicatului; serverul alege
+  // ultima tranzactie aprobata).
+  lastCardReprint: null,
   cantar: 0,
   // Asteapta raspunsul casei de marcat la inchiderea notei
   // (tblSet.AsteaptaRaspunsCasa, doar FiscalWire): cand e 1, dupa plata se
@@ -163,9 +214,23 @@ async function initApp() {
     loadAppVersion();
     // 1. Incarcam meniul si produsele din MSSQL
     await loadMenu();
+    // 1a. Formele de plata (pentru etichetele din dialogul de inchidere).
+    // Necesar si inainte de prima deschidere a ecranului de plata, ca nota sa
+    // fie afisata cu "CARD", nu cu "FP 1".
+    loadPaymentForms();
     // 1b. Restauram sesiunea de ospatar (doar daca Mod_logare = 1)
     restoreWaiterSession();
-    // 2. Incarcam comanda pentru Masa 1
+    // 2. Incarcam comanda pentru masa pe care lucra operatorul. Dupa un refresh
+    // (Ctrl+F5) trebuie sa rămâna pe aceeasi masa: nota poate avea o plata pe
+    // card incerta/confirmata, care nu are voie sa dispara de pe ecran. In
+    // FastFood nu exista masa selectata - nota unica este pe masa 1.
+    const savedMasa = isFastFood() ? 0 : savedCurrentTable();
+    if (isFastFood()) {
+      POS_STATE.masaCurenta = 1;
+      clearCurrentTable();
+    } else if (savedMasa > 0) {
+      POS_STATE.masaCurenta = savedMasa;
+    }
     await loadOrder(POS_STATE.masaCurenta);
     selectLastAndScroll();
     // 3. Incarcam starea celor 80 de mese
@@ -177,6 +242,13 @@ async function initApp() {
     // Mod FastFood: pornim direct in ecranul de marcare (fara selectie de mese).
     if (isFastFood()) {
       navigateToScreen("screen-marcare");
+    } else if (savedMasa > 0 && POS_STATE.docId) {
+      // Revenim exact acolo unde era operatorul (nota de pe masa respectiva).
+      returnToGroups();
+      navigateToScreen("screen-marcare");
+    } else if (savedMasa > 0) {
+      // Masa memorata nu mai are nota deschisa (s-a inchis intre timp).
+      clearCurrentTable();
     }
   } catch (err) {
     console.error("Eroare la initializare:", err);
@@ -267,6 +339,7 @@ async function loadMenu() {
   POS_STATE.procentDiscountFix = (pf >= 0 && pf <= 100) ? pf : 10;
   POS_STATE.server = (data.server == 1) ? 1 : 0;
   POS_STATE.posBanca = (data.posBanca == 1) ? 1 : 0;
+  POS_STATE.retiparireChitantaPoSbanca = (data.retiparireChitantaPoSbanca == 1) ? 1 : 0;
   POS_STATE.cantar = (data.cantar == 1) ? 1 : 0;
   POS_STATE.asteaptaRaspunsCasa = (data.asteaptaRaspunsCasa == 1) ? 1 : 0;
   POS_STATE.plataCombinata = (data.plataCombinata == 0) ? 0 : 1;
@@ -275,6 +348,9 @@ async function loadMenu() {
 
   // Traducem elementele statice marcate cu data-i18n* (limba din tblSet.Limba).
   if (typeof window.applyI18n === "function") window.applyI18n();
+  // Titlul butonului CUI este setat dinamic (include codul curent), deci il
+  // retradusim dupa aplicarea catalogului i18n.
+  updateCuiButton();
 
   renderMenuGrid();
   updateMeniulZileiButton();
@@ -301,6 +377,17 @@ function applyTipVanzUI() {
     if (el) el.style.display = fastfood ? "none" : "";
   });
   document.body.classList.toggle("fastfood-mode", fastfood);
+  // FastFood are o singura nota, pe masa 1 (nu exista ecran de mese). Daca
+  // modul se activeaza in timpul lucrului pe o masa de Restaurant, nu mostenim
+  // masa respectiva: altfel comenzile din FastFood ajung pe masa aceea (bug
+  // real: produsele marcate in FastFood au ajuns pe masa 8).
+  if (fastfood) {
+    clearCurrentTable();
+    if (Number(POS_STATE.masaCurenta) !== 1 || POS_STATE.docId) {
+      POS_STATE.masaCurenta = 1;
+      loadOrder(1);
+    }
+  }
   // In FastFood nu se afiseaza niciodata ecranul de mese.
   if (fastfood) {
     const active = document.querySelector(".pos-screen.active");
@@ -506,17 +593,37 @@ function renderProductGrid(produse, ignorePoz) {
   if (ignorePoz) {
     slots = produse.slice(0, 50);
   } else {
-    // Harta Pozitie -> Produs (Pozitii 1..50)
+    // Harta Pozitie -> Produs (Pozitii 1..50).
+    // La aceeasi pozitie castiga produsul din Meniul Zilei (MZ = 1); daca
+    // niciunul nu e in Meniul Zilei (sau ambele sunt), ramane primul produs
+    // primit de la server (ordinea din menu.php: Poz, Denumire).
     const prodPosMap = {};
-    const produseFaraPoz = [];
+    const prodPosIdx = {};
+    const pePozitie = new Set();
 
-    produse.forEach(p => {
-      if (p.Poz >= 1 && p.Poz <= 50 && !prodPosMap[p.Poz]) {
-        prodPosMap[p.Poz] = p;
-      } else {
-        produseFaraPoz.push(p);
+    produse.forEach((p, idx) => {
+      const poz = Number(p.Poz);
+      if (!(poz >= 1 && poz <= 50)) return;
+      const idxExistent = prodPosIdx[poz];
+      if (idxExistent === undefined) {
+        prodPosMap[poz] = p;
+        prodPosIdx[poz] = idx;
+        pePozitie.add(idx);
+        return;
+      }
+      const existentMZ = Number(produse[idxExistent].MZ) === 1;
+      const nouMZ = Number(p.MZ) === 1;
+      if (!existentMZ && nouMZ) {
+        prodPosMap[poz] = p;
+        prodPosIdx[poz] = idx;
+        pePozitie.delete(idxExistent);
+        pePozitie.add(idx);
       }
     });
+
+    // Produsele fara pozitie proprie (Poz in afara 1..50 sau Poz deja ocupat)
+    // intra pe primele sloturi libere, in ordinea primita de la server.
+    const produseFaraPoz = produse.filter((p, idx) => !pePozitie.has(idx));
 
     slots = [];
     for (let poz = 1; poz <= 50; poz++) {
@@ -727,15 +834,51 @@ async function leaveTableToTables() {
   leavingTableInProgress = true;
   try {
     const docId = POS_STATE.docId;
-    if (docId) {
-      const res = await printKitchen(docId);
-      if (res && res.jobs > 0) {
-        showToast(res.message || "Comanda a fost trimisa la sectie");
+    if (!docId) { return; }
+    // Nota fara nicio linie: o inchidem (serverul o sterge), altfel masa ar
+    // ramane ocupata degeaba pe ecranul de mese.
+    if (POS_STATE.articole.length === 0) {
+      if (POS_STATE.bankPosLocked === true) {
+        // Plata pe card incerta: nu o stergem tacit. Operatorul o inchide din
+        // NOTA, unde confirma explicit riscul de desincronizare.
+        showToast(POS_STATE.bankPosApproved === true
+          ? tr("Nota are o plata pe card confirmata ({suma} Lei). Inchideti nota din NOTA.", {
+              suma: (Number(POS_STATE.bankPosApprovedTotal) || 0).toFixed(2)
+            })
+          : tr("Nota are o plata pe card cu stare incerta. Inchideti nota din NOTA."));
+        return;
       }
+      await closeEmptyNoteOnLeave(docId);
+      return;
+    }
+    const res = await printKitchen(docId);
+    if (res && res.jobs > 0) {
+      showToast(res.message || "Comanda a fost trimisa la sectie");
     }
   } finally {
+    // Am parasit masa: un refresh nu mai trebuie sa ne readuca pe ea.
+    clearCurrentTable();
     navigateToScreen("screen-mese");
     leavingTableInProgress = false;
+  }
+}
+
+// Inchide (sterge) o nota goala la iesirea din masa, fara sa blocheze
+// navigarea daca serverul nu raspunde: masa se reincarca oricum la intrarea in
+// ecranul de mese.
+async function closeEmptyNoteOnLeave(docId) {
+  try {
+    const resp = await fetch("api/order_action.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "close_bill", docId: docId, plati: {} })
+    });
+    const res = await resp.json();
+    if (res && (res.status === "success" || res.alreadyClosed)) {
+      clearOrderPanelLocal();
+    }
+  } catch (err) {
+    /* la iesirea din masa nu blocam navigarea */
   }
 }
 
@@ -762,6 +905,23 @@ async function loadOrder(nrMasa) {
     // casierul curent (operatorul logat).
     POS_STATE.bonNrOp = (data.nrOp != null) ? Number(data.nrOp) : null;
     POS_STATE.bonCasier = data.casier || null;
+    // Lock-ul bancar vine de la server: nota cu plata pe card incerta este
+    // doar citire pana la clarificarea platii.
+    POS_STATE.bankPosLocked = (data.bankPosLocked === true);
+    POS_STATE.bankPosLockAmount = data.bankPosAmount || "";
+    POS_STATE.bankPosUid = data.bankPosUid || "";
+    POS_STATE.bankPosApproved = (data.bankPosApproved === true);
+    POS_STATE.bankPosApprovedTotal = Number(data.bankPosApprovedTotal) || 0;
+    POS_STATE.bankPosUncertain = (data.bankPosUncertain === true);
+    POS_STATE.bankPosResolved = (data.bankPosResolved === true);
+    POS_STATE.bankPosPending = (data.bankPosPending === true);
+    applyBankPosLockUI();
+    refreshBankReprintButton();
+    if (POS_STATE.bankPosLocked) {
+      // Dupa un reload stim doar ca nota e blocata: luam si capabilitatile
+      // protocolului (Verifica apare doar daca exista jurnal) si TRX-ul la zi.
+      refreshBankPosCheckButton();
+    }
 
     // Sincronizam interfata
     document.getElementById("current-table-btn").innerText = nrMasa;
@@ -780,6 +940,39 @@ async function loadOrder(nrMasa) {
   } catch (err) {
     console.error("Eroare la incarcare comanda:", err);
   }
+}
+
+// Dupa close_bill nota nu mai exista. Curatam local panoul, fara sa mai
+// asteptam un loadOrder: acela poate fi lent sau poate esua exact dupa
+// inchidere si ar lasa pe ecran liniile notei deja inchise. In FastFood,
+// showFastFoodReceipt() afiseaza apoi confirmarea platii pana la nota urmatoare.
+function clearOrderPanelLocal() {
+  POS_STATE.docId = null;
+  POS_STATE.articole = [];
+  POS_STATE.selectedItemIndex = -1;
+  POS_STATE.bonNrOp = null;
+  POS_STATE.bonCasier = null;
+  POS_STATE.cui = "";
+  POS_STATE.cuiDocId = null;
+  // Nota nu mai exista: nici masa memorata pentru un refresh nu mai are sens.
+  clearCurrentTable();
+  // Nota nu mai exista: lock-ul bancar nu o mai urmareste.
+  POS_STATE.bankPosLocked = false;
+  POS_STATE.bankPosLockAmount = "";
+  POS_STATE.bankPosUid = "";
+  POS_STATE.bankPosApproved = false;
+  POS_STATE.bankPosApprovedTotal = 0;
+  POS_STATE.bankPosUncertain = false;
+  POS_STATE.bankPosResolved = false;
+  POS_STATE.bankPosPending = false;
+  // Registrul de card al notei inchise nu mai e valabil (banii sunt deja in
+  // tblPosBancaLog si pe bon). Nota urmatoare porneste cu ledger gol.
+  cardLedgerReset();
+  applyBankPosLockUI();
+  updateCuiButton();
+  renderOrderItems(0, 0);
+  hideFastFoodReceipt();
+  refreshBankReprintButton();
 }
 
 function lineVal(item) {
@@ -897,6 +1090,8 @@ function renderOrderItems(subtotalCalculat = null, totalCalculat = null) {
   document.getElementById("val-reducere").innerText = redTotal.toFixed(2);
   document.getElementById("val-tva").innerText = sumTva.toFixed(2);
   document.getElementById("val-total").innerText = total.toFixed(2);
+  // Banii de pe card + restul de plata (dupa un reload vin din audit).
+  updateCardPaymentFooter();
 }
 
 function selectOrderItem(index) {
@@ -935,6 +1130,9 @@ function selectLastAndScroll() {
 }
 
 async function addProduct(prodId) {
+  // O nota cu plata pe card incerta este blocata (serverul refuza oricum cu
+  // 423): nu se mai adauga produse pana la clarificarea platii.
+  if (bankPosBlockedNotice()) { return; }
   // Marcarea se face doar de catre un ospatar autentificat.
   if (!POS_STATE.loggedIn) {
     openLoginModal(() => addProduct(prodId));
@@ -956,7 +1154,11 @@ async function addProduct(prodId) {
     });
 
     const res = await resp.json();
-    if (res.status !== "success") throw new Error(res.message);
+    if (res.status !== "success") {
+      const errAdd = new Error(res.message);
+      errAdd.code = res.code || "";
+      throw errAdd;
+    }
 
     await loadOrder(POS_STATE.masaCurenta);
     await loadTables();
@@ -969,12 +1171,28 @@ async function addProduct(prodId) {
     }
     focusScanInput();
   } catch (err) {
+    // Blocajul bancar nu este o eroare de baza de date: serverul refuza
+    // modificarea (423) pentru ca banii de pe card nu sunt inca pe nota. Afisam
+    // mesajul de lock si reimprospatam bara, ca butoanele de clarificare sa
+    // apara imediat (in loc de "Eroare la salvare in baza de date").
+    const code = String((err && err.code) || "");
+    if (code === "bank_pos_payable" || code === "bank_pos_uncertain") {
+      await loadOrder(POS_STATE.masaCurenta);
+      bankPosBlockedNotice();
+      return;
+    }
     appAlert("Eroare la salvare in baza de date: " + err.message);
   }
 }
 
 async function toggleCookDb(ecrId, isChecked) {
   if (!ecrId) return;
+  if (POS_STATE.bankPosLocked === true) {
+    // Lock bancar: bifa se reverteaza in UI, nota nu se modifica.
+    await loadOrder(POS_STATE.masaCurenta);
+    bankPosBlockedNotice();
+    return;
+  }
   try {
     await fetch("api/order_action.php", {
       method: "POST",
@@ -1099,6 +1317,8 @@ async function selectTableAndOpen(numarMasa) {
   }
 
   returnToGroups();
+  // Masa pe care lucram: memorata pentru un eventual refresh al paginii.
+  saveCurrentTable(numarMasa);
   showToast(`Comutare pe Masa ${numarMasa}`);
   navigateToScreen("screen-marcare");
   selectLastAndScroll();
@@ -1136,9 +1356,13 @@ function syncPaymentScreen() {
   POS_STATE.payments = {};
   POS_STATE.rest = 0;
   POS_STATE.activePaymentFp = null;
-  const input = document.getElementById("pay-amount-input");
-  input.value = total;
-  input.dataset.fresh = "true";
+  // Cardul declarat (PlataCombinata = 0) apartine interactiunii curente; banii
+  // deja taxati pe card stau in cardLedger si NU se pierd la reintrarea pe
+  // ecranul de plata (altfel nota se putea inchide fara linia CARD).
+  POS_STATE.cardDeclared = 0;
+  // Suma implicita = restul de plata, nu totalul notei: cardul aprobat inainte
+  // de reload (ledger) si celelalte plati deja inregistrate se scad.
+  updatePayAmountDefault(true);
 
   loadPaymentForms().then(() => {
     renderPaymentMethods();
@@ -1151,6 +1375,9 @@ function syncPaymentScreen() {
       selectPaymentMethod(def.FPID);
     }
     updatePaymentProgress();
+    // refreshBankPosCheckButton() intoarce starea bancara: o refolosim ca sa nu
+    // mai facem un al doilea apel `status` pentru preluarea automata.
+    refreshBankPosCheckButton().then(st => bankPosAutoAdoptOnPaymentScreen(st));
   });
 }
 
@@ -1160,13 +1387,32 @@ async function loadPaymentForms() {
     const resp = await fetch("api/fp.php");
     const data = await resp.json();
     if (data.status !== "success") throw new Error(data.message || "Eroare");
+    // FPID/Poz se normalizeaza la numere: altfel comparatiile `===` cu
+    // parseInt(id) ar rata (ex. "1" === 1 este false) si dialogul de dupa
+    // inchidere ar afisa "FP 1" in loc de denumirea formei de plata.
     POS_STATE.paymentForms = (data.rows || [])
-      .filter(r => r.Status === 1)
+      .filter(r => Number(r.Status) === 1)
+      .map(r => ({
+        FPID: parseInt(r.FPID, 10),
+        Denumire: String(r.Denumire == null ? "" : r.Denumire).trim(),
+        Status: Number(r.Status),
+        Poz: (r.Poz == null || r.Poz === "") ? null : parseInt(r.Poz, 10)
+      }))
+      .filter(r => !isNaN(r.FPID))
       .sort((a, b) => (a.Poz ?? 9999) - (b.Poz ?? 9999) || a.FPID - b.FPID);
   } catch (err) {
     POS_STATE.paymentForms = [];
     showToast("Eroare forme de plata: " + err.message);
   }
+}
+
+// Denumirea formei de plata pentru un FPID (ex. "CARD"), cu fallback pe "FP <id>".
+function paymentFormLabel(fpid) {
+  const id = parseInt(fpid, 10);
+  const f = (POS_STATE.paymentForms || [])
+    .find(x => parseInt(x.FPID, 10) === id);
+  const nume = f && f.Denumire ? String(f.Denumire).trim() : "";
+  return nume !== "" ? nume : ("FP " + (isNaN(id) ? fpid : id));
 }
 
 // Simbol (SVG inline) de card bancar, afisat pe butonul formei de plata CARD.
@@ -1218,27 +1464,51 @@ function selectPaymentMethod(fpid) {
   document.querySelectorAll(".pay-btn").forEach(btn => btn.classList.remove("selected"));
   document.getElementById("btn-pay-fp-" + fpid)?.classList.add("selected");
 
-  const f = POS_STATE.paymentForms.find(x => x.FPID === fpid);
-  document.getElementById("lbl-active-pay-type").innerText = f ? f.Denumire.toUpperCase() : "";
+  document.getElementById("lbl-active-pay-type").innerText = POS_STATE.paymentForms.length
+    ? paymentFormLabel(fpid).toUpperCase()
+    : "";
 }
 
-// Afiseaza platile inregistrate si restul de plata
+// Suma implicita din campul de plata: RESTUL de plata (totalul notei minus
+// platile deja inregistrate, inclusiv cardul aprobat din ledger), nu totalul
+// notei. Fara asta, dupa un reload campul arata 84.00 desi pe terminal s-au
+// incasat deja 50 Lei si mai ramane 34 Lei. `fresh` marcheaza valoarea ca
+// implicita (prima tasta apasata o inlocuieste).
+function updatePayAmountDefault(fresh) {
+  const input = document.getElementById("pay-amount-input");
+  if (!input) { return; }
+  const rest = Math.max(0, posRound2(noteTotal() - paidTotal()));
+  input.value = rest.toFixed(2);
+  if (fresh !== false) { input.dataset.fresh = "true"; }
+}
+
+// Afiseaza platile inregistrate si restul de plata. Linia de card este cea
+// derivata din ledger (o singura linie, oricate swipe-uri).
 function updatePaymentProgress() {
   const el = document.getElementById("pay-progress");
   if (!el) return;
 
   const total = parseFloat(document.getElementById("val-total").innerText) || 0;
-  const totalPaid = Object.values(POS_STATE.payments).reduce((a, b) => a + b, 0);
+  const plati = paymentsForClose();
+  const totalPaid = Object.values(plati).reduce((a, b) => a + (Number(b) || 0), 0);
   const rest = total - totalPaid;
 
-  const parts = Object.entries(POS_STATE.payments).map(([fp, val]) => {
-    const f = POS_STATE.paymentForms.find(x => x.FPID === parseInt(fp, 10));
-    return `${f ? f.Denumire : ("FP " + fp)}: ${val.toFixed(2)}`;
+  const parts = Object.entries(plati).map(([fp, val]) => {
+    return `${paymentFormLabel(fp)}: ${Number(val).toFixed(2)}`;
   });
 
   el.innerText = parts.length
     ? parts.join("   |   ") + "   |   " + tr("Rest: ") + rest.toFixed(2)
     : tr("Total de plata: ") + total.toFixed(2);
+
+  // Campul de suma urmeaza restul de plata cat timp valoarea este cea implicita
+  // (nu suprascriem o suma tastata de operator). Acopera reînsămânțarea
+  // ledger-ului dupa reload si aprobarile manuale / din jurnal.
+  const amountInput = document.getElementById("pay-amount-input");
+  if (amountInput && amountInput.dataset.fresh === "true") {
+    amountInput.value = Math.max(0, rest).toFixed(2);
+  }
+  refreshBankReprintButton();
 }
 
 function payNumpadKey(key) {
@@ -1287,8 +1557,7 @@ function showFastFoodReceipt(payments, total, rest) {
   if (!box) return;
 
   const parts = Object.entries(payments || {}).map(([id, val]) => {
-    const f = POS_STATE.paymentForms.find(x => x.FPID === parseInt(id, 10));
-    return { label: f ? f.Denumire : ("FP " + id), val: Number(val) || 0 };
+    return { label: paymentFormLabel(id), val: Number(val) || 0 };
   });
 
   let html = '<div class="ff-receipt-title">' + tr("PLATA EFECTUATA") + '</div>';
@@ -1298,6 +1567,12 @@ function showFastFoodReceipt(payments, total, rest) {
   html += `<div class="ff-receipt-line ff-receipt-total"><span>${tr("Total")}</span><span>${(Number(total) || 0).toFixed(2)}</span></div>`;
   if (rest > 0) {
     html += `<div class="ff-receipt-line ff-receipt-rest"><span>${tr("Rest")}</span><span>${Number(rest).toFixed(2)}</span></div>`;
+  }
+  // Retiparirea chitantei de card ramane posibila si dupa inchidere (cazul
+  // "terminalul a ramas fara hartie la ultimul swipe").
+  if (POS_STATE.lastCardReprint && Number((payments || {})[1]) > 0) {
+    html += '<button class="ff-receipt-reprint" onclick="actionBankPosReprint()">'
+      + escapeHtml(tr("Chitanță card")) + '</button>';
   }
 
   box.innerHTML = html;
@@ -1312,13 +1587,217 @@ function hideFastFoodReceipt() {
   if (totalLine) totalLine.style.display = "";
 }
 
+// --------------------------------------------------------------------------
+// 4a-bis. REGISTRUL PLATILOR PE CARD (ledger)
+//
+// Banii de pe card sunt tinuti intr-un singur loc (cardLedger) si sunt
+// derivati in linia de plata la inchidere. `payments` pastreaza doar celelalte
+// forme de plata, deci un cod care ar scrie payments[1] nu poate taxa nimic.
+// --------------------------------------------------------------------------
+
+function posRound2(v) {
+  return Math.round((Number(v) || 0) * 100) / 100;
+}
+
+function noteTotal() {
+  return parseFloat(document.getElementById("val-total").innerText) || 0;
+}
+
+// Sumele de pe celelalte forme de plata (cardul nu face parte din `payments`).
+function otherPaidTotal(plati) {
+  const src = plati || POS_STATE.payments || {};
+  let sum = 0;
+  Object.keys(src).forEach(id => {
+    if (String(id) !== "1") { sum += Number(src[id]) || 0; }
+  });
+  return posRound2(sum);
+}
+
+// Cat mai trebuie incasat pe card pentru nota curenta.
+function cardNeeded() {
+  return Math.max(0, posRound2(noteTotal() - otherPaidTotal()));
+}
+
+// Ledger-ul notei curente; se goleste singur cand se schimba DocID-ul.
+function cardLedgerForDoc() {
+  const docId = POS_STATE.docId || null;
+  if (!POS_STATE.cardLedger || POS_STATE.cardLedger.docId !== docId) {
+    POS_STATE.cardLedger = { docId: docId, swipes: [] };
+  }
+  return POS_STATE.cardLedger;
+}
+
+function cardLedgerTotal() {
+  return posRound2(cardLedgerForDoc().swipes.reduce(
+    (a, s) => a + (Number(s.approved) || 0), 0
+  ));
+}
+
+// Exista in ledger o aprobare reala a terminalului (nu doar suma declarata /
+// eroare de configurare)? Doar acelea pot fi retiparite din audit.
+function cardLedgerHasTerminalApproval() {
+  return cardLedgerForDoc().swipes.some(s =>
+    String((s && s.source) || "") !== "config" && (Number(s && s.approved) || 0) > 0
+  );
+}
+
+function cardLedgerReset() {
+  POS_STATE.cardLedger = { docId: POS_STATE.docId || null, swipes: [] };
+  POS_STATE.cardDeclared = 0;
+  updateCardPaymentFooter();
+}
+
+// Suma aprobata pe card pentru nota curenta: ledger-ul local (la zi, cat timp
+// fereastra nu a fost reincarcata) sau sumele din auditul serverului
+// (`status.approvedEntries` / `get_order.bankPosApprovedTotal`). Se ia maximul,
+// ca un Ctrl+F5 sa nu ascunda banii deja incasati pe terminal.
+function cardPaidTotal() {
+  const ledger = cardLedgerTotal();
+  const server = Number(POS_STATE.bankPosApprovedTotal) || 0;
+  return posRound2(Math.max(ledger, server));
+}
+
+// Subsolul notei: "Achitat CARD x Lei" + "Rest de plata y Lei", cand nota are
+// bani aprobati pe card. Suma de pe card nu este o plata inregistrata in nota
+// (devine linie CARD doar la inchidere), deci trebuie afisata explicit - altfel
+// operatorul vede doar Totalul si nu stie cat s-a incasat deja pe terminal.
+function updateCardPaymentFooter() {
+  const box = document.getElementById("order-card-paid-box");
+  if (!box) { return; }
+  const paid = cardPaidTotal();
+  if (paid <= 0.005) {
+    box.style.display = "none";
+    return;
+  }
+  const total = noteTotal();
+  const rest = Math.max(0, posRound2(total - otherPaidTotal() - paid));
+  const paidEl = document.getElementById("val-card-paid");
+  const restEl = document.getElementById("val-card-rest");
+  if (paidEl) { paidEl.innerText = paid.toFixed(2); }
+  if (restEl) { restEl.innerText = rest.toFixed(2); }
+  box.style.display = "";
+}
+
+// Singurul loc care aduna bani pe card. Idempotent pe trxId (fallback logId):
+// aceeasi incercare preluata din terminal, din jurnal sau manual se adauga o
+// singura data. Returneaza true daca s-a adaugat ceva nou.
+function cardLedgerAdd(swipe) {
+  const approved = posRound2(swipe && swipe.approved);
+  if (approved <= 0) { return false; }
+  const lg = cardLedgerForDoc();
+  const key = String((swipe && (swipe.trxId || swipe.logId)) || "");
+  if (key && lg.swipes.some(s => String(s.trxId || s.logId || "") === key)) {
+    return false;
+  }
+  lg.swipes.push({
+    approved: approved,
+    requested: posRound2(swipe && swipe.requested),
+    source: String((swipe && swipe.source) || "terminal"),
+    trxId: String((swipe && swipe.trxId) || ""),
+    logId: (swipe && swipe.logId != null) ? swipe.logId : null,
+    at: Date.now()
+  });
+  updateCardPaymentFooter();
+  return true;
+}
+
+// Reînsămânțeaza ledger-ul din server (dupa reload/crash): fiecare intrare
+// aprobata din tblPosBancaLog devine un swipe. Dedupe pe trxId face apelul
+// repetat inofensiv.
+function cardLedgerSeed(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) { return 0; }
+  let added = 0;
+  entries.forEach(e => {
+    if (!e) { return; }
+    if (cardLedgerAdd({
+      approved: Number(e.amount) || 0,
+      requested: Number(e.requested) || Number(e.amount) || 0,
+      source: String(e.source || "journal"),
+      trxId: String(e.trxId || ""),
+      logId: e.logId
+    })) {
+      added++;
+    }
+  });
+  return added;
+}
+
+// Aliniaza ledger-ul la auditul serverului (`status.approvedEntries`), care este
+// sursa de adevar pentru banii de pe card: adauga aprobarile care lipsesc (dupa
+// un reload) si elimina swipe-urile care nu mai exista in audit (o numarare
+// dubla in memorie, ex. Verifica/Manual apasat pe o tranzactie deja preluata).
+// Aprobarile locale fara urma in audit (`source = 'config'`, eroare de
+// configurare a terminalului) se pastreaza: ele nu sunt incasari pe terminal.
+function cardLedgerReconcile(entries) {
+  if (!Array.isArray(entries)) { return 0; }
+  const lg = cardLedgerForDoc();
+  const serverKeys = new Set();
+  entries.forEach(e => {
+    if (!e) { return; }
+    const k = String(e.trxId || e.logId || "");
+    if (k) { serverKeys.add(k); }
+  });
+  lg.swipes = lg.swipes.filter(s => {
+    if (String(s.source || "") === "config") { return true; }
+    const k = String(s.trxId || s.logId || "");
+    // Un swipe fara cheie nu poate fi corelat cu auditul: il pastram doar daca
+    // serverul nu a trimis nicio lista (raspuns incomplet / fara aprobari).
+    if (k === "") { return entries.length === 0; }
+    return serverKeys.has(k);
+  });
+  return cardLedgerSeed(entries);
+}
+
+// Linia de card care intra in nota (0 = fara card). Ledger-ul are prioritate;
+// `cardDeclared` acopera plata pe card fara terminal / cu PlataCombinata = 0.
+// Se plafoneaza la cat mai e necesar, ca o modificare a notei sa nu lase plata
+// peste total (reconcilierea de la close_bill semnaleaza diferenta).
+function cardAmountForClose() {
+  const taken = cardLedgerTotal();
+  const declared = Number(POS_STATE.cardDeclared) || 0;
+  // Ledger-ul are prioritate (banii sunt deja aprobati), dar cardul declarat
+  // pentru toata nota (modul fara plata combinata) trebuie sa acopere si
+  // restul neincasat: executeClose taxeaza doar diferenta fata de ledger.
+  const amount = taken > 0 ? Math.max(taken, declared) : declared;
+  return posRound2(Math.min(amount, cardNeeded()));
+}
+
+// Platile notei asa cum pleaca la server si la casa de marcat: formele
+// inregistrate + o singura linie de card, derivata.
+function paymentsForClose() {
+  const out = {};
+  Object.keys(POS_STATE.payments || {}).forEach(id => {
+    if (String(id) !== "1") { out[id] = posRound2(POS_STATE.payments[id]); }
+  });
+  const card = cardAmountForClose();
+  if (card > 0) { out[1] = card; }
+  return out;
+}
+
+// Cat s-a acoperit din nota: formele non-card + cardul aplicat.
+function paidTotal() {
+  return posRound2(otherPaidTotal() + cardAmountForClose());
+}
+
 async function finalizePaymentTransaction() {
-  // Inchidere in curs: ignoram un al doilea click pe OK (anti-dublu-click).
-  if (POS_STATE.closingBill) { return; }
+  // Inchidere in curs (sau terminalul e taxat chiar acum): ignoram un al
+  // doilea click pe OK (anti-dublu-click / anti-dubla taxare).
+  if (POS_STATE.closingBill || POS_STATE.cardPaying) { return; }
 
   const total = parseFloat(document.getElementById("val-total").innerText) || 0;
   if (total <= 0) {
     appAlert("Nu exista articole pe aceasta nota de plata!");
+    return;
+  }
+
+  // Totalul e deja acoperit (ex. cardul a fost aprobat integral inainte de un
+  // reload, deci campul de suma arata 0.00): OK inchide direct, fara sa mai
+  // ceara o suma. Verificarea sta INAINTE de validarea sumei, altfel nota ar
+  // rămâne blocata cu "Introduceti suma de plata!".
+  const remaining = Math.max(0, posRound2(total - paidTotal()));
+  if (remaining <= 0.001) {
+    updatePaymentProgress();
+    await executeClose(total, POS_STATE.rest || 0);
     return;
   }
 
@@ -1334,21 +1813,53 @@ async function finalizePaymentTransaction() {
     return;
   }
 
-  // Inregistram suma pe forma de plata selectata (plata mixta). Suma se
-  // plafoneaza la cat mai e de plata: in `payments` intra doar suma APLICATA
+  // Suma se plafoneaza la cat mai e de plata: in plata intra doar suma APLICATA
   // notei, iar diferenta tastata in plus (ex. 200 la o nota de 100) este rest
-  // (schimb de dat) doar la NUMERAR (FPID = 0); la card/cecul etc. excesul se
-  // ignora (nu se poate da rest pe card, iar terminalul e taxat exact cat trebuie).
+  // (schimb de dat) doar la NUMERAR (FPID = 0); la card/cec excesul se ignora
+  // (nu se poate da rest pe card, iar terminalul e taxat exact cat trebuie).
   const fp = POS_STATE.activePaymentFp;
-  const paidBefore = Object.values(POS_STATE.payments).reduce((a, b) => a + b, 0);
-  const remaining = Math.max(0, total - paidBefore);
   const applied = Math.min(amount, remaining);
-  POS_STATE.payments[fp] = (POS_STATE.payments[fp] || 0) + applied;
-  if (fp === 0) {
-    POS_STATE.rest = (POS_STATE.rest || 0) + (amount - applied);
+
+  if (fp === 1 && POS_STATE.posBanca === 1) {
+    // FLUXUL NOU: terminalul este taxat la fiecare OK pe CARD, cu suma introdusa.
+    // Niciun ban nu intra in nota pana cand terminalul nu confirma.
+    POS_STATE.cardPaying = true;
+    setClosingState(true);
+    try {
+      const r = await bankPosChargeCard(applied);
+      if (!r || r.ok !== true) {
+        // Refuzat / anulat / "Nu a tipărit" / terminal mut: nimic nu se
+        // inregistreaza in nota, rămâne restul de plata.
+        showToast(tr("Plata pe card nu a fost efectuata."));
+        input.value = Math.max(0, posRound2(total - paidTotal())).toFixed(2);
+        input.dataset.fresh = "true";
+        updatePaymentProgress();
+        return;
+      }
+      const suma = Math.min(posRound2(r.approved), remaining);
+      cardLedgerAdd({
+        approved: suma,
+        requested: applied,
+        source: r.source,
+        trxId: r.trxId,
+        logId: r.logId
+      });
+      showToast(tr("Card aprobat: {suma} Lei", { suma: suma.toFixed(2) }), 2500);
+    } finally {
+      POS_STATE.cardPaying = false;
+      setClosingState(false);
+    }
+  } else if (fp === 1) {
+    // Card fara terminal (PosBanca = 0): suma declarata, taxata la inchidere.
+    POS_STATE.cardDeclared = posRound2((Number(POS_STATE.cardDeclared) || 0) + applied);
+  } else {
+    POS_STATE.payments[fp] = (POS_STATE.payments[fp] || 0) + applied;
+    if (fp === 0) {
+      POS_STATE.rest = (POS_STATE.rest || 0) + (amount - applied);
+    }
   }
 
-  const totalPaid = Object.values(POS_STATE.payments).reduce((a, b) => a + b, 0);
+  const totalPaid = paidTotal();
 
   // Nu s-a acoperit totalul: asteptam inca o forma de plata
   if (totalPaid < total - 0.001) {
@@ -1373,31 +1884,99 @@ function setClosingState(on) {
 
 // Inchide nota cu formele de plata deja inregistrate in POS_STATE.payments.
 // Comunicarea cu POS-ul bancar (card) se face inaintea rutinei casei de marcat.
-async function executeClose(total, rest) {
+// opts.allowUncertainEmpty = true permite inchiderea pe zero a unei note blocate
+// care nu mai are produse (vezi closeEmptyUncertainBill); opts.allowEmpty = true
+// permite inchiderea oricarei note goale (closeEmptyNote). Ambele sunt ignorate
+// daca nota are linii sau un total, ca garda sa nu poata fi ocolita accidental.
+async function executeClose(total, rest, opts = {}) {
   // Inchidere deja in curs (ex. al doilea click rapid pe OK sau pe o forma de
   // plata): ignoram apelul. Fara aceasta garda, doua cereri close_bill
   // concurente puteau duce la doua bonuri fiscale / doua taxari pe card.
   if (POS_STATE.closingBill) { return; }
+  // DocID-ul notei care se inchide: il pastram pentru retiparirea chitantei de
+  // card dupa ce POS_STATE.docId este golit de clearOrderPanelLocal.
+  const closedDocId = POS_STATE.docId;
+  const isEmptyNote = Number(total || 0) <= 0.005 && POS_STATE.articole.length === 0;
+  const allowUncertainEmpty = isEmptyNote && opts && opts.allowUncertainEmpty === true;
+  const allowEmptyNote = isEmptyNote
+    && (allowUncertainEmpty || (opts && opts.allowEmpty === true));
+  // Nota cu produse care se anuleaza reciproc: total 0, dar exista linii.
+  const allowZeroTotal = Number(total || 0) <= 0.005
+    && POS_STATE.articole.length > 0
+    && opts && opts.allowZeroTotal === true;
   POS_STATE.closingBill = true;
   setClosingState(true);
 
-  // Comunicarea cu POS-ul bancar: cand exista plata pe card (FPID = 1) si
-  // terminalul e activ, se cere aprobarea INAINTE de a inchide nota (deci
-  // inainte de a intra in rutina casei de marcat). La Cancel nota ramane
-  // deschisa si ecranul de plata revine la starea initiala.
-  const cardAmount = Number(POS_STATE.payments[1] || 0);
+  // Platile notei: formele inregistrate + linia de card derivata din ledger.
+  // Se calculeaza o singura data si se foloseste peste tot (pas bancar,
+  // close_bill, dialogul de succes, reteta FastFood).
+  let plati = paymentsForClose();
+  let cardAmount = Number(plati[1] || 0);
+  let chargeAmount = posRound2(Math.max(0, cardAmount - Math.min(cardLedgerTotal(), cardAmount)));
+  // Cardul e deja acoperit de swipe-urile aprobate: nu mai taxam si nu mai
+  // cerem clarificarea unei incercari incerte (banii sunt confirmati).
+  const bankAlreadyApproved = (cardAmount > 0 && chargeAmount <= 0.005);
   let bankApproved = true;
-  if (POS_STATE.posBanca === 1 && cardAmount > 0) {
-    fiscFlowLog("banca: start (suma card " + cardAmount.toFixed(2) + ")");
-    bankApproved = await runBankPosForPayment(cardAmount);
-    fiscFlowLog("banca: rezultat=" + (bankApproved ? "verde" : "neaprobat") + " -> " + (bankApproved ? "continua" : "stop"));
-    if (!bankApproved) {
+
+  // Garda generala: o incercare incerta blocheaza orice forma de plata, nu
+  // doar cardul. Altfel s-ar putea inchide nota cu numerar dupa un UNKNOWN,
+  // iar clientul ar putea fi incasat si pe card (dubla incasare / raport gresit).
+  // Se rezolva prin Verifica sau Manual (inclusiv in FastFood, unde nota nu
+  // poate ramane deschisa).
+  if (!bankAlreadyApproved && !allowUncertainEmpty && await bankPosHasUncertain()) {
+    POS_STATE.closingBill = false;
+    setClosingState(false);
+    appAlert(POS_STATE.bankPosCanResync
+      ? tr("Există o plată pe card cu stare necunoscută. Apăsați Verifica sau „Da, am chitanța (Manual)” înainte de a închide nota.")
+      : tr("Există o plată pe card cu stare necunoscută. Apăsați „Da, am chitanța (Manual)” înainte de a închide nota."));
+    return;
+  }
+
+  if (POS_STATE.posBanca === 1 && chargeAmount > 0.005) {
+    fiscFlowLog("banca: start (de taxat pe card " + chargeAmount.toFixed(2)
+      + " din " + cardAmount.toFixed(2) + ")");
+    // O SINGURA taxare, doar pentru partea neincasata: ce a fost deja aprobat
+    // (swipe-uri anterioare, preluare automata din jurnal) nu se mai taxeaza.
+    const r = await bankPosChargeCard(chargeAmount);
+    if (!r || r.ok !== true) {
+      fiscFlowLog("banca: rezultat=neaprobat -> stop");
       resetPaymentScreen();
       POS_STATE.closingBill = false;
       setClosingState(false);
-      showToast("Tranzactie bancara anulata");
+      // "Nu a tipărit" / refuz: plata pe card nu s-a facut, nota rămâne
+      // deschisa si deblocata pentru o noua incercare sau pentru numerar.
+      showToast(tr("Plata pe card nu a fost efectuată. Puteți reîncerca sau încasa cu numerar."));
       return;
     }
+    const suma = Math.min(posRound2(r.approved), chargeAmount);
+    cardLedgerAdd({
+      approved: suma,
+      requested: chargeAmount,
+      source: r.source,
+      trxId: r.trxId,
+      logId: r.logId
+    });
+    // Recalculam plata cu suma confirmata (poate fi mai mica decat cea ceruta).
+    plati = paymentsForClose();
+    cardAmount = Number(plati[1] || 0);
+    const covered = paidTotal();
+    fiscFlowLog("banca: rezultat=verde (aprobat " + suma.toFixed(2)
+      + ", acoperit " + covered.toFixed(2) + " din " + total.toFixed(2) + ")");
+    if (covered < total - 0.001) {
+      // Aprobat doar partial: nota rămâne deschisa cu suma aprobata, ca
+      // operatorul sa incaseze restul (numerar sau inca un swipe).
+      POS_STATE.closingBill = false;
+      setClosingState(false);
+      updatePaymentProgress();
+      refreshBankPosCheckButton();
+      showToast(tr("Plată recuperată parțial: {suma} Lei. Mai rămâne {rest} Lei de plată.", {
+        suma: suma.toFixed(2),
+        rest: Math.max(0, posRound2(total - covered)).toFixed(2)
+      }), 4000);
+      return;
+    }
+  } else if (cardAmount > 0) {
+    fiscFlowLog("banca: sarita (plata deja aprobata pe terminal, suma " + cardAmount.toFixed(2) + ")");
   } else {
     fiscFlowLog("banca: sarita (posBanca=" + POS_STATE.posBanca + ", sumaCard=" + cardAmount.toFixed(2) + ")");
   }
@@ -1411,6 +1990,21 @@ async function executeClose(total, rest) {
     return;
   }
 
+  // Poarta de acoperire: nu se inchide o nota care nu e platita integral.
+  // Prinde cazurile in care plata de card nu acopera partea de card (aprobare
+  // partiala, suma declarata mai mica dupa un reload) si in care o eroare de
+  // client ar fi trimis mai putin decat totalul.
+  if (Number(total || 0) > 0.005 && paidTotal() < total - 0.001) {
+    POS_STATE.closingBill = false;
+    setClosingState(false);
+    updatePaymentProgress();
+    refreshBankPosCheckButton();
+    showToast(tr("Mai rămâne de plată: {rest} Lei.", {
+      rest: Math.max(0, posRound2(total - paidTotal())).toFixed(2)
+    }), 4000);
+    return;
+  }
+
   const asteaptaCasa = (POS_STATE.asteaptaRaspunsCasa === 1);
   try {
     if (asteaptaCasa) { showFiscalWait(); }
@@ -1421,7 +2015,7 @@ async function executeClose(total, rest) {
       body: JSON.stringify({
         action: "close_bill",
         docId: POS_STATE.docId,
-        plati: POS_STATE.payments,
+        plati: plati,
         cui: POS_STATE.cui || ""
       })
     });
@@ -1432,7 +2026,14 @@ async function executeClose(total, rest) {
       showToast("Nota se inchide deja");
       return;
     }
-    if (res.status !== "success") throw new Error(res.message);
+    if (res.status !== "success") {
+      // Pastram si codul de eroare: mesajele de business (ex. card_not_approved)
+      // sunt complete in sine, iar cele de infrastructura (baza cazuta) primesc
+      // mai jos un adaos util.
+      const errClose = new Error(res.message);
+      errClose.code = res.code || "";
+      throw errClose;
+    }
     fiscFlowLog("casa: rezultat=ok" + (res.fiscal && res.fiscal.nr != null ? " (NR " + res.fiscal.nr + ")" : ""));
 
     // Nota fusese deja inchisa (ex. o a doua fereastra / un click scapat inainte
@@ -1444,7 +2045,7 @@ async function executeClose(total, rest) {
       updateCuiButton();
       showToast("Nota era deja inchisa");
       returnToGroups();
-      await loadOrder(POS_STATE.masaCurenta);
+      clearOrderPanelLocal();
       if (isFastFood()) {
         navigateToScreen("screen-marcare");
       } else {
@@ -1459,20 +2060,64 @@ async function executeClose(total, rest) {
     POS_STATE.cuiDocId = null;
     updateCuiButton();
 
+    // Nota goala inchisa pe zero: serverul a sters-o din tblBonCurent, deci nu
+    // exista bon fiscal de anuntat si nici plati de afisat.
+    if (res.sters === true || allowEmptyNote) {
+      showToast(tr("Nota goala a fost stearsa"));
+      returnToGroups();
+      clearOrderPanelLocal();
+      if (isFastFood()) {
+        navigateToScreen("screen-marcare");
+      } else {
+        await loadTables();
+        navigateToScreen("screen-mese");
+      }
+      return;
+    }
+
+    // Nota cu valoare 0 (produse anulate reciproc): s-a inchis normal, dar
+    // fara bon fiscal, deci nu anuntam casa de marcat.
+    if (allowZeroTotal || res.zeroTotal === true) {
+      showToast(tr("Nota a fost inchisa (valoare 0, fara bon fiscal)."));
+      returnToGroups();
+      clearOrderPanelLocal();
+      if (isFastFood()) {
+        navigateToScreen("screen-marcare");
+      } else {
+        await loadTables();
+        navigateToScreen("screen-mese");
+      }
+      return;
+    }
+
+    // Ultima tranzactie de card a notei inchise: butonul de retiparire a
+    // chitantei rămâne disponibil in panoul FastFood / dialogul de succes.
+    // Doar cand exista o aprobare reala a terminalului (nu card declarat fara
+    // terminal si nu eroare de configurare): altfel serverul nu are ce tipari.
+    if (Number(cardAmount || 0) > 0.005
+        && POS_STATE.retiparireChitantaPoSbanca === 1
+        && POS_STATE.posBanca === 1
+        && cardLedgerHasTerminalApproval()) {
+      POS_STATE.lastCardReprint = { docId: closedDocId };
+    } else {
+      POS_STATE.lastCardReprint = null;
+    }
+
     // Mod FastFood: fara popup; detaliile de plata raman in panoul alb din
     // stanga (in locul liniei Total) pana la inceperea unui nou bon.
     if (isFastFood()) {
       showToast("BON INCHIS CU SUCCES!");
       returnToGroups();
-      await loadOrder(POS_STATE.masaCurenta);
-      showFastFoodReceipt(POS_STATE.payments, total, rest);
+      clearOrderPanelLocal();
+      showFastFoodReceipt(plati, total, rest);
       navigateToScreen("screen-marcare");
       return;
     }
 
-    const detalii = Object.entries(POS_STATE.payments).map(([id, val]) => {
-      const f = POS_STATE.paymentForms.find(x => x.FPID === parseInt(id, 10));
-      return `${escapeHtml(f ? f.Denumire : ("FP " + id))}: ${val.toFixed(2)} Lei`;
+    // Formele de plata sunt afisate cu denumirea lor ("CARD: 73.00 Lei"), nu cu
+    // codul intern (FP 1) - utilizatorul trebuie sa recunoasca imediat forma.
+    const detalii = Object.entries(plati).map(([id, val]) => {
+      return `${escapeHtml(paymentFormLabel(id))}: ${Number(val).toFixed(2)} Lei`;
     }).join("<br>");
 
     let msgHtml = `${tr("NOTA A FOST TRIMISA LA APARATUL FISCAL")}<br>${detalii}<br>${tr("Total: ")}${total.toFixed(2)} Lei`;
@@ -1484,20 +2129,37 @@ async function executeClose(total, rest) {
       if (res.fiscal.z != null) { casaLinie += ` / Z ${res.fiscal.z}`; }
       msgHtml += casaLinie;
     }
+    // Chitanta de card se poate retipari si dupa inchiderea notei.
+    if (POS_STATE.lastCardReprint && Number((plati || {})[1]) > 0) {
+      msgHtml += '<div style="margin-top:12px; text-align:center;">'
+        + '<button class="act-btn" onclick="closeAppAlert(); actionBankPosReprint()">'
+        + escapeHtml(tr("Chitanță card")) + '</button></div>';
+    }
 
     appAlertHtml(msgHtml);
     showToast("BON INCHIS CU SUCCES!");
 
     returnToGroups();
-    await loadOrder(POS_STATE.masaCurenta);
+    clearOrderPanelLocal();
     await loadTables();
     navigateToScreen("screen-mese");
   } catch (err) {
     fiscFlowLog("casa: rezultat=eroare (" + err.message + ")");
-    appAlert("Eroare la inchiderea bonului: " + err.message);
-    // Nota nu s-a inchis: readucem ecranul de plata la starea initiala, ca o
-    // noua apasare pe OK sa reia de la zero (fara dublarea sumelor deja introduse).
-    if (asteaptaCasa) { resetPaymentScreen(); }
+    // Cardul a fost deja taxat inainte de close_bill: nu mai incarcam cardul
+    // inca o data la reincercare, iar operatorul trebuie sa stie asta.
+    const cardApproved = (cardAmount > 0 && cardLedgerTotal() + 0.005 >= cardAmount);
+    let msg = tr("Eroare la inchiderea bonului: ") + (err.message || "");
+    // Adaosul are sens doar cand inchiderea a esuat din cauza infrastructurii
+    // (baza de date cazuta / raspuns pierdut). Erorile de business au cod si un
+    // mesaj complet; adaugarea "plata a fost aprobata, apasati OK" peste ele
+    // contrazicea eroarea reala si deruta operatorul.
+    if (cardApproved && !err.code) {
+      msg += "\n\n" + tr("Plata pe card a fost aprobata. Nu o mai incarcati inca o data. Dupa ce baza de date revine, apasati OK din nou; nota se va inchide cu cardul deja aprobat.");
+    }
+    appAlertHtml(escapeHtml(msg).replace(/\r?\n/g, "<br>"));
+    // Daca plata pe card a fost aprobata, pastram sumele si aprobarea: OK va
+    // relua doar inchiderea, fara un nou sale. Altfel resetam ca inainte.
+    if (asteaptaCasa && !cardApproved) { resetPaymentScreen(); }
   } finally {
     if (asteaptaCasa) { hideFiscalWait(); }
     // Inchiderea s-a terminat (succes sau eroare): deblocam butoanele pentru o
@@ -1510,18 +2172,35 @@ async function executeClose(total, rest) {
 // Mod "fara plata combinata" (PlataCombinata = 0): un click pe o forma de plata
 // inchide nota integral cu acea forma, fara numpad de introducere a sumelor.
 async function paySingleForm(fpid) {
-  // Inchidere in curs: ignoram un al doilea click pe o forma de plata.
-  if (POS_STATE.closingBill) { return; }
+  // Inchidere in curs (sau card taxat chiar acum): ignoram un al doilea click.
+  if (POS_STATE.closingBill || POS_STATE.cardPaying) { return; }
 
   const total = parseFloat(document.getElementById("val-total").innerText) || 0;
   if (total <= 0) {
     appAlert("Nu exista articole pe aceasta nota de plata!");
     return;
   }
+  // Restul de plata: banii deja aprobati pe card (ledger-ul, inclusiv dupa un
+  // reload) nu se mai cer din nou. Altfel, dupa un card aprobat partial, un
+  // click pe Numerar ar incerca sa incaseze tot totalul peste suma de pe card
+  // (serverul l-ar bloca la inchidere cu 409 card_not_approved).
+  const remaining = Math.max(0, posRound2(total - paidTotal()));
   POS_STATE.activePaymentFp = fpid;
   POS_STATE.payments = {};
   POS_STATE.rest = 0;
-  POS_STATE.payments[fpid] = total;
+  if (remaining <= 0.001) {
+    // Nota e deja acoperita (ex. card aprobat integral inainte de reload).
+    await executeClose(total, 0);
+    return;
+  }
+  if (Number(fpid) === 1) {
+    // Cardul nu intra in `payments`: se declara aici si se taxeaza o singura
+    // data, la inchidere (ledger-ul preia apoi suma aprobata). Se declara
+    // TOTALUL notei, iar executeClose taxeaza doar diferenta fata de ledger.
+    POS_STATE.cardDeclared = total;
+  } else {
+    POS_STATE.payments[fpid] = remaining;
+  }
   await executeClose(total, 0);
 }
 
@@ -1540,10 +2219,335 @@ function fiscFlowLog(msg) {
   }
 }
 
-// Trimite suma pe card la terminal si rezolva interactiv refuzul:
-//   true  = se poate inchide nota (aprobat sau Ignore)
-//   false = utilizatorul a ales Cancel (nota ramane deschisa, plata se reseteaza)
-async function runBankPosForPayment(amount) {
+// Aceeasi regula ca actiunea "status" din api/pos_banca.php: o incercare este
+// incerta cand terminalul a acceptat comanda fara sa confirme rezultatul.
+function bankPosResultUncertain(status, mesaj) {
+  const s = String(status || "").toUpperCase();
+  const m = String(mesaj || "");
+  return s === "UNKNOWN" || s === "TIMEOUT"
+    || (s === "ERROR" && /eroare la lansarea|nu a returnat rezultat|stare necunoscuta/i.test(m));
+}
+
+function bankPosOperatorLabel() {
+  if (POS_STATE.loggedIn && POS_STATE.casierCurent) {
+    return String(POS_STATE.casierCurent);
+  }
+  if (POS_STATE.bonNrOp) { return "bon #" + POS_STATE.bonNrOp; }
+  if (POS_STATE.nrOp) { return "#" + POS_STATE.nrOp; }
+  return tr("Operator necunoscut");
+}
+
+function posBancaManualNrOp() {
+  // Daca nu e nimeni logat, lasam serverul sa foloseasca NrOp-ul notei.
+  if (POS_STATE.loggedIn && POS_STATE.nrOp) { return POS_STATE.nrOp; }
+  return POS_STATE.bonNrOp || "";
+}
+
+// Preia din raspunsul serverului protocolul si capabilitatile lui. Serverul este
+// autoritatea: daca schimbi protocolul din Setari, urmatorul status actualizeaza
+// butoanele fara reload.
+function applyBankPosMeta(data) {
+  if (!data) { return; }
+  if (data.protocol) { POS_STATE.bankPosProtocol = String(data.protocol); }
+  if (typeof data.canResync === "boolean") { POS_STATE.bankPosCanResync = data.canResync; }
+  if (typeof data.canVoid === "boolean") { POS_STATE.bankPosCanVoid = data.canVoid; }
+  if (data.connection === null) {
+    POS_STATE.bankPosConnection = null;
+  } else if (data.connection) {
+    POS_STATE.bankPosConnection = data.connection;
+  }
+}
+
+// Mesajul unic al blocarii (si textul din banner, si alertele de pe marcare).
+// Actiunile de clarificare sunt in bara de jos a ecranului de marcare
+// (Verifica / Altă formă de plată / Am chitanța), deci mesajul trimite acolo -
+// fara sa le enumere, ca sa rămână corect si cand jurnalul nu poate fi citit
+// (caz in care butonul Verifica nu exista).
+function bankPosLockMessage() {
+  // Comanda este inca in curs: terminalul nu a raspuns, deci nici nu avem ce
+  // verifica. Cel mai important mesaj pentru operator este sa astepte.
+  if (POS_STATE.bankPosPending === true) {
+    return tr("Plata pe card este în curs: terminalul nu a răspuns încă. Nota rămâne blocată până la clarificare — așteptați câteva secunde.");
+  }
+  // Bani aprobati pe terminal, inca neaplicati pe nota: singura ieșire corecta
+  // este continuarea platii din NOTA (sau anularea ei de pe terminal).
+  if (POS_STATE.bankPosApproved === true) {
+    const suma = (Number(POS_STATE.bankPosApprovedTotal) || 0).toFixed(2);
+    // Poate exista si o incercare fara raspuns, pe langa banii deja confirmati
+    // (o plata anterioara aprobata, apoi un swipe nou ramas in UNKNOWN): aceea
+    // trebuie clarificata inainte de inchidere, altfel close_bill o refuza.
+    if (POS_STATE.bankPosUncertain === true && POS_STATE.bankPosResolved !== true) {
+      return tr("Plata pe card este confirmată pentru {suma} Lei, dar ultima încercare ({incercare} Lei) nu a primit răspuns: apăsați Verifica pentru a o clarifica.", {
+        suma: suma,
+        incercare: String(POS_STATE.bankPosLockAmount || "").trim() || "?"
+      });
+    }
+    let msg = tr("Plata pe card a fost confirmată ({suma} Lei). Nota nu poate fi modificată: apăsați NOTA pentru a încasa restul de plată.", {
+      suma: suma
+    });
+    return msg;
+  }
+  let msg = tr("Plata pe card nu a fost confirmată. Nota nu poate fi modificată: clarificați plata cu butoanele din bara de jos.");
+  // Nota fara produse: singura iesire este inchiderea pe zero, din NOTA.
+  if (POS_STATE.docId && POS_STATE.articole.length === 0) {
+    msg += " " + tr("Nota nu are produse: apăsați NOTA pentru a o închide pe zero.");
+  }
+  return msg;
+}
+
+// Aplica lock-ul bancar in UI: banner informativ in panoul notei + blocarea
+// butoanelor care modifica nota. Marcare rămâne permisa (trimite la bucatarie
+// ce s-a adaugat inainte de incident), iar NOTA rămâne permisa pentru ca de
+// acolo se ajunge la Verifica / Manual.
+function applyBankPosLockUI() {
+  const locked = POS_STATE.bankPosLocked === true;
+
+  const screen = document.getElementById("screen-marcare");
+  if (screen) {
+    screen.classList.toggle("bank-locked", locked);
+    // Bani aprobati pe card: singura ieșire corecta este continuarea platii
+    // din NOTA, deci butonul rămâne la vedere (restul modificarilor sunt blocate).
+    screen.classList.toggle("bank-locked-payable", locked && POS_STATE.bankPosApproved === true);
+    // Nota goala + blocata: singura iesire este inchiderea pe zero din NOTA,
+    // deci butonul rămâne vizibil (banner-ul il si mentioneaza).
+    screen.classList.toggle(
+      "bank-locked-empty",
+      locked && POS_STATE.bankPosApproved !== true
+        && Array.isArray(POS_STATE.articole) && POS_STATE.articole.length === 0
+    );
+  }
+
+  // "Verifica" are sens doar cat timp exista o incertitudine NEREZOLVATA si
+  // protocolul permite citirea jurnalului. O plata confirmata (bani aprobati pe
+  // terminal) este certa: butonul ar sugera ca mai e ceva de verificat, desi
+  // singura actiune utila este continuarea platii din NOTA (sau void). Cat timp
+  // comanda este inca in curs (PENDING), verificarea ar fi prematura.
+  const uncertainNow = POS_STATE.bankPosUncertain === true
+    && POS_STATE.bankPosResolved !== true
+    && POS_STATE.bankPosPending !== true;
+  const verifyBtn = document.getElementById("btn-bank-verify");
+  if (verifyBtn) {
+    const showVerify = locked && uncertainNow && POS_STATE.bankPosCanResync === true;
+    verifyBtn.style.display = showVerify ? "" : "none";
+  }
+
+  // Cu plata deja confirmata pe terminal nu mai exista nimic de decis manual:
+  // butonul "Am chitanța (Manual)" doar ar re-consemna aceeasi aprobare, deci se
+  // ascunde. Iar "Anulează" este atunci clar o retragere pe terminal (void).
+  const payable = locked && POS_STATE.bankPosApproved === true;
+  const manualBtn = document.getElementById("btn-bank-manual");
+  if (manualBtn) {
+    manualBtn.style.display = (locked && uncertainNow) ? "" : "none";
+  }
+  const returnBtn = document.getElementById("btn-bank-return");
+  if (returnBtn) {
+    returnBtn.textContent = payable
+      ? tr("Anulează plata pe card (void)")
+      : tr("Altă formă de plată / Anulează");
+    // Cat timp comanda este in curs, nici anularea nu e o decizie valida:
+    // terminalul poate aproba imediat dupa ce operatorul a apasat butonul.
+    returnBtn.style.display = (locked && POS_STATE.bankPosPending === true) ? "none" : "";
+  }
+
+  // "Marcare" nu mai are ce face pe o nota cu plata confirmata: acolo se ajunge
+  // dupa click pe NOTA, care trimite deja toate pozitiile la bucatarie. Butonul
+  // rămâne totusi vizibil daca a rămas o linie netrimisa (Marcarea anterioara a
+  // esuat) - altfel bucataria nu ar primi-o niciodata. In FastFood butonul nu
+  // exista (il ascunde applyTipVanzUI), deci nu il readucem.
+  const markBtn = document.getElementById("btn-marcare");
+  if (markBtn) {
+    const hasUnsent = (POS_STATE.articole || []).some(a => a && a.preluat !== true);
+    const showMark = (!payable || hasUnsent) && !isFastFood();
+    markBtn.style.display = showMark ? "" : "none";
+  }
+
+  const banner = document.getElementById("bank-lock-banner");
+  if (banner) {
+    banner.style.display = locked ? "flex" : "none";
+    const txt = banner.querySelector(".bank-lock-text");
+    if (txt) txt.textContent = bankPosLockMessage();
+    // TRX_ID-ul incercarii (acelasi ca in jurnalul terminalului bancar).
+    const trx = document.getElementById("bank-lock-trx");
+    if (trx) {
+      // Doar la o incertitudine NEREZOLVATA: acolo TRX-ul ajuta operatorul sa
+      // caute tranzactia in jurnalul terminalului (sau sa o dea la suport). La
+      // o plata confirmata nu e nimic de cautat, deci linia dispare.
+      const uid = (locked && uncertainNow) ? String(POS_STATE.bankPosUid || "").trim() : "";
+      trx.textContent = uid ? ("TRX: " + uid) : "";
+    }
+  }
+
+  const scan = document.getElementById("scan-input");
+  if (scan) {
+    scan.disabled = locked;
+    if (locked) scan.blur();
+  }
+
+  const lockIds = ["btn-qty", "btn-transfer", "btn-proforma", "btn-meniul-zilei", "btn-mod-preparare"];
+  lockIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = locked;
+  });
+  document.querySelectorAll(".js-discount-btn, .vd-btn").forEach(btn => {
+    btn.disabled = locked;
+  });
+
+  if (!locked) { focusScanInput(); }
+  // Suma aprobata pe card se poate schimba odata cu starea (status/reload).
+  updateCardPaymentFooter();
+  // Daca o comanda asteapta inca raspunsul terminalului, starea se reimprospateaza
+  // singura (fara un al doilea Ctrl+F5).
+  watchBankPending();
+}
+
+// Cat timp randul de audit al incercarii este `PENDING` (comanda plecata, fara
+// raspuns), polling pe `status` pana se rezolva. Driverul scrie rezultatul in
+// cel mult ~190s, deci ciclul se opreste de la sine cand `pending` dispare.
+let bankPendingTimer = null;
+function watchBankPending() {
+  if (bankPendingTimer) { return; }
+  if (POS_STATE.bankPosPending !== true || !POS_STATE.docId) { return; }
+  bankPendingTimer = setTimeout(async () => {
+    bankPendingTimer = null;
+    if (POS_STATE.bankPosPending !== true || !POS_STATE.docId) { return; }
+    const st = await fetchBankPosStatus();
+    if (st && POS_STATE.bankPosPending === true) { watchBankPending(); }
+  }, 5000);
+}
+
+// Garda din client: aceeasi regula ca pe server (care răspunde 423
+// bank_pos_uncertain). Returneaza true cand actiunea trebuie oprita.
+function bankPosBlockedNotice() {
+  if (POS_STATE.bankPosLocked !== true) { return false; }
+  appAlert(bankPosLockMessage());
+  return true;
+}
+
+// Nota fara nicio linie (ex. dupa stergerea ultimului produs): click pe NOTA o
+// inchide pe zero. Serverul nu emite bon fiscal, sterge doar randul din
+// tblBonCurent, deci masa se elibereaza.
+async function closeEmptyNote() {
+  if (POS_STATE.closingBill || POS_STATE.cardPaying) { return; }
+  // Bani aprobati pe card fara nicio linie pe nota (poate aparea doar dupa un
+  // reload in timpul platii): se anuleaza pe terminal, ca sa nu rămâna incasati
+  // fara document. Dupa un reload ledger-ul local e gol, dar sumele aprobate
+  // sunt in audit, deci `force` le ia de la server. Daca void-ul nu e posibil,
+  // se inchide mai departe (politica "ieșire cu avertisment"), iar diferenta se
+  // vede in audit.
+  const cardOnTerminal = Math.max(cardLedgerTotal(), Number(POS_STATE.bankPosApprovedTotal) || 0);
+  if (cardOnTerminal > 0.005 && !(await bankPosVoidAll(true)).ok) {
+    appAlert(tr("Plata pe card nu a putut fi anulată complet. Verificați terminalul: sumele rămân încasate până la clarificare."));
+  }
+  POS_STATE.payments = {};
+  POS_STATE.rest = 0;
+  await executeClose(0, 0, { allowEmpty: true });
+}
+
+// Nota cu produse a caror valoare se anuleaza (produs + storno, discount 100%):
+// are total 0. Un click pe NOTA o inchide direct (fara dialog de confirmare),
+// rămâne in istoric, dar fara bon fiscal, ca registrul de casa nu are ce emite
+// pe zero.
+async function closeZeroTotalNote() {
+  if (POS_STATE.closingBill) { return; }
+  POS_STATE.payments = {};
+  POS_STATE.rest = 0;
+  await executeClose(0, 0, { allowZeroTotal: true });
+}
+
+// Nota blocata care nu mai are niciun produs: un click pe NOTA o inchide pe
+// zero, fara dialog de confirmare. Terminalul bancar NU este contactat, deci
+// daca pe card a fost incasata o suma, ea ramane incasata si va aparea ca
+// diferenta fata de casa de marcat (desincronizare asumata de operator).
+// close_bill sterge nota goala din tblBonCurent, iar incercarea bancara ramane
+// in tblPosBancaLog pentru audit.
+async function closeEmptyUncertainBill() {
+  if (POS_STATE.closingBill) { return; }
+  const docId = POS_STATE.docId;
+  if (!docId) { return; }
+  // Consemnam decizia in audit (tblPosBancaLog) si in jurnalul aplicatiei.
+  await resolveBankPosDecision(docId, "ignorat");
+  logUiEvent("nota_incerta_inchisa_zero", {
+    docId: docId,
+    buton: "nota",
+    ecran: currentScreenId(),
+    detaliu: "suma=" + (POS_STATE.bankPosLockAmount || "") + " articole=0"
+  });
+  POS_STATE.payments = {};
+  POS_STATE.rest = 0;
+  await executeClose(0, 0, { allowUncertainEmpty: true });
+}
+
+// Starea bancara a notei curente: este autoritatea pentru butoanele Verifica /
+// Manual si pentru garda din executeClose. Retine si conexiunea din .env.
+async function fetchBankPosStatus() {
+  if (!POS_STATE.docId) { return null; }
+  try {
+    const resp = await fetch("api/pos_banca.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "status", docId: POS_STATE.docId })
+    });
+    const data = await resp.json();
+    if (data && data.status === "success") {
+      applyBankPosMeta(data);
+      // Recuperare dupa reload/crash: ledger-ul se aliniaza la auditul
+      // serverului. Altfel banii incasati pe card s-ar pierde din memorie si
+      // nota s-ar putea inchide fara linia CARD (sau s-ar taxa a doua oara),
+      // iar o numarare dubla din memorie ar putea inchide nota fara sa taxeze.
+      const ledgerBefore = cardLedgerTotal();
+      cardLedgerReconcile(data.approvedEntries);
+      if (cardLedgerTotal() !== ledgerBefore) {
+        updatePaymentProgress();
+      }
+      // Lock-ul notei se reimprospateaza odata cu starea bancara (dupa
+      // resync / void / decizie manuala), fara sa fie nevoie de reload.
+      // Nota este blocata la modificare din DOUA motive: incercare incerta SAU
+      // bani aprobati pe terminal dar neaplicati pe nota (plata partiala cu
+      // card). Aici se recalcula exact ca pe server (`posBancaDocLock`); inainte
+      // se lua doar `uncertain`, deci dupa un `status` nota cu card aprobat
+      // rămânea aparent deblocata si orice modificare lua 423.
+      POS_STATE.bankPosLockAmount = data.amount || "";
+      // Sume aprobate dar neaplicate inca pe nota (neoferite de `payments`):
+      // nota rămâne nemodificabila, dar NOTA poate continua plata.
+      POS_STATE.bankPosApprovedTotal = Number(data.approvedTotal) || 0;
+      POS_STATE.bankPosApproved = (POS_STATE.bankPosApprovedTotal > 0.005);
+      POS_STATE.bankPosLocked = (data.uncertain === true) || POS_STATE.bankPosApproved;
+      // Verifica / Manual: doar pentru o incertitudine nerezolvata.
+      POS_STATE.bankPosUncertain = (data.uncertain === true);
+      POS_STATE.bankPosResolved = (data.resyncApproved === true) || (data.manualApproved === true);
+      POS_STATE.bankPosPending = (data.pending === true);
+      applyBankPosLockUI();
+      return data;
+    }
+  } catch (err) {
+    /* fara baza de date / retea: fara stare bancara */
+  }
+  return null;
+}
+
+// FUNNEL-UL BINAR al platii pe card: trimite o suma la terminal si rezolva
+// DOAR cand rezultatul este cunoscut. NU atinge nota (nu scrie `payments`, nu
+// seteaza flaguri de aprobare, nu inchide): banii se adauga de apelant in
+// ledger, prin cardLedgerAdd/bankPosMarkApproved.
+//
+//   { ok:true,  approved, requested, source:'terminal'|'journal'|'manual'|'config', trxId, logId }
+//   { ok:false, approved:0, requested, reason:'declined'|'unreachable'|'cancelled'|'voided'|'notfound', trxId, logId }
+//
+// Fluxul nu expune operatorului masina de stari: la timeout/UNKNOWN verificarea
+// se face automat, cu ecranul blocat pe un indicator de asteptare, iar dialogul
+// apare doar cu rezultatul (banii s-au luat sau nu). Fiecare ramura scrie o
+// decizie in tblPosBancaLog inainte de a reveni, deci nu ramane "unknown".
+async function bankPosChargeCard(amount) {
+  const requested = Number(amount) || 0;
+  const result = (ok, extra) => Object.assign({
+    ok: ok,
+    approved: 0,
+    requested: requested,
+    trxId: "",
+    logId: null,
+    source: "terminal"
+  }, extra || {});
+
   showBankPosWait();
   try {
     while (true) {
@@ -1554,7 +2558,7 @@ async function runBankPosForPayment(amount) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "pay",
-            amount: Number(amount) || 0,
+            amount: requested,
             docId: POS_STATE.docId
           })
         });
@@ -1569,80 +2573,1010 @@ async function runBankPosForPayment(amount) {
         };
       }
 
-      // Aprobat (sau eroare de configurare, cand se emite bonul oricum).
+      applyBankPosMeta(res);
+
+      // Aprobat direct. Eroarea de configurare pastreaza comportamentul vechi
+      // (se emite bonul oricum), dar sursa 'config' nu intra in reconcilierea
+      // de pe server: nu sunt bani incasati de terminal.
       if (res && res.emiteBon) {
         if (res.configError) {
           hideBankPosWait();
           appAlert(String(res.posMessage || "Eroare configurare POS bancar"));
+          return result(true, {
+            approved: requested,
+            source: "config",
+            trxId: (res && res.trxId) || "",
+            logId: (res && res.logId) || null
+          });
         }
-        return true;
+        return result(true, {
+          approved: requested,
+          source: "terminal",
+          trxId: (res && res.trxId) || "",
+          logId: (res && res.logId) || null
+        });
       }
 
-      // Refuzat: intrebam utilizatorul (Cancel / Retry / Ignore).
-      hideBankPosWait();
-      const decizie = await openPosBancaDialog(res || {});
-      if (decizie === "retry") { showBankPosWait(); continue; }
+      // Starea din baza de date este autoritatea: un refuz normal nu este
+      // incert, iar UNKNOWN/TIMEOUT/eroarea veche de lansare sunt. Astfel si un
+      // raspuns pierdut intre browser si PHP este tratat corect.
+      const st = await fetchBankPosStatus();
+      if (res && st) {
+        res.uncertain = (st.uncertain === true);
+        if (st.amount && !res.amount) { res.amount = st.amount; }
+        if (!res.trxId && st.uid) { res.trxId = st.uid; }
+        if (st.connection) { res.connection = st.connection; }
+      }
+      const uncertain = !!(res && res.uncertain === true)
+        || bankPosResultUncertain(res && res.posStatus, res && res.posMessage);
+      const trx = (res && res.trxId) || "";
 
-      await resolveBankPosDecision(POS_STATE.docId, decizie === "ignore" ? "ignorat" : "anulat");
-      return decizie === "ignore";
+      hideBankPosWait();
+
+      if (!uncertain) {
+        // Refuz normal (card refuzat) sau terminal indisponibil (comanda nu a
+        // plecat): "Reincearca plata" sau alta metoda. A doua e tot o eroare
+        // curata - cardul nu a fost debitat -, dar mesajul e despre legatura,
+        // nu despre o tranzactie refuzata.
+        const decizie = await openPosBancaDialog(res || {}, {
+          kind: (res && res.noAnswer === true) ? "unreachable" : "declined"
+        });
+        if (decizie.decision === "retry") { showBankPosWait(); continue; }
+        await resolveBankPosDecision(POS_STATE.docId, "anulat", trx);
+        return result(false, {
+          reason: (res && res.noAnswer === true) ? "unreachable" : "declined",
+          trxId: trx,
+          logId: (res && res.logId) || null
+        });
+      }
+
+      // Stare incerta: verificam noi in jurnal, fara sa cerem nimic
+      // operatorului si fara sa-i aratam loguri. Daca terminalul confirma plata,
+      // o preluam in liniste (zero click-uri).
+      const check = await bankPosVerifySilently(res && res.trxId,
+        tr("Timp expirat. Se verifica statusul platii in terminal..."));
+      if (check.kind === "approved") {
+        // Aprobarea din jurnal e decizia finala: o consemnam in audit si o
+        // raportam apelantului, care o adauga in ledger.
+        await resolveBankPosDecision(POS_STATE.docId, "aprobat");
+        const approved = Number(check.amount) || requested;
+        if (approved + 0.005 >= requested) {
+          showToast(tr("Plată recuperată cu succes"), 2500);
+        }
+        return result(true, {
+          approved: approved,
+          source: "journal",
+          trxId: check.trxId || trx,
+          logId: (check.data && check.data.logId) || null
+        });
+      }
+
+      const decizie = await openPosBancaDialog(res || {}, {
+        kind: check.kind,
+        amount: check.amount,
+        // TRX_ID afisat = al incercarii de plata (nu ecoul cautarii in jurnal).
+        trxId: (res && res.trxId) || check.trxId
+      });
+      if (decizie.decision === "retry") { showBankPosWait(); continue; }
+      if (decizie.decision === "approved") {
+        // "Da, am chitantța (Manual)": operatorul a confirmat plata pe terminal.
+        // Dialogul NU scrie in nota; suma confirmata se intoarce aici.
+        const approved = Number(decizie.amount) || Number(check.amount) || requested;
+        await resolveBankPosDecision(POS_STATE.docId, "aprobat", check.trxId);
+        return result(true, {
+          approved: approved,
+          source: "manual",
+          trxId: check.trxId || trx,
+          logId: (decizie.data && decizie.data.logId) || null
+        });
+      }
+      // "Nu a tipărit (Anulează)": fara chitanta, incercarea curenta este
+      // considerata esuata. Serverul o marcheaza CANCELED_MANUAL (cu ResolvedAt)
+      // si deblocheaza nota, ca operatorul sa poata reincerca plata pe card
+      // (TRX_ID nou) sau sa incaseze numerar.
+      const trxFinal = (res && res.trxId) || check.trxId || "";
+      if (check.kind === "noresponse") {
+        await resolveBankPosDecision(POS_STATE.docId, "neaprobat", trxFinal);
+      } else {
+        await resolveBankPosDecision(POS_STATE.docId, "dialog_inchis", trxFinal);
+      }
+      bankPosUnlockLocal();
+      return result(false, {
+        reason: (check.kind === "voided") ? "voided"
+          : (check.kind === "notfound") ? "notfound"
+          : (check.kind === "noresponse") ? "unreachable" : "cancelled",
+        trxId: trxFinal
+      });
     }
   } finally {
     hideBankPosWait();
   }
 }
 
+// --------------------------------------------------------------------------
+// Ieșirea din ecranul de plata: "totul sau nimic".
+//
+// Secventa de plata porneste la click pe NOTA si se termina fie cu nota
+// acoperita integral, fie cu anularea (void) sumelor deja aprobate pe card.
+// Nu exista stare intermediara de plata partiala pe card: daca operatorul
+// apasa Inapoi, sumele se anuleaza pe terminal (cu confirmare).
+// --------------------------------------------------------------------------
+
+// Anuleaza pe terminal toate sumele aprobate ale notei curente.
+// `force` = se bazeaza pe server (nu pe ledger): folosit cand starea aprobata
+// vine din `status` (dupa reload) si ledger-ul nu a fost inca reînsămânțat.
+// Returneaza { ok, nothing, voided, failed, data }.
+async function bankPosVoidAll(force) {
+  if (!force && cardLedgerTotal() <= 0.005) {
+    return { ok: true, nothing: true, voided: [], failed: [], data: null };
+  }
+  let data;
+  try {
+    const resp = await fetch("api/pos_banca.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "void_doc", docId: POS_STATE.docId })
+    });
+    data = await resp.json();
+  } catch (err) {
+    data = { status: "error", message: "Eroare comunicare POS bancar: " + err.message };
+  }
+  const voided = Array.isArray(data && data.voided) ? data.voided : [];
+  const failed = Array.isArray(data && data.failed) ? data.failed : [];
+  // Serverul intoarce totalul aprobat RAMAS dupa anulari: il preluam, altfel
+  // suma veche ar rămâne afisata in subsolul notei dupa un void reusit.
+  if (data && data.status === "success" && data.approvedTotal !== undefined) {
+    POS_STATE.bankPosApprovedTotal = Number(data.approvedTotal) || 0;
+    POS_STATE.bankPosApproved = POS_STATE.bankPosApprovedTotal > 0.005;
+    updateCardPaymentFooter();
+  }
+  const ok = !!(data && data.status === "success")
+    && failed.length === 0
+    && Number(data && data.approvedTotal) <= 0.005;
+  return { ok: ok, nothing: false, voided: voided, failed: failed, data: data };
+}
+
+// Golește starea de plata a ecranului: sumele tastate si ledger-ul local.
+// Nu atinge baza; baza rămâne sursa de adevar (auditul din tblPosBancaLog).
+function clearPaymentScreenState() {
+  POS_STATE.payments = {};
+  POS_STATE.rest = 0;
+  POS_STATE.cardDeclared = 0;
+  cardLedgerReset();
+  updateCardPaymentFooter();
+}
+
+// appConfirm cu promisiune (confirmarile din POS sunt pe callback).
+function appConfirmAsync(message, yesLabel, noLabel) {
+  return new Promise(resolve => {
+    appConfirm(message, () => resolve(true), yesLabel, noLabel, () => resolve(false));
+  });
+}
+
+// Paraseste ecranul de plata. Cu bani aprobati pe card: confirmare + void pe
+// terminal, apoi ieșirea; daca void-ul eșueaza, ieșirea este permisa, dar cu
+// avertisment (banii pot rămâne incasati pe terminal, se clarifica acolo).
+async function leavePaymentScreen(target) {
+  const dest = (typeof target === "string" && target !== "") ? target : "screen-marcare";
+  if (POS_STATE.cardPaying) { return; }
+  // Suma luata in calcul: ledger-ul local sau, dupa un reload, totalul aprobat
+  // din audit (altfel un Inapoi dupa Ctrl+F5 ar crede ca nu s-a incasat nimic).
+  const taken = Math.max(cardLedgerTotal(), Number(POS_STATE.bankPosApprovedTotal) || 0);
+  if (taken <= 0.005) {
+    // Doar sume tastate (numerar / alta forma): nimic incasat, se arunca.
+    clearPaymentScreenState();
+    navigateToScreenNow(dest);
+    return;
+  }
+  const ok = await appConfirmAsync(tr(
+    "Ați încasat {suma} Lei pe card. Dacă ieșiți, plata se anulează pe terminal (void). Continuați?",
+    { suma: taken.toFixed(2) }
+  ), tr("Da, anulează"), tr("Nu"));
+  if (!ok) { return; }
+
+  POS_STATE.cardPaying = true;
+  setClosingState(true);
+  let result;
+  try {
+    result = await bankPosVoidAll(true);
+  } finally {
+    POS_STATE.cardPaying = false;
+    setClosingState(false);
+  }
+  clearPaymentScreenState();
+  if (result && result.ok && !result.nothing) {
+    showToast(tr("Plata pe card a fost anulată (void)."), 4000);
+  } else if (result && !result.ok) {
+    appAlert(tr("Plata pe card nu a putut fi anulată complet. Verificați terminalul: sumele rămân încasate până la clarificare."));
+  }
+  navigateToScreenNow(dest);
+  // Dupa void, starea bancara a notei se schimba (incertitudinea dispare);
+  // reimprospatam bannerul/butoanele si eventualele sume rămase aprobate.
+  refreshBankPosCheckButton();
+}
+
+// Verifica in jurnalul terminalului ultima incercare a notei, cu ecranul blocat
+// pe indicatorul de asteptare. Nu taxeaza si nu modifica nota.
+// Intoarce { kind: approved | notfound | voided | noresponse, amount, trxId }.
+async function bankPosVerifySilently(trxId, waitText) {
+  if (POS_STATE.bankPosCanResync !== true) {
+    // Driver fara jurnal (nu exista in prezent): nu avem ce verifica.
+    return { kind: "noresponse", amount: 0, trxId: trxId || "" };
+  }
+  showBankPosWait(waitText || tr("Se verifica terminalul..."));
+  try {
+    const r = await bankPosResync(trxId || "");
+    applyBankPosMeta(r);
+    // Identificatorul incercarii (trimis de noi) are prioritate fata de ecoul
+    // din raspunsul de resync.
+    const uid = trxId || (r && r.uid) || "";
+    if (!r || r.status !== "success") {
+      return { kind: "noresponse", amount: 0, trxId: uid, data: r };
+    }
+    if (r.posStatus === "MANUAL") {
+      return {
+        kind: r.found ? "approved" : "notfound",
+        amount: Number(r.amount) || 0,
+        trxId: uid,
+        data: r
+      };
+    }
+    if (r.posStatus === "ERROR" || r.posStatus === "UNKNOWN") {
+      return { kind: "noresponse", amount: 0, trxId: uid, data: r };
+    }
+    if (!r.found) { return { kind: "notfound", amount: 0, trxId: uid, data: r }; }
+    if (!r.approved) { return { kind: "voided", amount: 0, trxId: uid, data: r }; }
+    return { kind: "approved", amount: Number(r.amount) || 0, trxId: uid, data: r };
+  } catch (err) {
+    return { kind: "noresponse", amount: 0, trxId: trxId || "", data: null };
+  } finally {
+    hideBankPosWait();
+  }
+}
+
 // Marcheaza in audit (tblPosBancaLog) decizia finala a utilizatorului.
-async function resolveBankPosDecision(docId, actiune) {
+// trxId = incercarea pe care operatorul a vazut-o in dialog: serverul o
+// foloseste ca sa nu anuleze o incercare mai noua pornita intre timp.
+async function resolveBankPosDecision(docId, actiune, trxId) {
   try {
     await fetch("api/pos_banca.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "resolve", docId: docId, actiune: actiune })
+      body: JSON.stringify({
+        action: "resolve",
+        docId: docId,
+        actiune: actiune,
+        trxId: trxId || ""
+      })
     });
   } catch (err) {
     // Auditul este best-effort; nu blocam inchiderea notei.
   }
 }
 
-// Dialog cu 3 optiuni pentru tranzactia refuzata.
-// Rezolva 'cancel' | 'retry' | 'ignore'.
-function openPosBancaDialog(info) {
-  const modal = document.getElementById("modal-pos-banca");
-  if (!modal) {
-    // Fallback fara modal: confirm() ofera Retry / Cancel (fara Ignore).
-    return Promise.resolve(window.confirm(tr("Tranzactie refuzata. Incercati din nou?")) ? "retry" : "cancel");
+// Decizia operatorului a lamurit starea incerta: nota se deblocheaza imediat in
+// UI (banner + grid de produse), fara sa mai asteptam reincarcarea notei.
+function bankPosUnlockLocal() {
+  // Incertitudinea s-a incheiat (decizie manuala / void). Daca au rāmas bani
+  // aprobati pe terminal, nota rămâne blocata (reason `payable`): `approved`
+  // nu se reseteaza aici, iar `bankPosLocked` il urmeaza pe server.
+  POS_STATE.bankPosUncertain = false;
+  POS_STATE.bankPosResolved = true;
+  POS_STATE.bankPosLocked = (POS_STATE.bankPosApproved === true);
+  POS_STATE.bankPosLockAmount = "";
+  if (POS_STATE.bankPosApproved !== true) { POS_STATE.bankPosUid = ""; }
+  applyBankPosLockUI();
+}
+
+// Re-sincronizare (SmartPay Appendix 3): intreaba jurnalul terminalului daca
+// tranzactia cu TRX_ID a fost aprobata. Nu modifica nota si nu taxeaza.
+async function bankPosResync(trxId) {
+  try {
+    const resp = await fetch("api/pos_banca.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "resync",
+        docId: POS_STATE.docId,
+        uid: trxId || ""
+      })
+    });
+    return await resp.json();
+  } catch (err) {
+    return {
+      status: "error",
+      found: false,
+      posStatus: "ERROR",
+      posMessage: "Eroare comunicare POS bancar: " + err.message
+    };
+  }
+}
+
+// Exista pentru nota curenta o incercare bancara cu stare necunoscuta?
+async function bankPosHasUncertain() {
+  const data = await fetchBankPosStatus();
+  return !!(data && data.uncertain === true);
+}
+
+// Butonul "Verifica" de pe ecranul de plata apare DOAR daca ultima incercare
+// bancara a notei are stare incerta (UNKNOWN / TIMEOUT / eroare de lansare),
+// nu ori de cate ori PoSbanca este activ. Manual este a doua cale de iesire,
+// inclusiv in FastFood, unde nota nu poate ramane deschisa.
+// Butonul de retiparire a chitantei de card: apare dupa orice aprobare pe card
+// (inclusiv dupa reload, cand ledger-ul este refacut din server). Terminalul
+// bancar nu are comanda ECR de reprint, deci duplicatul se tipareste pe
+// imprimanta POS (vezi actionBankPosReprint).
+function refreshBankReprintButton() {
+  const btn = document.getElementById("btn-banca-reprint");
+  if (!btn) { return; }
+  const hasCard = POS_STATE.retiparireChitantaPoSbanca === 1
+    && POS_STATE.posBanca === 1
+    && !!POS_STATE.docId
+    && (cardLedgerHasTerminalApproval()
+        || (Number(POS_STATE.bankPosApprovedTotal) || 0) > 0.005);
+  btn.style.display = hasCard ? "" : "none";
+}
+
+async function refreshBankPosCheckButton() {
+  const check = document.getElementById("btn-pos-banca-check");
+  const manual = document.getElementById("btn-pos-banca-manual");
+  if (!POS_STATE.docId) {
+    if (check) check.style.display = "none";
+    if (manual) manual.style.display = "none";
+    refreshBankReprintButton();
+    return null;
+  }
+  const data = await fetchBankPosStatus();
+  const uncertain = !!(data && data.uncertain === true);
+  const canResync = POS_STATE.bankPosCanResync === true;
+  // TRX_ID-ul se poate schimba dupa o incercare noua: il tinem la zi si in
+  // banner (cand nota este blocata).
+  if (data && data.uid) { POS_STATE.bankPosUid = String(data.uid); }
+  // Daca ultima incercare a fost deja rezolvata (manual sau resync), nu mai
+  // exista nimic de verificat/declarat: butoanele ar fi doar o reluare a
+  // aceleiasi decizii. Atentie: `uncertain` rămâne true si dupa o aprobare
+  // (nota rămâne blocata pana la inchidere), deci singure nu e suficient.
+  const resyncApproved = !!(data && data.resyncApproved === true);
+  const manualApproved = !!(data && data.manualApproved === true);
+  const resolved = resyncApproved || manualApproved;
+  if (check) check.style.display = (uncertain && canResync && !resolved) ? "" : "none";
+  if (manual) manual.style.display = (uncertain && !resolved) ? "" : "none";
+  refreshBankReprintButton();
+  return data;
+}
+
+// Preluarea automata a unei plati confirmate de terminal (resync gasit), la
+// deschiderea ecranului de plata. Acopera notele rămase blocate dupa un resync
+// reusit (eroare fiscala, reload de pagina, suma aprobata partial): operatorul
+// nu mai primeste nicio fereastra de decizie.
+//   true  = nota a fost inchisa
+//   false = nu era cazul / suma aprobata acopera doar partial partea de card
+async function bankPosAutoAdoptOnPaymentScreen(statusData) {
+  if (POS_STATE.closingBill) { return false; }
+  if (!POS_STATE.docId) { return false; }
+  if (POS_STATE.posBanca !== 1 && POS_STATE.bankPosLocked !== true) { return false; }
+
+  const st = (statusData === null) ? null : (statusData || await fetchBankPosStatus());
+  // Ledger-ul poate fi deja completat din server (reînsămânțare la intrarea pe
+  // ecranul de plata, dupa un reload): atunci aprobarea e deja in memorie.
+  if (st && st.resyncApproved === true) {
+    const approved = Number(st.amount) || 0;
+    if (approved > 0) {
+      const plan = bankPosApprovedPlan(approved);
+      if (plan && plan.cardNeeded > 0) {
+        bankPosMarkApproved(plan, { source: "journal", trxId: st.uid || "" });
+        if (approved + 0.005 < plan.cardNeeded) {
+          // Terminalul a aprobat doar o parte: o aplicam si lasam restul.
+          showToast(tr("Plată recuperată parțial: {suma} Lei. Mai rămâne {rest} Lei de plată.", {
+            suma: approved.toFixed(2),
+            rest: (plan.cardNeeded - approved).toFixed(2)
+          }), 4000);
+        }
+      }
+    }
   }
 
-  const status = String(info.posStatus || "ERROR").toUpperCase();
-  const mesaj = String(info.posMessage || "").trim();
-  const trx = String(info.trxId || "").trim();
-  let text = status;
-  if (mesaj) { text += "\n" + tr(mesaj); }
-  if (trx) { text += "\nTRX_ID: " + trx; }
-  document.getElementById("pos-banca-message").textContent = text;
+  const taken = cardLedgerTotal();
+  const needed = cardNeeded();
+  if (taken <= 0 || needed <= 0) { return false; }
+  // Suma din ledger trebuie confirmata si de auditul serverului: o numarare
+  // dubla in memorie nu are voie sa inchida nota pe card fara ca terminalul sa
+  // fi incasat (ar ieși un bon pe card cu diferenta semnalata abia in audit).
+  const serverApproved = Number(st && st.approvedTotal);
+  if (st && isFinite(serverApproved) && taken > serverApproved + 0.005) {
+    return false;
+  }
+  if (taken + 0.005 < needed) {
+    // Acoperire doar partiala: restul rămâne de plata (fara dialog).
+    return false;
+  }
+  showToast(tr("Plată recuperată cu succes"), 2500);
+  await executeClose(noteTotal(), 0);
+  return true;
+}
+
+// Planul de aplicare a unei sume aprobate pe terminal (Check sau Manual).
+function bankPosApprovedPlan(amount) {
+  const total = noteTotal();
+  if (total <= 0) { return null; }
+  const otherPaid = otherPaidTotal();
+  const cardNeeded = Math.max(0, posRound2(total - otherPaid));
+  const approved = posRound2(amount);
+  return { total, otherPaid, cardNeeded, approved };
+}
+
+// Marcheaza suma ca aprobata pe card: o adauga in ledger (idempotent pe trxId)
+// si actualizeaza progresul platii. `meta` = {source, trxId, logId}.
+function bankPosMarkApproved(plan, meta) {
+  if (!plan) { return null; }
+  const approved = Math.min(posRound2(plan.approved), posRound2(plan.cardNeeded));
+  if (approved <= 0) { return null; }
+  const trxId = String((meta && meta.trxId) || "");
+  const logId = (meta && meta.logId != null) ? meta.logId : null;
+  // Fara identificatorul tranzactiei nu putem dedupe: daca ledger-ul are deja
+  // cel putin suma aprobata, o consideram deja preluata. Altfel aceeasi
+  // aprobare preluata de doua ori (Verifica / Manual dupa un reload) ar dubla
+  // banii in memorie, iar nota s-ar putea inchide pe card fara ca terminalul
+  // sa fi incasat diferenta.
+  if (trxId === "" && logId === null && cardLedgerTotal() >= approved - 0.005) {
+    updatePaymentProgress();
+    return false;
+  }
+  const added = cardLedgerAdd({
+    approved: approved,
+    requested: plan.approved,
+    source: (meta && meta.source) || "journal",
+    trxId: trxId,
+    logId: logId
+  });
+  updatePaymentProgress();
+  return added;
+}
+
+// Aplica o suma aprobata de pe ecranul de plata (Verifica sau Manual). Suma
+// intra in ledger CU identificatorul tranzactiei (`meta.trxId`), deci aceeasi
+// aprobare preluata de doua ori (ex. dupa un reload: ledger-ul este deja
+// reînsămânțat din server, apoi se apasa Verifica) nu se aduna de doua ori.
+// Daca dupa preluare nota este acoperita, se inchide; altfel rămâne restul.
+async function bankPosApplyApprovedOnPaymentScreen(amount, meta) {
+  const plan = bankPosApprovedPlan(amount);
+  if (!plan) {
+    appAlert(tr("Nota nu are o suma de plata."));
+    return;
+  }
+  if (plan.cardNeeded <= 0) {
+    appAlert(tr("Nu mai este nimic de platit pe card."));
+    return;
+  }
+  if (plan.approved <= 0) {
+    appAlert(tr("Suma aprobata pe terminal este 0. Verificati terminalul."));
+    return;
+  }
+  const added = bankPosMarkApproved(plan, meta);
+  // Restul de plata DUPA preluare: daca suma era deja in ledger, el nu scade
+  // din nou (altfel s-ar afisa un rest care nu mai exista).
+  const rest = Math.max(0, posRound2(plan.total - paidTotal()));
+  if (rest <= 0.005) {
+    showToast(tr("Plata aprobata pe terminal"));
+    await executeClose(plan.total, 0);
+    return;
+  }
+  if (added !== true) {
+    appAlert(tr("Plata aprobata pe terminal a fost deja preluata. Mai ramane de plata: {rest} Lei.", {
+      rest: rest.toFixed(2)
+    }));
+    return;
+  }
+  if (plan.approved < plan.cardNeeded) {
+    // Daca pe nota mai exista si alte sume aprobate pe card (swipe-uri
+    // anterioare), restul se calculeaza din TOATE, nu doar din aceasta
+    // incercare - altfel mesajul contrazice bannerul notei.
+    const cardTotal = cardAmountForClose();
+    appAlert(cardTotal > plan.approved + 0.005
+      ? tr("Plata aprobata pe terminal: {suma} Lei. Total pe card: {total} Lei. Mai ramane de plata: {rest} Lei.", {
+        suma: plan.approved.toFixed(2),
+        total: cardTotal.toFixed(2),
+        rest: rest.toFixed(2)
+      })
+      : tr("Plata aprobata pe terminal: {suma} Lei. Mai ramane de plata: {rest} Lei.", {
+        suma: plan.approved.toFixed(2),
+        rest: rest.toFixed(2)
+      }));
+    return;
+  }
+  appAlert(tr("Pe terminal a fost aprobata suma de {suma} Lei, dar pe nota mai era nevoie de {necesar} Lei. Verificati terminalul.", {
+    suma: plan.approved.toFixed(2),
+    necesar: plan.cardNeeded.toFixed(2)
+  }));
+}
+
+// Butonul "Verifica" de pe ecranul de plata: verifica in jurnalul terminalului
+// ultima incercare nerezolvata a notei, fara sa mai apeleze terminalul. Daca
+// plata a fost aprobata, o preia si inchide nota (fara dialog de void).
+async function actionBankPosCheck() {
+  if (POS_STATE.closingBill) { return; }
+  if (!POS_STATE.docId) {
+    appAlert(tr("Nu exista o nota deschisa."));
+    return;
+  }
+  if (!POS_STATE.bankPosCanResync) {
+    appAlert(tr("Protocolul terminalului bancar nu suporta verificarea in jurnal."));
+    return;
+  }
+  const check = await bankPosVerifySilently("");
+  applyBankPosMeta(check.data);
+  if (check.kind === "approved") {
+    const approved = Number(check.amount) || Number(POS_STATE.bankPosLockAmount) || 0;
+    await bankPosApplyApprovedOnPaymentScreen(approved, {
+      source: "journal",
+      trxId: check.trxId || POS_STATE.bankPosUid || ""
+    });
+    refreshBankPosCheckButton();
+    return;
+  }
+  if (check.kind === "notfound") {
+    showToast(tr("Cardul clientului NU a fost debitat. Puteti reincerca plata."));
+  } else if (check.kind === "voided") {
+    showToast(tr("Tranzactia a fost anulata pe terminal. Puteti reincerca plata."));
+  } else {
+    appAlert(tr("Terminalul nu a răspuns. Verificați terminalul, apoi apăsați „Da, am chitanța (Manual)”."));
+  }
+  refreshBankPosCheckButton();
+}
+
+// Butonul "Altă formă de plată / Anulează" din bara de marcare (nota blocata):
+// daca terminalul a confirmat deja plata, incercarea NU poate fi declarata
+// neaprobata (serverul o refuza cu 409) - se anuleaza pe terminal (void), dupa
+// confirmare, si abia apoi nota se deblocheaza. Daca nu e nimic aprobat, se
+// consemneaza abandonarea incercarii incerte (aceeasi cale ca "Nu a tipărit").
+async function actionBankPosReturnToPay() {
+  if (POS_STATE.closingBill || POS_STATE.cardPaying) { return; }
+  if (!POS_STATE.docId) {
+    appAlert(tr("Nu exista o nota deschisa."));
+    return;
+  }
+  const st = await fetchBankPosStatus();
+  // Comanda inca in curs: terminalul nu a raspuns, deci orice decizie (inclusiv
+  // "nu a tiparit") ar fi prematura - terminalul poate aproba dupa aceea, iar
+  // nota ar rămâne deblocata cu bani incasati. Se asteapta rezultatul.
+  if ((st && st.pending === true) || POS_STATE.bankPosPending === true) {
+    showToast(tr("Plata pe card este în curs: așteptați răspunsul terminalului."));
+    watchBankPending();
+    return;
+  }
+  const approvedTotal = Number((st && st.approvedTotal) || POS_STATE.bankPosApprovedTotal) || 0;
+  if (approvedTotal > 0.005) {
+    const ok = await appConfirmAsync(tr(
+      "Plata pe card a fost confirmată ({suma} Lei). Dacă o anulați, suma se retrage pe terminal (void). Continuați?",
+      { suma: approvedTotal.toFixed(2) }
+    ), tr("Da, anulează"), tr("Nu"));
+    if (!ok) { return; }
+    const r = await bankPosVoidAll(true);
+    if (!r.ok) {
+      appAlert(tr("Plata pe card nu a putut fi anulată complet. Verificați terminalul: sumele rămân încasate până la clarificare."));
+      await refreshBankPosCheckButton();
+      return;
+    }
+    cardLedgerReset();
+    bankPosUnlockLocal();
+    await refreshBankPosCheckButton();
+    showToast(tr("Plata pe card a fost anulată (void). Nota poate fi inchisă cu alta formă de plată."), 4000);
+    return;
+  }
+  if (st && st.uncertain === true) {
+    await resolveBankPosDecision(POS_STATE.docId, "neaprobat", st.uid || POS_STATE.bankPosUid);
+  }
+  bankPosUnlockLocal();
+  await refreshBankPosCheckButton();
+  showToast(tr("Plata pe card a fost anulata. Nota poate fi inchisa cu alta forma de plata."));
+}
+
+// Butonul "Manual" de pe ecranul de plata: verificarea facuta de operator pe
+// terminal (fara parola), cu audit pe operator. Este iesirea si in FastFood,
+// unde nota nu poate ramane deschisa.
+async function actionBankPosManual() {
+  if (POS_STATE.closingBill) { return; }
+  if (!POS_STATE.docId) {
+    appAlert(tr("Nu exista o nota deschisa."));
+    return;
+  }
+  const st = await fetchBankPosStatus();
+  if (!st || st.uncertain !== true) {
+    appAlert(tr("Nu exista o plata bancara cu stare incerta pentru aceasta nota."));
+    refreshBankPosCheckButton();
+    return;
+  }
+  const res = await openBankPosManualModal({
+    amount: st.amount,
+    trxId: st.uid,
+    connection: st.connection || POS_STATE.bankPosConnection,
+    sursa: "ecran_plata",
+    protocol: st.protocol || POS_STATE.bankPosProtocol,
+    canResync: st.canResync === true,
+    canVoid: st.canVoid === true,
+    resyncApproved: st.resyncApproved === true,
+    manualApproved: st.manualApproved === true
+  });
+  if (!res) { return; }
+  if (res.verdict === "aprobat") {
+    const approved = Number(res.data && res.data.amount) || Number(st.amount) || 0;
+    await bankPosApplyApprovedOnPaymentScreen(approved, {
+      source: "manual",
+      trxId: (res.data && res.data.trxId) || st.uid || "",
+      logId: (res.data && res.data.logId) || null
+    });
+  }
+  // Decizia manuala este definitiva: starea incerta s-a incheiat, deci nota se
+  // deblocheaza in UI (banner-ul dispare, butoanele normale revin). Daca nota
+  // s-a inchis deja, apelul e inofensiv.
+  bankPosUnlockLocal();
+  refreshBankPosCheckButton();
+}
+
+// Retiparirea chitantei de card (duplicat pe imprimanta POS).
+//
+// Protocoalele ECR folosite nu au comanda de reprint: chitanta originala a
+// terminalului se retipareste doar din meniul lui. Duplicatul de aici este
+// tiparit din datele durabile din tblPosBancaLog (suma, RRN, STAN, AUTHCODE,
+// PAN mascat) si este marcat explicit "DUPLICAT".
+async function actionBankPosReprint(docId, logId) {
+  if (POS_STATE.retiparireChitantaPoSbanca !== 1) {
+    appAlert(tr("Retiparirea chitantei terminalului bancar este dezactivata din Setari."));
+    return;
+  }
+  const last = POS_STATE.lastCardReprint || {};
+  const id = Number(docId || POS_STATE.docId || last.docId || 0);
+  if (!id) {
+    appAlert(tr("Nu exista o nota pentru retiparirea chitantei."));
+    return;
+  }
+  // Fara un logId implicit: serverul alege ULTIMA tranzactie aprobata a notei
+  // (dupa Id), deci o reînsămânțare a ledger-ului intr-o alta ordine nu poate
+  // face butonul sa tipareasca o tranzactie mai veche.
+  const lid = Number(logId || 0);
+  let data;
+  try {
+    const resp = await fetch("api/pos_banca.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "reprint", docId: id, logId: lid || null })
+    });
+    data = await resp.json();
+  } catch (err) {
+    appAlert(tr("Eroare la retiparirea chitantei: ") + (err.message || ""));
+    return;
+  }
+  if (!data || data.status !== "success") {
+    appAlert(data && data.message
+      ? tr(data.message)
+      : tr("Chitanta nu a putut fi retiparita."));
+    return;
+  }
+  let html = escapeHtml(tr("Duplicatul chitantei a fost adaugat in coada de tiparire."));
+  if (data.jobId) {
+    html += ' <span style="color:#666;">(job ' + escapeHtml(String(data.jobId)) + ')</span>';
+  }
+  // Instructiunea pentru originalul terminalului este utila mereu, chiar si
+  // cand aprobarea a fost manuala (fara STAN/RRN in audit).
+  html += '<br><br>' + escapeHtml(tr("Pentru chitanta originala a terminalului: MENU -> Reprint last receipt."));
+  if (data.stan) { html += '<br>STAN: ' + escapeHtml(String(data.stan)); }
+  if (data.rrn) { html += '<br>RRN: ' + escapeHtml(String(data.rrn)); }
+  appAlertHtml(html);
+}
+
+// Trimite decizia manuala la server. Fara parola: serverul o consemneaza in
+// tblPosBancaLog (operator, suma, TRX_ID, IP) si in logs/app_events.log.
+async function bankPosManualRequest(verdict, sursa, cod) {
+  const resp = await fetch("api/pos_banca.php", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "resolve_manual",
+      docId: POS_STATE.docId,
+      verdict: verdict,
+      cod: String(cod || "").replace(/\s+/g, ""),
+      nrOp: posBancaManualNrOp(),
+      sursa: sursa || "manual"
+    })
+  });
+  const data = await resp.json();
+  if (!data || data.status !== "success") {
+    if (data && data.code === "auth_code_required") {
+      throw new Error(tr("Pentru aprobare introduceți AUTHCODE-ul de pe chitanța terminalului."));
+    }
+    throw new Error(tr((data && data.message) || tr("Eroare la salvarea deciziei manuale.")));
+  }
+  applyBankPosMeta(data);
+  return data;
+}
+
+// Modalul de verificare manuala: doar Aprobat / Inapoi. Aprobarea se face cu
+// AUTHCODE-ul de pe chitanta terminalului: EXACT 6 caractere alfanumerice.
+// Codul poate fi alfanumeric, deci il normalizam la majuscule si il tratam ca text.
+function bankPosAuthCodeFilter(value) {
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+}
+
+function bankPosAuthCodeValid(cod) {
+  const c = String(cod || "").replace(/\s+/g, "").toUpperCase();
+  return /^[A-Z0-9]{6}$/.test(c);
+}
+
+// Scrie codul in campul din modal (majuscule, doar A-Z/0-9, maxim 6) si
+// actualizeaza starea butonului Aprobat.
+function bankPosManualSetCode(value) {
+  const el = document.getElementById("pos-banca-manual-cod");
+  const clean = bankPosAuthCodeFilter(value);
+  if (el && el.value !== clean) { el.value = clean; }
+  bankPosManualValidateCode();
+  return clean;
+}
+
+// Marcheaza sub camp un cod incomplet/gresit, fara sa blocheze tastarea.
+function bankPosManualValidateCode() {
+  const el = document.getElementById("pos-banca-manual-cod");
+  const err = document.getElementById("pos-banca-manual-err");
+  const raw = el ? bankPosAuthCodeFilter(el.value) : "";
+  if (el && el.value !== raw) { el.value = raw; }
+  const ok = bankPosAuthCodeValid(raw);
+  if (err) {
+    err.textContent = (raw !== "" && !ok)
+      ? tr("AUTHCODE invalid: trebuie exact 6 caractere (litere/cifre).")
+      : "";
+  }
+  if (el) { el.classList.toggle("err", raw !== "" && !ok); }
+  const aprobat = document.getElementById("pos-banca-manual-aprobat");
+  if (aprobat) { aprobat.disabled = !ok; }
+  return ok;
+}
+
+// Tastatura alfanumerica (QWERTY) pentru AUTHCODE: se deschide peste modalul
+// de solutionare manuala si scrie direct in campul acestuia.
+function bankPosManualCaptureCode() {
+  const el = document.getElementById("pos-banca-manual-cod");
+  const modal = document.getElementById("modal-keyboard");
+  const input = document.getElementById("virtual-keyboard-input");
+  const title = document.getElementById("kb-title");
+  const subtitle = document.getElementById("kb-subtitle");
+  if (!modal || !input) { return; }
+
+  keyboardAction = "bankpos_auth";
+  logUiEvent("kb_open", { modul: "bankpos_auth", ecran: currentScreenId() });
+  if (title) { title.innerText = tr("AUTHCODE"); }
+  if (subtitle) { subtitle.innerText = tr("Codul de autorizare de pe chitanța terminalului (6 caractere)"); }
+  input.type = "text";
+  input.value = bankPosAuthCodeFilter(el ? el.value : "");
+  // Tastatura se deschide PESTE modalul manual (care are z-index 1200).
+  modal.style.zIndex = "2700";
+  modal.classList.add("active");
+  vkShift = false;
+  vkCaps = true; // AUTHCODE-urile sunt de regula cu majuscule
+  vkRender();
+}
+
+// Modalul de solutionare manuala: Aprobat / Inapoi. Aprobarea cere AUTHCODE-ul
+// de pe chitanta terminalului (6 caractere alfanumerice), ca sa nu poata fi
+// facuta "din burta"; serverul valideaza din nou acelasi cod.
+function openBankPosManualModal(info) {
+  info = info || {};
+  const modal = document.getElementById("modal-pos-banca-manual");
+  const infoEl = document.getElementById("pos-banca-manual-info");
+  if (!modal || !infoEl) {
+    const approved = window.confirm(tr("Plata a fost aprobata pe terminal?"));
+    if (!approved) { return Promise.resolve(null); }
+    const cod = bankPosAuthCodeFilter(window.prompt(
+      tr("AUTHCODE de pe chitanța terminalului:"), ""
+    ) || "");
+    if (!bankPosAuthCodeValid(cod)) {
+      appAlert(tr("AUTHCODE invalid: trebuie exact 6 caractere (litere/cifre)."));
+      return Promise.resolve(null);
+    }
+    return bankPosManualRequest("aprobat", info.sursa || "manual", cod)
+      .then(data => ({ verdict: "aprobat", data }))
+      .catch(err => {
+        appAlert(err.message || tr("Eroare la salvarea deciziei manuale."));
+        return null;
+      });
+  }
+
+  const amount = Number(info.amount) || Number(POS_STATE.bankPosLockAmount) || 0;
+  // Suma este elementul pe care operatorul il coreleaza cu chitanta: se scrie
+  // mare si bold. Titlul ferestrei spune deja ce se intampla, deci nu repetam.
+  infoEl.innerHTML =
+    '<div class="pos-banca-man-suma">' + tr("Suma: ") + escapeHtml(amount.toFixed(2)) + ' Lei</div>'
+    + '<div class="pos-banca-man-op">' + tr("Operator: ") + escapeHtml(bankPosOperatorLabel()) + '</div>';
+
+  const codEl = document.getElementById("pos-banca-manual-cod");
+  const errEl = document.getElementById("pos-banca-manual-err");
+  if (codEl) { codEl.value = ""; codEl.classList.remove("err"); }
+  if (errEl) { errEl.textContent = ""; }
+
+  const aprobat = document.getElementById("pos-banca-manual-aprobat");
+  const cancel = document.getElementById("pos-banca-manual-cancel");
+  const all = [aprobat, cancel].filter(Boolean);
+  if (cancel) { cancel.disabled = false; }
+  // Aprobarea este conditionata de AUTHCODE (vezi bankPosManualValidateCode):
+  // butonul rămâne gri pana la exact 6 caractere alfanumerice.
+  if (aprobat) { aprobat.disabled = true; }
 
   return new Promise(resolve => {
-    const cancel = document.getElementById("pos-banca-cancel");
-    const retry = document.getElementById("pos-banca-retry");
-    const ignore = document.getElementById("pos-banca-ignore");
-
-    const done = (val) => {
+    const close = (val) => {
       modal.classList.remove("active");
-      cancel.onclick = null;
-      retry.onclick = null;
-      ignore.onclick = null;
+      // Tastatura AUTHCODE poate fi deschisa peste acest modal: o inchidem si pe ea.
+      if (keyboardAction === "bankpos_auth") {
+        const kb = document.getElementById("modal-keyboard");
+        if (kb && kb.classList.contains("active")) { closeKeyboardModal(); }
+      }
+      if (aprobat) aprobat.onclick = null;
+      if (cancel) cancel.onclick = null;
       resolve(val);
     };
-
-    cancel.onclick = () => done("cancel");
-    retry.onclick = () => done("retry");
-    ignore.onclick = () => done("ignore");
+    const submit = async () => {
+      const cod = bankPosManualSetCode(codEl ? codEl.value : "");
+      // Fara AUTHCODE de pe chitanta nu se poate aproba: altfel un operator ar
+      // putea inchide nota pe card fara ca terminalul sa fi incasat nimic.
+      if (!bankPosAuthCodeValid(cod)) {
+        if (errEl) {
+          errEl.textContent = tr("Pentru aprobare introduceți AUTHCODE-ul de pe chitanța terminalului.");
+        }
+        if (codEl) { codEl.classList.add("err"); }
+        bankPosManualCaptureCode();
+        return;
+      }
+      all.forEach(btn => { btn.disabled = true; });
+      try {
+        const data = await bankPosManualRequest("aprobat", info.sursa || "manual", cod);
+        close({ verdict: "aprobat", data });
+      } catch (err) {
+        if (cancel) { cancel.disabled = false; }
+        // Cod respins: golim campul, ca operatorul sa-l poata retasta.
+        if (codEl) { codEl.value = ""; }
+        if (errEl) { errEl.textContent = ""; }
+        bankPosManualValidateCode();
+        appAlert(err.message || tr("Eroare la salvarea deciziei manuale."));
+      }
+    };
+    if (aprobat) aprobat.onclick = submit;
+    if (cancel) cancel.onclick = () => close(null);
     modal.classList.add("active");
   });
 }
 
-function showBankPosWait() {
+// Dialog cu rezultatul unei plati care nu a putut fi confirmata direct.
+// Nu expune operatorului masina de stari: fara "jurnal", "UNKNOWN" sau istoric
+// de actiuni. Mesaj binar (banii s-au luat sau nu) + doua actiuni.
+// ctx.kind: "declined" | "notfound" | "voided" | "noresponse" | "unreachable".
+// Rezolva o DECIZIE (nu scrie in nota):
+//   { decision:'cancel'|'retry' }
+//   { decision:'approved', amount, data }  (operatorul a confirmat Manual)
+function openPosBancaDialog(info, ctx) {
+  ctx = ctx || {};
+  info = info || {};
+  const modal = document.getElementById("modal-pos-banca");
+  const kind = ctx.kind || "declined";
+  const trx = String(ctx.trxId || info.trxId || "").trim();
+  applyBankPosMeta(info);
+
+  const noResponse = (kind === "noresponse");
+
+  // Titlu + mesaj, fara termeni tehnici.
+  let title = tr("PLATA REFUZATA");
+  let text = tr("Terminalul a refuzat plata. Incercati din nou sau alegeti alta metoda de plata.");
+  if (kind === "notfound" || kind === "voided") {
+    title = tr("PLATA NEPROCESATA");
+    text = tr("Timpul alocat platii a expirat. Cardul clientului NU a fost debitat.");
+  } else if (kind === "unreachable") {
+    // Terminalul nu a putut fi contactat: comanda nu a plecat, deci cardul NU
+    // a fost debitat. Nu e nimic de verificat/declarat: doar o eroare de
+    // legatura, cu reincercare sigura.
+    title = tr("TERMINALUL NU RASPUNDE");
+    text = tr("Terminalul bancar nu răspunde. Verificați că este pornit și conectat, apoi reîncercați.");
+  } else if (noResponse) {
+    title = tr("PLATA NECLARIFICATA");
+    // Instruiune fizica, fara termeni tehnici: operatorul trebuie doar sa se
+    // uite daca terminalul a tiparit chitanta.
+    text = tr("Verificați dacă terminalul a tipărit chitanța cu APROBAT:");
+  }
+
+  if (!modal) {
+    // Fara modal: nicio reincercare pe o stare neclarificata (ar putea taxa
+    // cardul a doua oara).
+    if (noResponse) {
+      window.alert(text);
+      return Promise.resolve({ decision: "cancel" });
+    }
+    return Promise.resolve({
+      decision: window.confirm(text + "\n\n" + tr("Reincercati plata?")) ? "retry" : "cancel"
+    });
+  }
+
+  const titleEl = document.getElementById("pos-banca-title");
+  const msgEl = document.getElementById("pos-banca-message");
+  const trxEl = document.getElementById("pos-banca-trx");
+  const cancel = document.getElementById("pos-banca-cancel");
+  const retry = document.getElementById("pos-banca-retry");
+  const manual = document.getElementById("pos-banca-manual");
+
+  if (titleEl) { titleEl.textContent = title; }
+  if (msgEl) { msgEl.textContent = text; }
+  // TRX_ID ramane doar pentru suport tehnic: mic, gri, in colt.
+  if (trxEl) { trxEl.textContent = trx ? ("TRX_ID: " + trx) : ""; }
+
+  // Butoanele raspund direct la intrebarea din mesaj (Da / Nu), in loc sa
+  // descrie mecanismul ("Soluționare manuală" / "Altă metodă").
+  if (cancel) {
+    cancel.textContent = noResponse
+      ? tr("Nu a tipărit (Anulează)")
+      : tr("Altă metodă / Anulează");
+  }
+  if (manual) { manual.textContent = tr("Da, am chitanța (Manual)"); }
+
+  [cancel, retry, manual].forEach(btn => { if (btn) { btn.disabled = false; } });
+  // "Reincearca plata" doar cand stim sigur ca nu s-a incasat nimic. Pe cazul
+  // "terminal mut" butonul este ascuns complet, nu doar dezactivat: un buton
+  // gri care nu face nimic aglomereaza dialogul si sugereaza o actiune posibila.
+  if (retry) {
+    retry.disabled = noResponse;
+    retry.style.display = noResponse ? "none" : "";
+  }
+  // Manual doar cand terminalul nu poate fi verificat (nu raspunde / jurnal indisponibil).
+  if (manual) { manual.style.display = noResponse ? "" : "none"; }
+
+  return new Promise(resolve => {
+    let doneCalled = false;
+    const done = (val) => {
+      if (doneCalled) { return; }
+      doneCalled = true;
+      modal.classList.remove("active");
+      if (cancel) cancel.onclick = null;
+      if (retry) retry.onclick = null;
+      if (manual) manual.onclick = null;
+      resolve(val);
+      // Starea butoanelor Verifica / Manual de pe ecranul de plata se poate
+      // schimba (ex. dupa Cancel sau dupa Manual).
+      setTimeout(refreshBankPosCheckButton, 0);
+    };
+
+    if (cancel) { cancel.onclick = () => done({ decision: "cancel" }); }
+    if (retry) { retry.onclick = () => done({ decision: "retry" }); }
+    if (manual) {
+      manual.onclick = async () => {
+        const res = await openBankPosManualModal({
+          amount: ctx.amount || info.amount || "",
+          trxId: trx,
+          connection: POS_STATE.bankPosConnection,
+          sursa: "dialog",
+          protocol: POS_STATE.bankPosProtocol,
+          canResync: POS_STATE.bankPosCanResync,
+          canVoid: POS_STATE.bankPosCanVoid
+        });
+        if (!res) { return; }
+        if (res.verdict === "aprobat") {
+          // Decizia se intoarce apelantului (funnel-ul), care o scrie in ledger.
+          // Dialogul NU atinge nota.
+          done({
+            decision: "approved",
+            amount: Number(res.data && res.data.amount) || Number(ctx.amount) || Number(info.amount) || 0,
+            data: res.data || null
+          });
+          return;
+        }
+        done({ decision: "cancel" });
+      };
+    }
+
+    modal.classList.add("active");
+  });
+}
+
+// Indicator de asteptare (fara butoane). Textul se poate schimba in timpul
+// verificarii automate, ca operatorul sa stie ce se intampla.
+function showBankPosWait(text) {
   const modal = document.getElementById("modal-pos-banca-wait");
+  const el = document.getElementById("pos-banca-wait-text");
+  if (el) {
+    el.textContent = text ? tr(text) : tr("Se asteapta terminalul bancar...");
+  }
   if (modal) modal.classList.add("active");
 }
 
@@ -1663,16 +3597,15 @@ function hideFiscalWait() {
 }
 
 // Readuce ecranul de plata la starea initiala (fara plati inregistrate).
+// Cardul deja taxat (cardLedger) NU se sterge: banii au fost incasati si linia
+// de card se regenereaza automat din ledger.
 function resetPaymentScreen() {
   POS_STATE.payments = {};
   POS_STATE.rest = 0;
+  POS_STATE.cardDeclared = 0;
   POS_STATE.activePaymentFp = null;
-  const total = parseFloat(document.getElementById("val-total").innerText) || 0;
-  const input = document.getElementById("pay-amount-input");
-  if (input) {
-    input.value = total.toFixed(2);
-    input.dataset.fresh = "true";
-  }
+  // Restul de plata, nu totalul notei (cardul aprobat rămâne in ledger).
+  updatePayAmountDefault(true);
   const def = POS_STATE.paymentForms.find(f => f.Poz === 1) || POS_STATE.paymentForms[0];
   if (def && POS_STATE.plataCombinata !== 0) { selectPaymentMethod(def.FPID); }
   updatePaymentProgress();
@@ -1721,6 +3654,32 @@ function restoreWaiterSession() {
   } catch (e) { /* ignoram */ }
 }
 
+// Masa pe care lucra operatorul, pastrata peste un refresh (Ctrl+F5). Fara ea,
+// dupa un reload aplicatia pornea mereu pe Masa 1, iar nota de pe masa reala
+// disparea de pe ecran - inclusiv una care astepta raspunsul terminalului
+// bancar (incercare UNKNOWN), care trebuie vazuta ca sa fie clarificata.
+const TABLE_STORAGE_KEY = "rual_masa_curenta";
+
+function saveCurrentTable(masa) {
+  // In FastFood nu exista masa selectata: nota unica este pe masa 1, iar o masa
+  // memorata aici ar fi folosita la urmatorul refresh (comenzi pe masa greșita).
+  if (isFastFood()) { return; }
+  const n = Number(masa) || 0;
+  if (n < 1 || n > 80) { return; }
+  try { window.sessionStorage.setItem(TABLE_STORAGE_KEY, String(n)); } catch (e) { /* ignoram */ }
+}
+
+function clearCurrentTable() {
+  try { window.sessionStorage.removeItem(TABLE_STORAGE_KEY); } catch (e) { /* ignoram */ }
+}
+
+function savedCurrentTable() {
+  try {
+    const n = Number(window.sessionStorage.getItem(TABLE_STORAGE_KEY));
+    return (n >= 1 && n <= 80) ? n : 0;
+  } catch (e) { return 0; }
+}
+
 function logoutWaiter() {
   POS_STATE.loggedIn = false;
   POS_STATE.nrOp = null;
@@ -1763,7 +3722,7 @@ function openLoginModal(callback) {
   const modal = document.getElementById("modal-keyboard");
   const input = document.getElementById("virtual-keyboard-input");
   if (input) { input.type = "password"; input.value = ""; }
-  if (modal) modal.classList.add("active");
+  if (modal) { modal.style.zIndex = ""; modal.classList.add("active"); }
   vkShift = false;
   vkCaps = false;
   vkRender();
@@ -1781,6 +3740,7 @@ function openKeyboardModal(mode) {
   const input = document.getElementById("virtual-keyboard-input");
   input.type = keyboardAction === "search" ? "text" : "password";
   input.value = "";
+  modal.style.zIndex = "";
   modal.classList.add("active");
   vkShift = false;
   vkCaps = false;
@@ -1788,22 +3748,60 @@ function openKeyboardModal(mode) {
 }
 
 function closeKeyboardModal() {
-  document.getElementById("modal-keyboard").classList.remove("active");
+  const modal = document.getElementById("modal-keyboard");
+  if (modal) {
+    modal.classList.remove("active");
+    // Fara z-index-ul ridicat folosit peste modalul manual (vezi
+    // bankPosManualCaptureCode); urmatoarea deschidere (login/cautare) revine normal.
+    modal.style.zIndex = "";
+  }
   logUiEvent("kb_close", { modul: keyboardAction, ecran: currentScreenId() });
+}
+
+// Tastarea in modul AUTHCODE: doar A-Z/0-9, majuscule, maxim 6 caractere.
+// Valoarea se oglindeste imediat in modalul manual, iar la 6 caractere
+// tastatura se inchide, ca operatorul sa vada butonul Aprobat activ.
+// `closeAtSix` = false la Backspace/Clear/OK, ca redeschiderea unui cod deja
+// complet sa nu inchida tastatura la prima tasta (trebuie intai sters).
+function vkeySyncBankPosAuth(closeAtSix) {
+  const input = document.getElementById("virtual-keyboard-input");
+  if (!input) { return ""; }
+  const value = bankPosAuthCodeFilter(input.value);
+  if (input.value !== value) { input.value = value; }
+  bankPosManualSetCode(value);
+  if (closeAtSix !== false && value.length >= 6) { closeKeyboardModal(); }
+  return value;
 }
 
 function vkeyInput(char) {
   const input = document.getElementById("virtual-keyboard-input");
+  if (keyboardAction === "bankpos_auth") {
+    const before = input.value.length;
+    input.value += char;
+    vkeySyncBankPosAuth(before < 6);
+    return;
+  }
   input.value += char;
 }
 
 function vkeyBackspace() {
   const input = document.getElementById("virtual-keyboard-input");
+  if (keyboardAction === "bankpos_auth") {
+    input.value = input.value.slice(0, -1);
+    vkeySyncBankPosAuth(false);
+    return;
+  }
   input.value = input.value.slice(0, -1);
 }
 
 function vkeyClear() {
-  document.getElementById("virtual-keyboard-input").value = "";
+  const input = document.getElementById("virtual-keyboard-input");
+  if (keyboardAction === "bankpos_auth") {
+    input.value = "";
+    vkeySyncBankPosAuth(false);
+    return;
+  }
+  input.value = "";
 }
 
 // Tastatura de autentificare / cautare: litere mici/mari + Shift/Caps (acelasi principiu ca tastatura flotanta)
@@ -1894,6 +3892,18 @@ document.addEventListener("keydown", function (e) {
 async function vkeyValidate() {
   const input = document.getElementById("virtual-keyboard-input");
   const valoare = input.value;
+
+  if (keyboardAction === "bankpos_auth") {
+    // Valoarea este deja oglindita in modal (vkeySyncBankPosAuth); aici doar
+    // confirmam ca sunt exact 6 caractere si inchidem tastatura.
+    const cod = vkeySyncBankPosAuth(false);
+    if (cod.length !== 6) {
+      appAlert(tr("Introduceți exact 6 caractere (litere sau cifre)."));
+      return;
+    }
+    closeKeyboardModal();
+    return;
+  }
 
   if (keyboardAction === "search") {
     doProductSearch(valoare);
@@ -2064,6 +4074,27 @@ function makeProductGridBtn(p) {
 // --------------------------------------------------------------------------
 function navigateToScreen(screenId) {
   // Mod FastFood: ecranul de mese nu este niciodata afisat.
+  if (isFastFood() && screenId === "screen-mese") {
+    screenId = "screen-marcare";
+  }
+
+  const prev = document.querySelector(".pos-screen.active");
+  const prevId = prev ? prev.id : null;
+
+  // "Totul sau nimic": ecranul de plata nu se paraseste cu bani aprobati pe
+  // card. Ieșirea se face printr-un singur loc, care anuleaza (void) sumele de
+  // pe terminal (cu confirmare) sau arunca sumele doar tastate.
+  if (prevId === "screen-plata" && screenId !== "screen-plata") {
+    leavePaymentScreen(screenId);
+    return;
+  }
+
+  navigateToScreenNow(screenId);
+}
+
+// Navigarea efectiva (fara garda de plata), ca leavePaymentScreen sa poata
+// pleca dupa void fara sa reintre in confirmare.
+function navigateToScreenNow(screenId) {
   if (isFastFood() && screenId === "screen-mese") {
     screenId = "screen-marcare";
   }
@@ -2459,6 +4490,11 @@ const SETARI_TABS = [
 ];
 
 let setariRows = [];
+// Lista protocoalelor POS bancar, primita de la server (api/setari.php).
+// Fallback-ul acopera doar prima randare, inainte de raspunsul API.
+let setariPosBancaProtocols = [
+  { value: "SmartPayECR", label: "SmartPay ECR Link" }
+];
 let setariActiveTab = "general";
 let setariDirty = {};
 // In modul Restaurant, NrZecCant e editabil doar cand toate mesele sunt inchise.
@@ -2476,11 +4512,15 @@ let setariNewApiKey = null;
 // suprimat de browser). Fallback pe confirm() daca modalul nu exista.
 let _appConfirmCb = null;
 
-function appConfirm(message, onYes, yesLabel, noLabel) {
+function appConfirm(message, onYes, yesLabel, noLabel, onNo) {
   message = tr(message);
   const modal = document.getElementById("modal-confirm");
   if (!modal) {
-    if (window.confirm(message) && typeof onYes === "function") onYes();
+    if (window.confirm(message)) {
+      if (typeof onYes === "function") onYes();
+    } else if (typeof onNo === "function") {
+      onNo();
+    }
     return;
   }
   document.getElementById("confirm-message").textContent = message;
@@ -2489,13 +4529,17 @@ function appConfirm(message, onYes, yesLabel, noLabel) {
   yes.textContent = tr(yesLabel || "Da");
   no.textContent = tr(noLabel || "Nu");
   _appConfirmCb = (typeof onYes === "function") ? onYes : null;
+  const noCb = (typeof onNo === "function") ? onNo : null;
 
   yes.onclick = () => {
     const cb = _appConfirmCb;
     closeAppConfirm();
     if (cb) cb();
   };
-  no.onclick = () => closeAppConfirm();
+  no.onclick = () => {
+    closeAppConfirm();
+    if (noCb) noCb();
+  };
 
   modal.classList.add("active");
 }
@@ -2577,6 +4621,9 @@ async function loadSetari() {
     const data = await resp.json();
     if (data.status !== "success") throw new Error(data.message || "Eroare");
     setariRows = (data.rows || []).filter(r => !SETARI_ASCUNSE.has((r.Setting || "").trim().toLowerCase()));
+    if (Array.isArray(data.posBancaProtocols) && data.posBancaProtocols.length > 0) {
+      setariPosBancaProtocols = data.posBancaProtocols;
+    }
     // Restrictia pentru NrZecCant (Restaurant + mese deschise) vine de la server.
     setariCanEditNrZecCant = (data.canEditNrZecCant !== false);
     // Starea cheii API pentru tabul Integrare.
@@ -2641,7 +4688,7 @@ const SETARI_ORDINE = {
   "casa": ["TipCasaMarcat", "AsteaptaRaspunsCasa", "AsteptareCasaSec", "EvidDiscBonFisc", "EvidStornoBonFisc", "CaleFisierComenziECR", "CaleFisierRaspunsECR"],
   "afiseaj": ["AfiseajClient", "PortComAfiseaj", "BaudRateAfisaj", "CaleDriverAfiseajClient", "CaleFisierComenziAfiseajClient"],
   "cantar": ["Cantar", "CaleDriverCantar", "CaleFisierRaspunsCantar", "Delay_cantar"],
-  "posbanca": ["PoSbanca", "CaleDriverPoSbanca", "CaleFisierRaspunsPoSbanca"],
+  "posbanca": ["PoSbanca", "ProtocolPoSbanca", "CaleDriverPoSbanca", "CaleFisierRaspunsPoSbanca"],
   "securitate": ["IpPermise"]
 };
 
@@ -2745,6 +4792,14 @@ function setariField(row) {
   // POS bancar activ/inactiv: lista DA / NU.
   if (row.Setting === "PoSbanca") {
     return setariPoSbancaField(row);
+  }
+  // Retiparirea ultimei chitante a terminalului bancar: lista DA / NU (implicit NU).
+  if (row.Setting === "RetiparireChitantaPoSbanca") {
+    return setariDaNuField(row.Setting, row.Value, row.Descriere, true);
+  }
+  // Protocolul terminalului bancar: SmartPay ECR Link.
+  if (row.Setting === "ProtocolPoSbanca") {
+    return setariProtocolPoSbancaField(row);
   }
   // Plata combinata activ/inactiv: lista DA / NU (implicit DA).
   if (row.Setting === "PlataCombinata") {
@@ -3142,6 +5197,50 @@ function setariMeniulZileiField(row) {
 // Combobox pentru tblSet.PoSbanca: 1 = DA (POS bancar activ), 0 = NU.
 function setariPoSbancaField(row) {
   return setariDaNuField(row.Setting, row.Value, row.Descriere, false);
+}
+
+// Combobox pentru tblSet.ProtocolPoSbanca. Lista vine de la server, ca sa fie
+// aceeasi sursa de adevar ca validarea din api/setari.php.
+function setariProtocolPoSbancaField(row) {
+  const div = document.createElement("div");
+  div.className = "setari-field";
+
+  const label = document.createElement("label");
+  label.className = "setari-label";
+  label.textContent = row.Setting;
+  div.appendChild(label);
+
+  const select = document.createElement("select");
+  select.className = "tva-input setari-input";
+  select.id = "setari-inp-" + row.Setting;
+
+  const cur = String(row.Value === null || row.Value === undefined ? "" : row.Value).trim()
+    || "SmartPayECR";
+  const options = Array.isArray(setariPosBancaProtocols)
+    ? setariPosBancaProtocols.slice()
+    : [];
+  // Lista de drivere este inchisa: o valoare veche/necunoscuta (ex. "Generic")
+  // nu se mai afiseaza ca optiune, ci se cade pe primul driver suportat.
+  const known = options.some(o => String(o.value) === cur);
+  const selected = known ? cur : String((options[0] || {}).value || "SmartPayECR");
+  options.forEach(o => {
+    const opt = document.createElement("option");
+    opt.value = String(o.value);
+    opt.textContent = tr(String(o.label || o.value));
+    if (String(o.value) === selected) { opt.selected = true; }
+    select.appendChild(opt);
+  });
+  select.onchange = () => { setariDirty[row.Setting] = select.value; };
+  div.appendChild(select);
+
+  if (row.Descriere && String(row.Descriere).trim() !== "") {
+    const d = document.createElement("div");
+    d.className = "setari-desc";
+    d.textContent = row.Descriere;
+    div.appendChild(d);
+  }
+
+  return div;
 }
 
 // Construieste un combobox generic DA / NU. defaultToNu = true cand valoarea
@@ -3844,6 +5943,27 @@ async function saveSetari() {
     // paginii, iar pasul bancar ar fi sarit la inchiderea notei.
     if (keys.indexOf("PoSbanca") !== -1) {
       POS_STATE.posBanca = (String(setariDirty["PoSbanca"]).trim() === "1") ? 1 : 0;
+    }
+    // Retiparirea chitantei de card se aplica imediat: butonul din ecranul de
+    // plata apare/dispare fara sa fie nevoie de reincarcarea paginii.
+    if (keys.indexOf("RetiparireChitantaPoSbanca") !== -1) {
+      POS_STATE.retiparireChitantaPoSbanca =
+        (String(setariDirty["RetiparireChitantaPoSbanca"]).trim() === "1") ? 1 : 0;
+      refreshBankReprintButton();
+    }
+    // Protocolul se aplica imediat in client; urmatorul status primit de la
+    // server este oricum autoritatea pentru capabilitati.
+    if (keys.indexOf("ProtocolPoSbanca") !== -1) {
+      const proto = String(setariDirty["ProtocolPoSbanca"] || "SmartPayECR").trim();
+      POS_STATE.bankPosProtocol = proto;
+      // Capabilitatile vin de la server (sursa de adevar): lista de protocoale
+      // a fost incarcata la deschiderea Setarilor, cu canResync/canVoid.
+      const opt = (Array.isArray(setariPosBancaProtocols) ? setariPosBancaProtocols : [])
+        .find(o => String(o.value) === proto);
+      POS_STATE.bankPosCanResync = opt ? (opt.canResync === true) : true;
+      POS_STATE.bankPosCanVoid = opt ? (opt.canVoid === true) : true;
+      // Conexiunea (.env) este citita de server la urmatorul status.
+      if (opt && opt.envConnection === false) { POS_STATE.bankPosConnection = null; }
     }
     if (keys.indexOf("AsteaptaRaspunsCasa") !== -1) {
       POS_STATE.asteaptaRaspunsCasa = (String(setariDirty["AsteaptaRaspunsCasa"]).trim() === "1") ? 1 : 0;
@@ -7580,6 +9700,9 @@ function fkbEnsureFieldVisible(targetEl) {
 let numpadTargetId = null;
 let numpadPromptCallback = null;
 let numpadDigitsOnly = false;
+// Lungimea maxima acceptata in #num-display. Implicit 20 (parolele sunt
+// nvarchar(20)); se poate limita per apel din openNumericPrompt(..., maxLen).
+let numpadMaxLen = 20;
 
 function openNumericKeyboardFor(inputId, title) {
   const el = document.getElementById(inputId);
@@ -7587,6 +9710,7 @@ function openNumericKeyboardFor(inputId, title) {
   numpadTargetId = inputId;
   numpadPromptCallback = null;
   numpadDigitsOnly = false;
+  numpadMaxLen = 20;
   const disp = document.getElementById("num-display");
   if (disp) { disp.type = "text"; disp.value = el.value || ""; }
   const dot = document.getElementById("num-dot-key");
@@ -7597,10 +9721,11 @@ function openNumericKeyboardFor(inputId, title) {
 }
 
 // Mod prompt: colecteaza o valoare numerica si o trimite callback-ului la OK.
-function openNumericPrompt(title, onSubmit) {
+function openNumericPrompt(title, onSubmit, maxLen) {
   numpadTargetId = null;
   numpadPromptCallback = onSubmit || null;
   numpadDigitsOnly = true;
+  numpadMaxLen = (Number(maxLen) > 0) ? Number(maxLen) : 20;
   const disp = document.getElementById("num-display");
   if (disp) { disp.type = "password"; disp.value = ""; }
   const dot = document.getElementById("num-dot-key");
@@ -7621,6 +9746,7 @@ function closeNumericKeyboard() {
   numpadTargetId = null;
   numpadPromptCallback = null;
   numpadDigitsOnly = false;
+  numpadMaxLen = 20;
 }
 
 // --------------------------------------------------------------------------
@@ -7761,19 +9887,25 @@ async function saveCuiToServer(cui) {
 function updateCuiButton() {
   const b = document.getElementById("btn-cui");
   if (!b) return;
-  b.title = POS_STATE.cui ? ("CUI: " + POS_STATE.cui) : "Fara cod fiscal";
+  const base = tr("Cod fiscal pe bon");
+  b.title = POS_STATE.cui ? (base + ": " + POS_STATE.cui) : base;
   b.classList.toggle("cui-set", !!POS_STATE.cui);
 }
 
 function numpadKey(ch) {
   const disp = document.getElementById("num-display");
   let v = disp.value;
+  // Limita de lungime (parole = 20): tastele in plus sunt ignorate.
+  if (v.length >= numpadMaxLen) { return; }
   if (ch === ".") {
     if (numpadDigitsOnly) return; // parola = doar cifre
     if (!v.includes(".")) disp.value = v === "" ? "0." : v + ".";
     return;
   }
-  if (v === "0") { disp.value = ch; return; }
+  // La cantitati/preturi "0" apoi "5" da "5" (zero nesemnificativ). La coduri
+  // si parole (numpadDigitsOnly) zero-ul din fata este SEMNIFICATIV: codurile
+  // numerice pot incepe cu 0 (ex. 012345), deci se adauga normal.
+  if (!numpadDigitsOnly && v === "0") { disp.value = ch; return; }
   disp.value = v + ch;
 }
 
@@ -7800,6 +9932,34 @@ function numpadOk() {
     el.dispatchEvent(new Event("input", { bubbles: true }));
   }
   closeNumericKeyboard();
+}
+
+// Suport pentru tastatura fizica (PC) in tastatura numerica #modal-num:
+// cifrele, virgula/punctul, Backspace, Delete/C, Enter (= OK) si Escape
+// (= Inchide). Cheile trec prin numpadKey(), deci se aplica aceleasi reguli:
+// doar cifre in modul prompt, limita de lungime (numpadMaxLen) si pastrarea
+// zero-ului din fata. Butoanele de pe ecran rămân functionale.
+function numpadPhysicalKey(e) {
+  const modal = document.getElementById("modal-num");
+  if (!modal || !modal.classList.contains("active")) { return; }
+  // Un dialog de alerta/confirmare peste numpad are prioritatea.
+  if (document.querySelector("#modal-alert.active, #modal-confirm.active")) { return; }
+  if (e.ctrlKey || e.metaKey || e.altKey) { return; }
+  const key = String(e.key || "");
+
+  if (key === "Enter") { e.preventDefault(); numpadOk(); return; }
+  if (key === "Escape") { e.preventDefault(); closeNumericKeyboard(); return; }
+  if (key === "Backspace") { e.preventDefault(); numpadBackspace(); return; }
+  if (key === "Delete" || key === "c" || key === "C") { e.preventDefault(); numpadClear(); return; }
+  if (key === "." || key === ",") { e.preventDefault(); numpadKey("."); return; }
+  if (/^[0-9]$/.test(key)) {
+    e.preventDefault();
+    numpadKey(key);
+  }
+}
+
+if (typeof document !== "undefined" && document.addEventListener) {
+  document.addEventListener("keydown", numpadPhysicalKey);
 }
 
 function fkbTargetElement() {
@@ -7921,8 +10081,29 @@ async function actionMarcare() {
 async function actionNota() {
   const total = parseFloat(document.getElementById("val-total").innerText) || 0;
 
-  // Nota goala: click pe Nota nu face nimic (nu exista articole de inchis).
-  if (total <= 0) { return; }
+  // Total 0: fie nota nu are nicio linie, fie liniile se anuleaza reciproc
+  // (produs + storno / discount 100%). In ambele cazuri nota se poate inchide.
+  if (total <= 0) {
+    if (!POS_STATE.docId) { return; }
+    if (POS_STATE.articole.length === 0) {
+      if (POS_STATE.bankPosLocked === true) {
+        // Cu bani confirmati pe card, nota goala se inchide din NOTA (acolo se
+        // face void sau inchiderea pe zero, explicit de catre operator).
+        if (POS_STATE.bankPosApproved === true) {
+          closeEmptyNote();
+          return;
+        }
+        // Blocata de o plata pe card incerta: inchiderea pe zero cere confirmare.
+        closeEmptyUncertainBill();
+        return;
+      }
+      closeEmptyNote();
+      return;
+    }
+    // Are produse, dar valoarea neta este 0: se inchide fara bon fiscal.
+    closeZeroTotalNote();
+    return;
+  }
 
   // Click pe Nota trimite automat si la imprimantele de sectie; reincarcam
   // nota ca liniile sa fie marcate ca trimise (qty blocat) si la revenirea
@@ -8270,6 +10451,7 @@ async function refreshPrintStatus() {
 
 function printJobLabel(r) {
   const tip = (r.Tip || "").toLowerCase();
+  if (tip === "banca") return tr("Chitanță card (duplicat)");
   if (tip !== "raport") return r.Tip || "";
   const title = (r.Title || "").trim();
   if (!title) return tr("report.label");
@@ -8611,6 +10793,7 @@ async function clearDoneSendJobs() {
 let transferSelected = new Set();
 
 function actionTransfer() {
+  if (bankPosBlockedNotice()) { return; }
   if (!POS_STATE.articole.length) {
     showToast("Nu exista produse pe nota de transferat");
     return;
@@ -8745,6 +10928,7 @@ async function execTransfer() {
 }
 
 function actionModPreparare() {
+  if (bankPosBlockedNotice()) { return; }
   if (!POS_STATE.articole.length) {
     showToast("Nu exista produse pe nota!");
     return;
@@ -8860,6 +11044,7 @@ let qtyEditingIndex = -1;
 
 // Butonul QTY: deschide popup-ul de modificare a cantitatii pentru articolul selectat
 function actionQty() {
+  if (bankPosBlockedNotice()) { return; }
   if (!POS_STATE.articole.length) {
     showToast("Nota este goala; nu exista articole");
     return;
@@ -9399,6 +11584,7 @@ async function discApply(fixedPct) {
 }
 
 function actionDiscount() {
+  if (bankPosBlockedNotice()) { return; }
   if (POS_STATE.red === 0) {
     showToast("Discountul nu este permis.");
     return;
@@ -9493,6 +11679,7 @@ function voidRamas(item) {
 }
 
 function actionVoid() {
+  if (bankPosBlockedNotice()) { return; }
   if (!POS_STATE.articole.length) {
     showToast("Nota este goala; nu exista ce anula");
     return;
@@ -9620,6 +11807,7 @@ function voidRefresh() {
 
 // Trimite cererea de anulare catre server si reincarca nota
 async function voidSend(payload) {
+  if (bankPosBlockedNotice()) { return; }
   try {
     const resp = await fetch("api/order_action.php", {
       method: "POST",

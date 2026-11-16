@@ -162,6 +162,7 @@ tar -czf "$SETUP_DIR/payload/app.tgz" -C "$ROOT/.." \
   --exclude='rual/api/db.local.php' \
   --exclude='rual/github_api.txt' --exclude='rual/ssh.txt' \
   --exclude='rual/AGENTS.md' --exclude='rual/PLAN-INSTALARE-PRODUCTIE.md' \
+  --exclude='rual/plan_plata_comb_update.md' \
   --exclude='rual/docs' --exclude='rual/docs/*' \
   --exclude='rual/*.pdf' \
   --exclude='rual/print-service/config.json' --exclude='rual/sync-service/config.json' \

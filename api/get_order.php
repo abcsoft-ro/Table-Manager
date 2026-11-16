@@ -5,6 +5,7 @@
  */
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/print_common.php';
+require_once __DIR__ . '/pos_banca_state.php';
 
 $conn = getDBConnection();
 
@@ -44,6 +45,14 @@ if (!$bon) {
         "subtotal" => 0,
         "reducere" => 0,
         "tva" => 0,
+        "bankPosLocked" => false,
+        "bankPosAmount" => "",
+        "bankPosUid" => "",
+        "bankPosApproved" => false,
+        "bankPosApprovedTotal" => 0,
+        "bankPosUncertain" => false,
+        "bankPosResolved" => false,
+        "bankPosPending" => false,
         "articole" => []
     ]);
 }
@@ -174,10 +183,40 @@ if (!empty($bon['Ora'])) {
     $dataOraStr = $dt->format('d-M-y') . "   17:39";
 }
 
+// Lock-ul bancar: o nota cu plata pe card incerta nu mai poate fi modificata
+// (adugare/stergere produse, cantitati, discounturi, transferuri) pana la
+// clarificarea platii. Serverul refuza oricum actiunile (423), iar clientul
+// foloseste acest flag ca sa blocheze ecranul de marcare.
+$bankLock = posBancaDocLock($conn, $docId);
+$bankPosLocked = ($bankLock !== null && $bankLock['locked']);
+$bankPosAmount = ($bankLock !== null) ? (string)$bankLock['amount'] : "";
+$bankPosUid = ($bankLock !== null) ? (string)($bankLock['uid'] ?? '') : "";
+// Bani aprobati pe terminal dar inca neaplicati pe nota: nota rămâne blocata
+// pentru modificari, dar plata poate fi continuata din NOTA (banner-ul o spune).
+$bankPosApproved = ($bankLock !== null && !empty($bankLock['approved']));
+$bankPosApprovedTotal = ($bankLock !== null) ? (float)($bankLock['approvedTotal'] ?? 0) : 0.0;
+// Verifica / Manual au sens doar pentru o incertitudine NEREZOLVATA. O plata
+// confirmata (aprobata pe terminal, eventual si prin jurnal/manual) este certa:
+// butoanele de clarificare trebuie sa dispara, chiar daca nota rămâne blocata
+// pana la inchidere.
+$bankPosUncertain = ($bankLock !== null && !empty($bankLock['uncertain']));
+$bankPosResolved = ($bankLock !== null && !empty($bankLock['resolved']));
+// Comanda inca in curs (terminalul nu a raspuns): nota este blocata, dar nu are
+// sens sa oferim Verifica/Manual pana nu se termina asteptarea.
+$bankPosPending = ($bankLock !== null && !empty($bankLock['pending']));
+
 sendJsonResponse([
     "status" => "success",
     "hasOrder" => true,
     "docId" => $docId,
+    "bankPosLocked" => $bankPosLocked,
+    "bankPosAmount" => $bankPosAmount,
+    "bankPosUid" => $bankPosUid,
+    "bankPosApproved" => $bankPosApproved,
+    "bankPosApprovedTotal" => $bankPosApprovedTotal,
+    "bankPosUncertain" => $bankPosUncertain,
+    "bankPosResolved" => $bankPosResolved,
+    "bankPosPending" => $bankPosPending,
     "nrDoc" => (int)$bon['NrDoc'],
     "nrMasa" => $nrMasa,
     "nrOp" => $bon['NrOp'] === null ? null : (int)$bon['NrOp'],

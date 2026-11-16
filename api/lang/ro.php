@@ -174,6 +174,8 @@ return [
     'marcare.meniul_zilei_html'  => 'Meniul<br>Zilei',
     'marcare.reducere_html'      => '<u>R</u>educere :',
     'marcare.subtotal'           => 'Subtotal :',
+    'marcare.achitat_card'       => 'Achitat CARD :',
+    'marcare.rest_plata'         => 'Rest de plata :',
     'marcare.tva'                => 'Tva :',
     'marcare.total'              => 'Total :',
     'marcare.cautare'            => '🔍 Cautare',

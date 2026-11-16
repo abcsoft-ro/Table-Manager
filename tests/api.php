@@ -53,7 +53,12 @@ $inj = jget("/api/get_order.php?masa=1%27%20OR%201%3D1--");
 test('get_order: parametru cu quote nu produce eroare 500', $inj['code'] !== 500 && $inj['json'] !== null, 'code=' . $inj['code']);
 $inj2 = jget('/api/menu.php');
 $inj3 = jpost('/api/order_action.php', ['action' => 'add_product', 'nrMasa' => "1' OR '1'='1", 'nrOp' => 8, 'prodId' => 0]);
-test('add_product: nrMasa injectat -> 400 curat (nu 500)', $inj3['code'] === 400, 'code=' . $inj3['code'] . ' body=' . substr($inj3['body'], 0, 100));
+// 400 = date invalide; 423 = nota acelei mese are o plata pe card incerta si
+// este blocata (garda bancara ruleaza inainte de validarea parametrilor).
+// Ambele sunt raspunsuri JSON curate, nu 500.
+test('add_product: nrMasa injectat -> eroare JSON curata (400/423, nu 500)',
+    in_array($inj3['code'], [400, 423], true),
+    'code=' . $inj3['code'] . ' body=' . substr($inj3['body'], 0, 100));
 
 /* ------------------------------------------------ C2 validari negative */
 section('C2 - validari negative (fara a crea bon)');

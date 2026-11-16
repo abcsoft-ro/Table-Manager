@@ -195,7 +195,12 @@ function tr($text, $params = []) {
     if ($bestKey !== null) {
         return i18nFill($cat[$bestKey], $params) . substr($text, strlen($bestKey));
     }
-    return $text;
+    // Text care nu are intrare in catalog: in romana, textele-sursa lipsesc
+    // intentionat din ro.php (sunt deja in romana), dar placeholderele {nume}
+    // trebuie completate si aici - altfel ajung literal in UI (ex. mesajul de
+    // la Marcare afisa "Comanda (bon {bon}) a fost trimisa la bucatarie").
+    // Aceeasi regula ca in js/i18n.js (trText).
+    return i18nFill($text, $params);
 }
 
 /**

@@ -9,6 +9,100 @@ require_once __DIR__ . '/send_common.php';
 require_once __DIR__ . '/i18n.php';
 require_once __DIR__ . '/app_events.php';
 require_once __DIR__ . '/parola_local.php';
+require_once __DIR__ . '/pos_banca_state.php';
+
+/**
+ * Actiunile care modifica nota si sunt refuzate cat timp nota are o plata pe
+ * card cu stare incerta (UNKNOWN / TIMEOUT / eroare de lansare a driverului),
+ * adica Exact cand terminalul bancar poate sa fi incasat deja suma.
+ *
+ * Raman permise: close_bill (este chiar calea de rezolvare), print_kitchen
+ * (bucataria primeste ce s-a adaugat inainte de incident), print_proforma,
+ * set_cui, authenticate si tot api/pos_banca.php (status/pay/resync/void/
+ * resolve_manual/resolve).
+ *
+ * @return array<int,string>
+ */
+function orderBankLockedActions() {
+    return [
+        'add_product',
+        'toggle_cook',
+        'add_mod',
+        'delete_mod',
+        'update_qty',
+        'apply_discount',
+        'void_line',
+        'transfer_products',
+    ];
+}
+
+/**
+ * DocID-urile pe care le-ar atinge o actiune (nota curenta si, la transfer,
+ * si nota destinatie). Se rezolva si din ecrId, nu doar din nrMasa, ca garda
+ * sa nu poata fi ocolita de un payload incomplet.
+ *
+ * @param resource $conn
+ * @param string $action
+ * @param array<string,mixed> $input
+ * @return array<int,int>
+ */
+function orderBankLockDocIds($conn, $action, $input) {
+    $ids = [];
+    $docId = (int)($input['docId'] ?? 0);
+    if ($docId > 0) { $ids[] = $docId; }
+
+    $srcDoc = posBancaOpenDocIdForMasa($conn, (int)($input['nrMasa'] ?? 0));
+    if ($srcDoc > 0) { $ids[] = $srcDoc; }
+
+    $ecrId = (int)($input['ecrId'] ?? 0);
+    if ($ecrId <= 0 && isset($input['ecrIds']) && is_array($input['ecrIds'])) {
+        $ecrId = (int)reset($input['ecrIds']);
+    }
+    if ($ecrId > 0) {
+        $stmt = @sqlsrv_query($conn, "SELECT TOP 1 DocID FROM tblNoteD WHERE ECRID = ?", [$ecrId]);
+        $row = $stmt ? @sqlsrv_fetch_array($stmt, SQLSRV_FETCH_ASSOC) : null;
+        if ($row && (int)$row['DocID'] > 0) { $ids[] = (int)$row['DocID']; }
+    }
+
+    if ($action === 'transfer_products') {
+        $dstDoc = posBancaOpenDocIdForMasa($conn, (int)($input['destNrMasa'] ?? 0));
+        if ($dstDoc > 0) { $ids[] = $dstDoc; }
+    }
+    return array_values(array_unique($ids));
+}
+
+/**
+ * Blocheaza modificarile pe o nota cu plata bancara incerta. Raspunde 423 si
+ * opreste cererea; fara nicio inregistrare bancara nu face nimic (cazul
+ * obisnuit, cand POS-ul bancar nu e folosit).
+ *
+ * @param resource $conn
+ * @param string $action
+ * @param array<string,mixed> $input
+ */
+function orderEnforceBankPosLock($conn, $action, $input) {
+    if (!in_array($action, orderBankLockedActions(), true)) { return; }
+    foreach (orderBankLockDocIds($conn, $action, $input) as $lockDocId) {
+        $lock = posBancaDocLock($conn, $lockDocId);
+        if (!$lock || !$lock['locked']) { continue; }
+        // `payable` = plata a fost aprobata pe terminal (integral sau partial),
+        // dar nu e inca aplicata pe nota. Nota este la fel de nemodificabila ca
+        // la o incercare incerta; difera doar iesirea oferita operatorului.
+        $payable = ((string)($lock['reason'] ?? '')) === 'payable';
+        sendJsonResponse([
+            "status" => "error",
+            "code" => $payable ? "bank_pos_payable" : "bank_pos_uncertain",
+            "docId" => $lockDocId,
+            "suma" => $lock['amount'],
+            "approvedTotal" => (float)($lock['approvedTotal'] ?? 0),
+            // Text fix (fara suma), ca sa poata fi tradus din catalogul i18n.
+            // Suma aprobata se vede in subsolul notei ("Achitat CARD").
+            "message" => $payable
+                ? "Nota are o plata pe card confirmata. Nu poate fi modificata: apasati NOTA pentru a incasa restul de plata."
+                : "Nota are o plata pe card cu stare incerta. Clarificati plata (Verifica / Manual din ecranul de plata) inainte de a modifica nota.",
+        ], 423);
+    }
+}
 
 /**
  * Tipul de vanzare configurat in tblSet (TipVanz): "fastfood" cand valoarea
@@ -686,7 +780,59 @@ function closeBillLocked($conn, $docId, $plati = [], $cui = '', $opts = []) {
         if ($del === false) {
             return ["status" => "error", "message" => "Eroare stergere nota: " . sqlsrv_errors()[0]['message'], "http" => 500];
         }
+        // Audit bancar: din randurile UNKNOWN/RESYNC nu se putea afla ca nota a
+        // fost stearsa (fara bon fiscal).
+        posBancaLogClosed($conn, $docId, (int)($bon['NrDoc'] ?? 0), 0.0, ['sters' => true]);
         return ["status" => "success", "message" => "Nota goala a fost stearsa", "docId" => $docId, "sters" => true];
+    }
+
+    // Reconciliere card (bani vs. nota). Sursa durabila este tblPosBancaLog:
+    // ledger-ul din browser poate fi pierdut (reload/crash) sau ocolit de un
+    // bug, iar diferenta trebuie sa fie vizibila INAINTE de bonul fiscal.
+    //   - terminalul a incasat mai mult decat linia CARD din nota => 409: nota
+    //     ar ascunde o incasare (sau o dubla taxare facuta de un client vechi);
+    //   - nota are mai mult pe card decat a incasat terminalul => plata facuta
+    //     in afara terminalului (PoSbanca oprit, eroare de configurare, terminal
+    //     extern): nu blocam, doar consemnam.
+    $cardInNote = round((float)($plati[1] ?? $plati['1'] ?? 0), 2);
+    if ($cardInNote > 0 || posBancaDocHasLog($conn, $docId)) {
+        $bankApproved = posBancaApprovedTotal($conn, $docId);
+        $approvedTotal = round((float)$bankApproved['total'], 2);
+        if ($approvedTotal > $cardInNote + 0.005) {
+            appEventLog('pos_banca_mismatch', [
+                'docId' => $docId,
+                'approvedTotal' => $approvedTotal,
+                'cardInNote' => $cardInNote,
+                'blocat' => 'da'
+            ]);
+            return [
+                "status" => "error",
+                "code" => "card_not_approved",
+                "message" => "Terminalul a incasat " . number_format($approvedTotal, 2, '.', '')
+                    . " Lei pe card, dar nota are doar " . number_format($cardInNote, 2, '.', '')
+                    . " Lei pe card. Adaugati suma pe card (sau anulati tranzactia in plus pe terminal) "
+                    . "si reluati inchiderea.",
+                "approvedTotal" => $approvedTotal,
+                "cardInNote" => $cardInNote,
+                "http" => 409
+            ];
+        }
+        if ($cardInNote > $approvedTotal + 0.005) {
+            // Nu blocheaza: cardul poate fi incasat in afara terminalului.
+            posBancaLogAttempt(
+                $conn, $docId, (int)($bon['NrDoc'] ?? 0), $cardInNote,
+                '', 'MISMATCH',
+                'Card in nota ' . number_format($cardInNote, 2, '.', '')
+                    . ' Lei, aprobat pe terminal ' . number_format($approvedTotal, 2, '.', '') . ' Lei',
+                false, null
+            );
+            appEventLog('pos_banca_mismatch', [
+                'docId' => $docId,
+                'approvedTotal' => $approvedTotal,
+                'cardInNote' => $cardInNote,
+                'blocat' => 'nu'
+            ]);
+        }
     }
 
     // Asteptarea raspunsului casei de marcat (cand tblSet.AsteaptaRaspunsCasa = 1
@@ -694,8 +840,18 @@ function closeBillLocked($conn, $docId, $plati = [], $cui = '', $opts = []) {
     // si asteptam confirmarea INAINTE de tranzactia de inchidere, ca sa nu tinem
     // lock-uri DB in timpul asteptarii. Daca registrul nu raspunde / refuza / da
     // eroare, nota rămâne deschisa si nu se scrie nimic in cozi.
+    //
+    // Valoarea notei: o nota cu produse care se anuleaza reciproc (produs +
+    // storno, sau discount 100%) are total 0. Se inchide normal, dar FARA bon
+    // fiscal: casa de marcat nu are ce emite pe zero, deci nu ii trimitem nimic
+    // si nu asteptam raspunsul ei.
+    $stmtTot = sqlsrv_query($conn, "SELECT COALESCE(SUM(Cant * PV), 0) AS T FROM tblNoteD WHERE DocID = ?", [$docId]);
+    $totRow = $stmtTot ? sqlsrv_fetch_array($stmtTot, SQLSRV_FETCH_ASSOC) : null;
+    $totalNota = $totRow ? (float)$totRow['T'] : 0.0;
+    $zeroTotal = abs($totalNota) < 0.005;
+
     $fiscalInfo = null;
-    $skipFiscal = !empty($opts['skipFiscal']);
+    $skipFiscal = !empty($opts['skipFiscal']) || $zeroTotal;
     $tipCasa = getTipCasaMarcat($conn);
     if (!$skipFiscal
         && getAsteaptaRaspunsCasa($conn) === 1
@@ -799,10 +955,24 @@ function closeBillLocked($conn, $docId, $plati = [], $cui = '', $opts = []) {
         wakeSyncService();
     }
 
+    // Audit bancar: consemnam inchiderea notei si bonul fiscal emis. Fara acest
+    // rand, din tblPosBancaLog se vede doar ce a raspuns terminalul (UNKNOWN /
+    // RESYNC), nu si rezultatul final al inchiderii. Best-effort, dupa commit.
+    posBancaLogClosed($conn, $docId, (int)($bon['NrDoc'] ?? 0), $totalNota, [
+        'fiscalNr' => is_array($fiscalInfo) ? ($fiscalInfo['nr'] ?? null) : null,
+        'fiscalZ' => is_array($fiscalInfo) ? ($fiscalInfo['z'] ?? null) : null,
+        'fiscalBf' => is_array($fiscalInfo) ? ($fiscalInfo['bf'] ?? null) : null,
+        'print' => $printResult,
+        'plati' => $plati,
+        'zeroTotal' => $zeroTotal,
+        'skipFiscal' => $skipFiscal,
+    ]);
+
     return [
         "status" => "success",
         "message" => "Bonul a fost inchis",
         "docId" => $docId,
+        "zeroTotal" => $zeroTotal,
         "print" => $printResult,
         "send" => $sendResult,
         "fiscal" => $fiscalInfo
@@ -1960,6 +2130,11 @@ if (!$input || !is_array($input)) {
 $action = $input['action'] ?? '';
 $nrMasa = (int)($input['nrMasa'] ?? 1);
 $nrOp = (int)($input['nrOp'] ?? 8); // Default CASIER 1
+
+// Nota cu plata pe card incerta este blocata pana la clarificarea ei (vezi
+// orderEnforceBankPosLock). Garda sta pe server, deci acopera si modulul mobil
+// si o a doua fereastra, nu doar UI-ul desktop.
+orderEnforceBankPosLock($conn, $action, $input);
 
 switch ($action) {
     case 'add_product':

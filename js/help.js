@@ -143,6 +143,24 @@ const HELP_CONTENT = {
           se afiseaza tastatura numerica pentru introducerea manuala.</li>
         <li><span class="help-field">PoSbanca</span> - activeaza terminalul bancar
           de card (1 = DA, 0 = NU), cu driverul si fisierul de raspuns.</li>
+        <li><span class="help-field">ProtocolPoSbanca</span> - driverul
+          terminalului, ales dintr-o lista inchisa, fiecare cu identitate clara
+          (fara varianta "generic"):
+          <ul>
+            <li><em>SmartPayECR</em> (SmartPay ECR Link) - driverul Python
+              <code>smartpay_client.py</code> (numele vechi
+              <code>ecr_client.py</code> rămâne acceptat pe stațiile care il au
+              deja); verificare in jurnal, <em>void</em>.</li>
+            <li><em>VivaECR</em> (Viva.com Terminal, ECR Protocol TCP/IP) -
+              driverul Python <code>viva_client.py</code>; vorbeste cu terminalul
+              pe socket TCP (implicit port 8080). Verificarea unei plati incerte
+              se face cu ultima tranzactie din terminal, iar <em>void</em>-ul cu
+              STAN-ul din audit.</li>
+          </ul>
+          Ambele drivere folosesc <code>.env</code> de langa
+          <code>vanzare.bat</code> pentru conexiune (<code>ECR_HOST</code>,
+          <code>ECR_PORT</code>, <code>ECR_TIMEOUT</code>) si acelasi fisier de
+          rezultat (STATUS / MESAJ / TRX_ID / EMITE_BON).</li>
       </ul>
 
       <h4 class="help-section">Tab Servicii</h4>
@@ -797,6 +815,24 @@ const HELP_CONTENT_EN = {
           if it does not respond, the numeric keypad opens for manual entry.</li>
         <li><span class="help-field">PoSbanca</span> - enables the card bank
           terminal (1 = YES, 0 = NO), with its driver and response file.</li>
+        <li><span class="help-field">ProtocolPoSbanca</span> - the terminal
+          driver, chosen from a closed list, each with a clear identity (no
+          "generic" variant):
+          <ul>
+            <li><em>SmartPayECR</em> (SmartPay ECR Link) - the Python driver
+              <code>smartpay_client.py</code> (the old name
+              <code>ecr_client.py</code> is still accepted on stations that
+              already have it); journal check, <em>void</em>.</li>
+            <li><em>VivaECR</em> (Viva.com Terminal, ECR Protocol TCP/IP) - the
+              Python driver <code>viva_client.py</code>; it talks to the terminal
+              over a TCP socket (default port 8080). An uncertain payment is
+              checked against the terminal's last transaction, and <em>void</em>
+              uses the STAN from the audit log.</li>
+          </ul>
+          Both drivers use the <code>.env</code> next to <code>vanzare.bat</code>
+          for the connection (<code>ECR_HOST</code>, <code>ECR_PORT</code>,
+          <code>ECR_TIMEOUT</code>) and the same response file (STATUS / MESAJ /
+          TRX_ID / EMITE_BON).</li>
       </ul>
 
       <h4 class="help-section">Services tab</h4>

@@ -31,7 +31,7 @@ function getS($k) { return cell("SELECT Value FROM tblSet WHERE Setting=?", [$k]
 function act($d, $timeout = 60) { return http('POST', '/api/order_action.php', $d, [], $timeout); }
 function billOf($docId) { return q1("SELECT TotalB,Stare,NrDoc,RaspunsCasa FROM tblBonCurent WHERE DocID=?", [$docId]); }
 function jobCount($docId, $tip) { return (int)cell("SELECT COUNT(*) FROM tblPrintQueue WHERE RefDocID=? AND Tip=?", [$docId, $tip]); }
-function saveCfg($c) { return jpost('/api/print_config.php', ['action' => 'save', 'config' => $c]); }
+function saveCfg($c) { return printConfigSave($c); }
 function slashWin($p) { return str_replace('/', '\\', $p); }
 function folderEmpty($dir) { return count(array_diff(scandir($dir), ['.', '..'])) === 0; }
 function newestResponse($dir, $ext) {
@@ -75,7 +75,17 @@ function clearDir($dir) {
 function stopMock($h) {
     if (!$h) { return; }
     $st = proc_get_status($h['proc']);
-    foreach ($h['pipes'] as $pp) { if (is_resource($pp)) { @stream_get_contents($pp); @fclose($pp); } }
+    foreach ($h['pipes'] as $pp) {
+        if (is_resource($pp)) {
+            // Citim doar ce e deja in buffer: un stream_get_contents() pe un
+            // pipe fara EOF (mock pornit cu --once care nu a primit nicio
+            // comanda) ar bloca la infinit pe Windows.
+            $meta = @stream_get_meta_data($pp);
+            $avail = (int)($meta['unread_bytes'] ?? 0);
+            if ($avail > 0) { @stream_get_contents($pp, $avail); }
+            @fclose($pp);
+        }
+    }
     if ($st && $st['running']) { @proc_terminate($h['proc']); }
     @proc_close($h['proc']);
 }
@@ -105,6 +115,7 @@ $orig = [
     'RED'                 => getS('RED'),
     'NrBon'               => getS('NrBon'),
 ];
+printConfigRestoreBackup();
 $origCfg = jget('/api/print_config.php?action=config')['json']['config'] ?? null;
 
 test('preconditie: TipCasaMarcat = FiscalWire', $orig['TipCasaMarcat'] === 'FiscalWire', (string)$orig['TipCasaMarcat']);
@@ -122,6 +133,7 @@ $logSizeStart = file_exists($logFile) ? filesize($logFile) : 0;
 
 try {
     // Tinte de tiparire -> preview, ca testul sa nu atinga nicio imprimanta.
+    printConfigBackup();
     $prevCfg = $origCfg;
     foreach (['nota_target', 'raport_target', 'fiscal_target'] as $k) { $prevCfg[$k] = ['target' => 'preview']; }
     foreach (array_keys($prevCfg['printers'] ?? []) as $nr) { $prevCfg['printers'][$nr] = ['target' => 'preview', 'name' => 'T' . $nr]; }
@@ -322,6 +334,10 @@ try {
     $r = act(['action' => 'add_product', 'nrMasa' => $MASA, 'nrOp' => 8, 'prodId' => $P1]);
     $docF = (int)($r['json']['docId'] ?? 0);
     $docIds[] = $docF;
+    // A doua linie (nearulata) tine nota cu valoare > 0: o nota cu total 0
+    // (produs + storno integral) se inchide FARA bon fiscal, deci nu ar ajunge
+    // la casa de marcat si nu s-ar putea verifica evidentierea stornarii.
+    act(['action' => 'add_product', 'nrMasa' => $MASA, 'nrOp' => 8, 'prodId' => $P1]);
     $ecrF = (int)cell("SELECT TOP 1 ECRID FROM tblNoteD WHERE DocID=? AND ProdID>0 ORDER BY ECRID", [$docF]);
     $cantF = (float)cell("SELECT Cant FROM tblNoteD WHERE ECRID=? AND DocID=?", [$ecrF, $docF]);
     act(['action' => 'apply_discount', 'nrMasa' => $MASA, 'nrOp' => 8,
@@ -363,6 +379,7 @@ try {
     }
     foreach ($orig as $k => $v) { setS($k, $v); }
     if ($origCfg) { saveCfg($origCfg); }
+    printConfigDropBackup();
     foreach ([$DIR_COMENZI, $DIR_RASPUNS, $TEST_DIR] as $d) {
         foreach (glob($d . '/*') ?: [] as $f) { if (is_file($f)) { @unlink($f); } }
         @rmdir($d);

@@ -49,7 +49,7 @@ INSERT INTO dbo.[tblKP] ([NrLogic], [Nume], [Stare]) VALUES
 (2, N'BUCATARIE', 1);
 GO
 
------------------------------------------------------------- tblSet (37 randuri)
+------------------------------------------------------------ tblSet (38 randuri)
 DELETE FROM dbo.[tblSet];
 GO
 INSERT INTO dbo.[tblSet] ([Setting], [Value], [Descriere], [Grup]) VALUES
@@ -59,7 +59,7 @@ INSERT INTO dbo.[tblSet] ([Setting], [Value], [Descriere], [Grup]) VALUES
 (N'BaudRateAfisaj', N'9600', N'Viteza portului serial al afisajului client. In curs de implementare.', N'Afiseaj'),
 (N'CaleDriverAfiseajClient', N'', N'Calea catre driverul/executabilul afisajului client. In curs de implementare.', N'Afiseaj'),
 (N'CaleDriverCantar', N'', N'Calea catre driverul/executabilul cantarului electronic (ex. un .bat care scrie fisierul de raspuns).', N'Cantar'),
-(N'CaleDriverPoSbanca', N'', N'Calea catre driverul/executabilul POS-ului bancar.', N'PoSbanca'),
+(N'CaleDriverPoSbanca', N'', N'Calea catre driverul/executabilul POS-ului bancar: folderul cu vanzare.bat, scriptul Python si .env (SmartPay: smartpay_client.py + env_config.py; Viva: viva_client.py + env_config.py).', N'PoSbanca'),
 (N'CaleFisierComenziAfiseajClient', N'', N'Folderul in care se scriu fisierele de comenzi catre afisajul client. In curs de implementare.', N'Afiseaj'),
 (N'CaleFisierComenziECR', N'C:\POS\fiscal\bonuri', N'Folderul in care se scriu fisierele de comenzi catre casa de marcat fiscala.', N'Casa'),
 (N'CaleFisierRaspunsCantar', N'', N'Fisierul in care cantarul scrie greutatea citita (un numar). Se sterge inainte de fiecare cantarire.', N'Cantar'),
@@ -84,6 +84,7 @@ INSERT INTO dbo.[tblSet] ([Setting], [Value], [Descriere], [Grup]) VALUES
 (N'ParolaDiscount', N'1', NULL, N'General'),
 (N'PortComAfiseaj', N'5', N'Numarul portului serial al afisajului client. In curs de implementare.', N'Afiseaj'),
 (N'PoSbanca', N'0', N'POS bancar activ: 1 = DA, 0 = NU.', N'PoSbanca'),
+(N'ProtocolPoSbanca', N'SmartPayECR', N'Protocolul terminalului bancar (driverul cu identitate clara folosit la plata pe card). Drivere suportate: SmartPayECR (SmartPay ECR Link) si VivaECR (Viva.com Terminal, ECR Protocol TCP/IP). Ambele citesc conexiunea din .env.', N'PoSbanca'),
 (N'RED', N'1', NULL, N'General'),
 (N'Retea', N'0', NULL, N'General'),
 (N'Server', N'1', N'0 = aplicatia functioneaza independent; 1 = aplicatia incarca grupele si produsele de pe un server extern, aplicatia exporta vanzarile catre serverul extern prin serviciul python sync-service.', N'ODBC'),

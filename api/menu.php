@@ -299,6 +299,16 @@ if ($stmtPb) {
     if ($pb && trim((string)$pb['Value']) === '1') { $posBanca = 1; }
 }
 
+// Retiparirea ultimei chitante a terminalului bancar (duplicat pe imprimanta
+// POS): implicit NU. Cand e DA, clientul afiseaza butonul "Chitanță card"
+// dupa o aprobare pe card; serverul verifica aceeasi setare la reprint.
+$retiparireChitantaPoSbanca = 0;
+$stmtRP = sqlsrv_query($conn, "SELECT TOP 1 Value FROM tblSet WHERE Setting = 'RetiparireChitantaPoSbanca'");
+if ($stmtRP) {
+    $rp = sqlsrv_fetch_array($stmtRP, SQLSRV_FETCH_ASSOC);
+    if ($rp && trim((string)$rp['Value']) === '1') { $retiparireChitantaPoSbanca = 1; }
+}
+
 // 4f4b. Cantar electronic (tblSet.Cantar): 1 = DA. Cand e DA, butonul QTY
 //       lanseaza driverul si preia cantitatea citita in campul Cant.
 $cantar = 0;
@@ -436,6 +446,7 @@ sendJsonResponse([
     "procentDiscountFix" => $procentDiscountFix,
     "server" => $server,
     "posBanca" => $posBanca,
+    "retiparireChitantaPoSbanca" => $retiparireChitantaPoSbanca,
     "cantar" => $cantar,
     "asteaptaRaspunsCasa" => $asteaptaRaspunsCasa,
     "plataCombinata" => $plataCombinata,

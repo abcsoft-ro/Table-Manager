@@ -34,6 +34,15 @@ const MOBILE_STATE = {
   masaCurenta: null,
   docId: null,
   hasOrder: false,
+  // Nota are o plata pe card cu stare incerta (get_order.php -> bankPosLocked):
+  // modulul mobil o arata doar citire, fara rezolvare (asta se face pe POS-ul
+  // principal). Serverul refuza oricum modificarile cu 423.
+  bankPosLocked: false,
+  bankPosUid: "",
+  // Bani aprobati pe terminal, inca neaplicati pe nota (plata partiala cu card,
+  // inclusiv dupa un reload): nota este la fel de nemodificabila.
+  bankPosApproved: false,
+  bankPosApprovedTotal: 0,
   bonNrOp: null,
   bonCasier: "",
   nrDoc: null,
@@ -403,14 +412,17 @@ function numpadKey(ch) {
       next = "";
       numpadState.fresh = false;
     }
-    if (next.length >= 12) return;
+    // Parolele sunt nvarchar(20) in baza de date; cantitatile raman la 12.
+    if (next.length >= (numpadState.password ? 20 : 12)) return;
     // Respectam numarul de zecimale configurat.
     if (next.includes(".")) {
       const decPart = next.split(".")[1] || "";
       if (decPart.length >= numpadState.decimals) return;
     }
-    // Fara zerouri nesemnificative la inceput (ex. 0 -> 5 devine 5).
-    next = (next === "0") ? ch : (next + ch);
+    // Fara zerouri nesemnificative la inceput (ex. 0 -> 5 devine 5). La
+    // parole zero-ul din fata este semnificativ (ex. parola 0123), deci se
+    // pastreaza - altfel un ospatar cu parola care incepe cu 0 nu se poate loga.
+    next = (!numpadState.password && next === "0") ? ch : (next + ch);
   }
 
   // Respectam limita maxima configurata (ex. cantitatea maxima pe linie).
@@ -594,9 +606,51 @@ async function loadOrder(nr) {
   MOBILE_STATE.articole = data.articole || [];
   const prevSel = MOBILE_STATE.selectedEcrId;
   MOBILE_STATE.selectedEcrId = MOBILE_STATE.articole.some(a => a.ecrId === prevSel) ? prevSel : null;
+  MOBILE_STATE.bankPosLocked = (data.bankPosLocked === true);
+  MOBILE_STATE.bankPosUid = data.bankPosUid || "";
+  MOBILE_STATE.bankPosApproved = (data.bankPosApproved === true);
+  MOBILE_STATE.bankPosApprovedTotal = Number(data.bankPosApprovedTotal) || 0;
 
   renderMarkMeta();
   renderNota();
+  applyMobileBankPosLockUI();
+}
+
+/* Lock bancar: nota cu plata pe card incerta este doar citire. Pe mobil nu se
+   rezolva plata (Verifica / Manual sunt pe POS-ul principal), deci aratam doar
+   un banner si blocam actiunile care modifica nota. */
+function mobileBankPosLockMessage() {
+  let msg = MOBILE_STATE.bankPosApproved === true
+    ? tr("Nota are o plata pe card confirmata ({suma} Lei). Modificarile sunt blocate: inchideti nota de pe POS-ul principal (NOTA).", {
+        suma: (Number(MOBILE_STATE.bankPosApprovedTotal) || 0).toFixed(2)
+      })
+    : tr("Nota are o plata pe card cu stare incerta. Modificarile sunt blocate pana la clarificarea platii de pe POS-ul principal.");
+  // Acelasi TRX_ID ca in jurnalul terminalului bancar (identificare rapida).
+  const uid = String(MOBILE_STATE.bankPosUid || "").trim();
+  if (uid) { msg += " TRX: " + uid; }
+  return msg;
+}
+
+function applyMobileBankPosLockUI() {
+  const locked = MOBILE_STATE.bankPosLocked === true;
+  const banner = document.getElementById("mv-bank-lock");
+  const txt = document.getElementById("mv-bank-lock-text");
+  if (banner) banner.style.display = locked ? "" : "none";
+  if (txt) txt.textContent = locked ? mobileBankPosLockMessage() : "";
+
+  const grid = document.getElementById("mv-products-grid");
+  if (grid) grid.classList.toggle("mv-bank-locked", locked);
+  const scanOpen = document.getElementById("mv-scan-open");
+  if (scanOpen) scanOpen.disabled = locked;
+  const scanInput = document.getElementById("mv-scan-input");
+  if (scanInput) scanInput.disabled = locked;
+}
+
+// Garda din client (serverul refuza oricum cu 423 bank_pos_uncertain).
+function mobileBankPosBlockedNotice() {
+  if (MOBILE_STATE.bankPosLocked !== true) { return false; }
+  showToast(mobileBankPosLockMessage());
+  return true;
 }
 
 function renderMarkMeta() {
@@ -806,6 +860,7 @@ function toggleNota() {
    ADAUGARE PRODUS / SCAN / CAUTARE
    ========================================================================== */
 async function addProduct(prodId) {
+  if (mobileBankPosBlockedNotice()) { return; }
   requireLogin(async () => {
     if (!MOBILE_STATE.masaCurenta) {
       showToast("Selectati mai intai o masa.");
@@ -981,6 +1036,7 @@ function menuMeniulZilei() {
 
 /* -------- QTY -------- */
 function openQtyModal() {
+  if (mobileBankPosBlockedNotice()) { return; }
   const a = selectedArticle();
   if (!a) { showToast("Selectati o linie."); return; }
   if (a.preluat) { appAlert("Produsul a fost trimis la sectie; cantitatea nu mai poate fi modificata."); return; }
@@ -1011,6 +1067,7 @@ function openQtyModal() {
 
 /* -------- MOD PREPARARE -------- */
 function openModsModal() {
+  if (mobileBankPosBlockedNotice()) { return; }
   const a = selectedArticle();
   if (!a) { showToast("Selectati o linie."); return; }
   closeModal("modal-line");
@@ -1072,6 +1129,7 @@ async function deleteMod(ecrId) {
 const discState = { scope: "bill", mode: "percent", value: 0 };
 
 function openDiscountModal(scope) {
+  if (mobileBankPosBlockedNotice()) { return; }
   if (MOBILE_STATE.red === 0) { showToast("Discountul nu este permis."); return; }
   const tip = MOBILE_STATE.tipDiscount;
   // TipDiscount = 2: procent fix pe subtotal, aplicat direct, fara popup.
@@ -1086,6 +1144,7 @@ function openDiscountModal(scope) {
 
 // TipDiscount = 2: aplica procentul fix pe subtotal, fara popup.
 function actionDiscountFixMobile() {
+  if (mobileBankPosBlockedNotice()) { return; }
   if (MOBILE_STATE.red === 0) { showToast("Discountul nu este permis."); return; }
   const pct = Number(MOBILE_STATE.procentDiscountFix);
   if (!(pct > 0) || pct > 100) {
@@ -1250,6 +1309,7 @@ async function discApply(fixedPct) {
 const voidState = { article: null, cantitate: 0 };
 
 function openVoidModal() {
+  if (mobileBankPosBlockedNotice()) { return; }
   const a = selectedArticle();
   if (!a) { showToast("Selectati o linie."); return; }
   closeModal("modal-line");
@@ -1349,6 +1409,7 @@ async function voidApply() {
 const transferState = { selected: {}, destMasa: null };
 
 function openTransferModal() {
+  if (mobileBankPosBlockedNotice()) { return; }
   closeModal("modal-line");
   const arts = MOBILE_STATE.articole.filter(a => !a.storno);
   if (!arts.length) { showToast("Nota nu are produse de transferat."); return; }
@@ -1460,11 +1521,25 @@ async function leaveTable() {
   try {
     if (!isFastFood() && MOBILE_STATE.docId) {
       try {
-        const res = await mvPost("print_kitchen", {
-          docId: MOBILE_STATE.docId,
-          nrMasa: MOBILE_STATE.masaCurenta
-        });
-        if (res && res.jobs > 0) showToast(res.message || "Comanda trimisa la sectie");
+        // Nota fara nicio linie: o inchidem (serverul o sterge), altfel masa
+        // ramane ocupata degeaba. Nu o stergem tacit daca are o plata pe card
+        // incerta: aceea se rezolva de pe POS-ul principal.
+        if (MOBILE_STATE.articole.length === 0) {
+          if (MOBILE_STATE.bankPosLocked !== true) {
+            const del = await mvPost("close_bill", { docId: MOBILE_STATE.docId, plati: {} });
+            if (del && del.status === "success") {
+              MOBILE_STATE.docId = null;
+              MOBILE_STATE.hasOrder = false;
+              MOBILE_STATE.articole = [];
+            }
+          }
+        } else {
+          const res = await mvPost("print_kitchen", {
+            docId: MOBILE_STATE.docId,
+            nrMasa: MOBILE_STATE.masaCurenta
+          });
+          if (res && res.jobs > 0) showToast(res.message || "Comanda trimisa la sectie");
+        }
       } catch (e) { /* ignoram eroarea de retea la iesire */ }
     }
     if (MOBILE_STATE.modLogare === 0) logoutWaiter();

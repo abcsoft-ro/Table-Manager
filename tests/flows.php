@@ -18,6 +18,7 @@ function lineOf($docId, $prodId) { return q1("SELECT TOP 1 ECRID,Cant,PV,PVC,Pre
 
 $MASA_A = 80; $MASA_B = 79;
 $origTipVanz = getS('TipVanz'); $origServer = getS('Server'); $origRED = getS('RED');
+$origAsteaptaCasa = getS('AsteaptaRaspunsCasa');
 $origTipDisc = getS('TipDiscount'); $origProcent = getS('ProcentDiscountFix'); $origNrBon = getS('NrBon');
 
 $pdoA = rows("SELECT DocID FROM tblBonCurent WHERE NrMasa IN (?,?)", [$MASA_A, $MASA_B]);
@@ -31,18 +32,26 @@ $NRMESAJ = (int)cell("SELECT TOP 1 NrMesaj FROM tblMesaj WHERE Mesaj IS NOT NULL
 info("produse test P1=$P1 (pv=$PV1), P2=$P2 (pv=$PV2), NrMesaj=$NRMESAJ");
 
 // config print -> preview (fara imprimanta fizica)
+// Un run anterior intrerupt poate fi lasat tintele pe preview: restaurăm intai
+// copia lui de siguranta, ca `$origCfg` sa fie configuratia reala.
+printConfigRestoreBackup();
 $cfgRes = jget('/api/print_config.php?action=config');
 $origCfg = $cfgRes['json']['config'] ?? null;
-function saveCfg($c) { return jpost('/api/print_config.php', ['action' => 'save', 'config' => $c]); }
+function saveCfg($c) { return printConfigSave($c); }
 $prevCfg = $origCfg;
 foreach (['nota_target', 'raport_target', 'fiscal_target'] as $k) $prevCfg[$k] = ['target' => 'preview'];
 foreach (array_keys($prevCfg['printers'] ?? []) as $nr) $prevCfg['printers'][$nr] = ['target' => 'preview', 'name' => 'T' . $nr];
 
 $docA = null; $docIdsCreated = [];
 try {
+    printConfigBackup();
     saveCfg($prevCfg);
     setS('Server', '0');            // fara export catre serverul extern
     setS('TipVanz', '0');           // Restaurant: print_kitchen + nota active
+    // Faza D testeaza inchiderea normala, nu asteptarea casei de marcat: o
+    // forțam pe 0, ca un run intrerupt al fazei F (care o lasa pe 1, cu caile
+    // catre mock) sa nu transforme fiecare close_bill intr-un timeout de 8s.
+    setS('AsteaptaRaspunsCasa', '0');
 
     section('D1-D5 - construire bon (adaugare, mod, qty, discount, VD)');
     $r = post(['action' => 'add_product', 'nrMasa' => $MASA_A, 'nrOp' => 8, 'prodId' => $P1]);
@@ -225,9 +234,11 @@ try {
         q("DELETE FROM tblBonCurent WHERE DocID=?", [$d]);
     }
     setS('Server', $origServer); setS('TipVanz', $origTipVanz);
+    setS('AsteaptaRaspunsCasa', $origAsteaptaCasa);
     setS('RED', $origRED); setS('TipDiscount', $origTipDisc); setS('ProcentDiscountFix', $origProcent);
     setS('NrBon', $origNrBon);
     if ($origCfg) saveCfg($origCfg);
+    printConfigDropBackup();
 }
 
 // verificari finale de curatenie

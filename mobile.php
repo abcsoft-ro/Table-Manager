@@ -79,6 +79,12 @@ $ASSET_V = preg_replace('/[^A-Za-z0-9._-]/', '', $ASSET_V);
       <button class="mv-more-btn" onclick="openMarkMenu()" aria-label="Mai multe actiuni">&#8942;</button>
     </div>
 
+    <!-- Lock bancar: nota cu plata pe card incerta este doar citire pana la
+         clarificarea platii de pe POS-ul principal (Verifica / Solutionare manuala). -->
+    <div id="mv-bank-lock" class="mv-bank-lock" style="display:none;">
+      <span id="mv-bank-lock-text"></span>
+    </div>
+
     <div class="mv-groups-bar" id="mv-groups-bar"></div>
 
     <div class="mv-mark-main">
